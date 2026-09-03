@@ -1,13 +1,15 @@
 import Dexie, { type Table } from 'dexie';
-import { CharacterCardSchema, PresetSchema, WorldbookEntrySchema, type CharacterCard, type Preset, type WorldbookEntry } from '../content';
+import { CharacterCardSchema, ChatRecordSchema, PresetSchema, WorldbookEntrySchema, type CharacterCard, type ChatRecord, type Preset, type WorldbookEntry } from '../content';
 
 export class ContentDatabase extends Dexie {
   characters!: Table<CharacterCard, string>;
   worldbooks!: Table<WorldbookEntry, string>;
   presets!: Table<Preset, string>;
+  chats!: Table<ChatRecord, string>;
   constructor(name = 'tokimeki-content') {
     super(name);
     this.version(1).stores({ characters: 'id', worldbooks: 'id', presets: 'id' });
+    this.version(2).stores({ characters: 'id', worldbooks: 'id', presets: 'id', chats: 'characterId' });
   }
 }
 
@@ -19,3 +21,5 @@ export async function saveWorldbook(entry: WorldbookEntry): Promise<WorldbookEnt
 export async function deleteWorldbook(id: string): Promise<void> { await contentDb.worldbooks.delete(id); }
 export async function savePreset(preset: Preset): Promise<Preset> { const parsed = PresetSchema.parse(preset); await contentDb.presets.put(parsed); return parsed; }
 export async function deletePreset(id: string): Promise<void> { await contentDb.presets.delete(id); }
+export async function saveChat(record: ChatRecord): Promise<ChatRecord> { const parsed = ChatRecordSchema.parse(record); await contentDb.chats.put(parsed); return parsed; }
+export async function loadChat(characterId: string): Promise<ChatRecord | undefined> { return contentDb.chats.get(characterId); }

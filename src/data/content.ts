@@ -19,3 +19,8 @@ export const PresetSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 export type Preset = z.infer<typeof PresetSchema>;
+
+export const ChatMessageSchema = z.object({ role: z.enum(['system', 'user', 'assistant']), content: z.string() });
+export type ChatMessage = z.infer<typeof ChatMessageSchema>;
+export const ChatRecordSchema = z.object({ characterId: Id, messages: z.array(ChatMessageSchema), updatedAt: z.string().datetime() });
+export type ChatRecord = z.infer<typeof ChatRecordSchema>;

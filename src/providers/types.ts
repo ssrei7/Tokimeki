@@ -18,6 +18,10 @@ export const ProviderConfigSchema = z.object({
 });
 export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
 
+export const ProviderModelListConfigSchema = ProviderConfigSchema.extend({
+  model: z.string().default(''),
+});
+
 export const ProviderBindingSchema = z.object({ taskId: TaskIdSchema, providerId: z.string().min(1) });
 export type ProviderBinding = z.infer<typeof ProviderBindingSchema>;
 
@@ -30,6 +34,7 @@ export interface ProviderAdapter {
   prepare(config: ProviderConfig, request: ChatRequest): PreparedRequest;
   extractText(config: ProviderConfig, payload: unknown): string | null;
   extractStreamText(config: ProviderConfig, chunk: string): string | null;
+  listModels?(config: ProviderConfig, fetchImpl?: typeof fetch): Promise<string[]>;
 }
 
 export type ConnectionErrorKind = 'cors' | 'unauthorized' | 'not_found' | 'timeout' | 'format' | 'network' | 'unknown';

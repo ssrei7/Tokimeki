@@ -512,6 +512,10 @@ interface Preset {
 
 角色卡、世界书与预设均由本地 IndexedDB 管理；它们不写入 `SaveFile.world`，导出角色包/世界包时再按 `manifest.type` 选择性打包。
 
+聊天记录按角色保存在本地 IndexedDB，不写入 Provider 配置或 API key；角色卡、世界书、预设均支持独立 JSON/zip 导入导出。连续追加但尚未生成回复的用户消息也是有效记录，必须在请求发出前持久化；请求失败不得删除，流式助手文本按节流/收尾策略持续落库。
+
+Provider 配置单独保存在本地 Provider 数据库，不属于 `SaveFile`。普通 `save.zip` 不导出也不覆盖 Provider 配置或 API key，导入完成后必须明确提示该边界；全局备份及可选加密密钥导出属于后续独立设计，不在阶段 0 的普通存档格式中暗中加入。
+
 ---
 
 ## 14. 玩家
