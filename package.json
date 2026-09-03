@@ -13,6 +13,7 @@
     "react": "latest",
     "react-dom": "latest",
     "dexie": "latest",
+    "jszip": "latest",
     "zod": "latest"
   },
   "devDependencies": {

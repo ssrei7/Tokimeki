@@ -497,6 +497,21 @@ interface WorldbookEntry {
 
 位置注入（`node_worldbook`）优先于关键词注入（`worldbook_keyword`）。
 
+### 13.1 预设（Provider prompt preset）
+
+```ts
+interface Preset {
+  id: Id;
+  name: string;
+  systemPrompt: string;
+  temperature: number;
+  maxOutputTokens: number;
+  updatedAt: string;
+}
+```
+
+角色卡、世界书与预设均由本地 IndexedDB 管理；它们不写入 `SaveFile.world`，导出角色包/世界包时再按 `manifest.type` 选择性打包。
+
 ---
 
 ## 14. 玩家
