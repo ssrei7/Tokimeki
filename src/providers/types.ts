@@ -1,9 +1,10 @@
 import { z } from 'zod';
 
-export const TaskIdSchema = z.enum([
+export const TASK_IDS = [
   'narrate_main', 'narrate_daily', 'topic_tree', 'world_morning', 'world_gen',
   'map_gen', 'npc_batch', 'extract_ops', 'summarize_day', 'summarize_chapter', 'image', 'tts',
-]);
+] as const;
+export const TaskIdSchema = z.enum(TASK_IDS);
 export type TaskId = z.infer<typeof TaskIdSchema>;
 
 export const ProviderKindSchema = z.enum(['openai-compatible', 'anthropic', 'gemini', 'generic']);
@@ -24,6 +25,9 @@ export const ProviderModelListConfigSchema = ProviderConfigSchema.extend({
 
 export const ProviderBindingSchema = z.object({ taskId: TaskIdSchema, providerId: z.string().min(1) });
 export type ProviderBinding = z.infer<typeof ProviderBindingSchema>;
+
+export const ProviderSettingSchema = z.object({ key: z.literal('defaultProviderId'), value: z.string().min(1) });
+export type ProviderSetting = z.infer<typeof ProviderSettingSchema>;
 
 export interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string }
 export interface ChatRequest { messages: ChatMessage[]; stream?: boolean }

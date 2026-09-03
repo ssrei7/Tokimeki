@@ -1,4 +1,5 @@
 import { ProviderBindingSchema, ProviderConfigSchema, TaskIdSchema, type ProviderBinding, type ProviderConfig, type TaskId } from './types';
+import { resolveProviderForTask } from './router';
 
 export class ProviderManager {
   private readonly providers = new Map<string, ProviderConfig>();
@@ -10,5 +11,5 @@ export class ProviderManager {
   bindTask(binding: ProviderBinding): void { const parsed = ProviderBindingSchema.parse(binding); if (parsed.providerId !== 'default' && !this.providers.has(parsed.providerId)) throw new Error(`Provider not found: ${parsed.providerId}`); this.bindings.set(parsed.taskId, parsed.providerId); }
   unbindTask(taskId: TaskId): void { this.bindings.delete(TaskIdSchema.parse(taskId)); }
   listBindings(): ProviderBinding[] { return [...this.bindings.entries()].map(([taskId, providerId]) => ({ taskId, providerId })); }
-  resolve(taskId: TaskId, defaultProviderId = 'default'): ProviderConfig | undefined { const id = this.bindings.get(taskId) ?? defaultProviderId; return id === 'default' ? this.providers.get('default') : this.providers.get(id); }
+  resolve(taskId: TaskId, defaultProviderId = 'default'): ProviderConfig | undefined { return resolveProviderForTask(this.listProviders(), this.listBindings(), taskId, defaultProviderId); }
 }

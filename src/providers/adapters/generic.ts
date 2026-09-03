@@ -9,5 +9,15 @@ export const genericAdapter: ProviderAdapter = {
     return { url: config.endpoint, init: { method: 'POST', headers: { 'content-type': 'application/json', ...(config.headers ?? {}), ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}) }, body } };
   },
   extractText: (config, payload) => { const value = readJsonPath(payload, config.responsePath); return typeof value === 'string' ? value : null; },
-  extractStreamText: (config, chunk) => { try { return genericAdapter.extractText(config, JSON.parse(chunk)); } catch { return null; } },
+  extractStreamText: (config, chunk) => {
+    const framing = config.streamFraming ?? 'sse';
+    let payload = chunk.trim();
+    if (framing === 'json') return null;
+    if (framing === 'sse') {
+      if (!payload.startsWith('data:')) return null;
+      payload = payload.slice('data:'.length).trim();
+      if (!payload || payload === '[DONE]') return null;
+    }
+    try { return genericAdapter.extractText(config, JSON.parse(payload)); } catch { return null; }
+  },
 };

@@ -7,8 +7,9 @@ import { SaveFileSchema, type SaveFile } from './data/schema/save';
 import { testProviderConnection } from './providers/connection-test';
 import { providerDb } from './providers/db';
 import { listProviderModels } from './providers/models';
+import { resolveProviderForTask } from './providers/router';
 import { streamChat, type StreamStatus } from './providers/stream';
-import { ProviderConfigSchema, type ProviderConfig } from './providers/types';
+import { ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, type ProviderBinding, type ProviderConfig, type TaskId } from './providers/types';
 import { canGenerateReply, hasQueuedUserMessage } from './ui/chat-state';
 import './ui/theme/app.css';
 
@@ -21,6 +22,20 @@ const now = () => new Date().toISOString();
 const slug = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '') || `item-${Date.now()}`;
 const newProvider = (): ProviderConfig => ({ id: `provider-${Date.now()}`, name: '新 Provider', kind: 'openai-compatible', endpoint: '', model: '', contextWindow: 8192, maxOutputTokens: 1024, temperature: 0.7 });
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
+const TASK_LABELS: Record<TaskId, string> = {
+  narrate_main: '主线叙述', narrate_daily: '日常对话', topic_tree: '话题树', world_morning: '晨间世界更新',
+  world_gen: '世界生成', map_gen: '地图生成', npc_batch: 'NPC 批处理', extract_ops: 'Ops 抽取',
+  summarize_day: '日记总结', summarize_chapter: '章节总结', image: '图像生成', tts: '语音生成',
+};
+
+function parseHeadersDraft(value: string): Record<string, string> {
+  let parsed: unknown;
+  try { parsed = JSON.parse(value); }
+  catch { throw new Error('自定义 headers 不是有效 JSON。'); }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('自定义 headers 必须是 JSON 对象。');
+  if (!Object.values(parsed).every((item) => typeof item === 'string')) throw new Error('自定义 headers 的键和值都必须是字符串。');
+  return parsed as Record<string, string>;
+}
 
 const defaultSave: SaveFile = SaveFileSchema.parse({
   schemaVersion: 1,
@@ -43,6 +58,9 @@ export function App() {
   const [input, setInput] = useState('');
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [provider, setProvider] = useState<ProviderConfig>(newProvider);
+  const [bindings, setBindings] = useState<ProviderBinding[]>([]);
+  const [defaultProviderId, setDefaultProviderId] = useState('');
+  const [headersDraft, setHeadersDraft] = useState('{}');
   const [models, setModels] = useState<string[]>([]);
   const [requestStatus, setRequestStatus] = useState<RequestStatus>('idle');
   const [busy, setBusy] = useState(false);
@@ -51,12 +69,20 @@ export function App() {
   const [debug, setDebug] = useState({ prompt: '', raw: '', ops: '本阶段尚未解析 ops。', state: JSON.stringify(defaultSave, null, 2) });
 
   useEffect(() => {
-    void Promise.all([contentDb.characters.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), providerDb.providers.toArray()]).then(([c, w, p, ps]) => {
+    void Promise.all([contentDb.characters.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.settings.get('defaultProviderId')]).then(([c, w, p, ps, bs, setting]) => {
       setCharacters(c); setWorldbooks(w); setPresets(p); setProviders(ps);
+      setBindings(bs);
       if (c[0]) setSelectedCharacterId(c[0].id);
       if (ps[0]) setProvider(ps[0]);
+      const resolvedDefaultProviderId = ps.some((item) => item.id === setting?.value) ? setting?.value ?? '' : ps[0]?.id ?? '';
+      setDefaultProviderId(resolvedDefaultProviderId);
+      if (resolvedDefaultProviderId && setting?.value !== resolvedDefaultProviderId) {
+        void providerDb.settings.put(ProviderSettingSchema.parse({ key: 'defaultProviderId', value: resolvedDefaultProviderId }));
+      }
     });
   }, []);
+
+  useEffect(() => { setHeadersDraft(JSON.stringify(provider.headers ?? {}, null, 2)); }, [provider.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,9 +125,12 @@ export function App() {
     const text = input.trim();
     const next = text ? [...messages, { role: 'user' as const, content: text }] : messages;
     if (!hasQueuedUserMessage(next) && next.length === 0) { setFeedback({ tone: 'error', text: '请先发送第一条消息。' }); return; }
+    const routedProvider = resolveProviderForTask(providers, bindings, 'narrate_main', defaultProviderId);
     let parsed: ProviderConfig;
-    try { parsed = ProviderConfigSchema.parse(provider); }
-    catch { setRequestStatus('error'); setFeedback({ tone: 'error', text: 'Provider 配置无效，请在设置中检查基础 URL、模型与渠道。' }); return; }
+    try {
+      if (!routedProvider) throw new Error('请先保存并设置默认 Provider。');
+      parsed = ProviderConfigSchema.parse(routedProvider);
+    } catch (error) { setRequestStatus('error'); setFeedback({ tone: 'error', text: errorMessage(error, 'Provider 配置无效，请在设置中检查基础 URL、模型与渠道。') }); return; }
 
     setMessages(next); setInput(''); setBusy(true); setRequestStatus('requesting'); setFeedback(null);
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
@@ -125,25 +154,59 @@ export function App() {
     } finally { setBusy(false); }
   }
 
+  function parseEditedProvider(): ProviderConfig {
+    const candidate = provider.kind === 'generic' ? { ...provider, headers: parseHeadersDraft(headersDraft) } : provider;
+    return ProviderConfigSchema.parse(candidate);
+  }
+
   async function saveProviderConfig() {
     try {
-      const parsed = ProviderConfigSchema.parse(provider);
-      await providerDb.providers.put(parsed);
+      const parsed = parseEditedProvider();
+      const needsDefault = !defaultProviderId || !providers.some((item) => item.id === defaultProviderId);
+      await providerDb.transaction('rw', providerDb.providers, providerDb.settings, async () => {
+        await providerDb.providers.put(parsed);
+        if (needsDefault) await providerDb.settings.put(ProviderSettingSchema.parse({ key: 'defaultProviderId', value: parsed.id }));
+      });
       setProviders(await providerDb.providers.toArray()); setProvider(parsed); setRequestStatus('success');
+      if (needsDefault) setDefaultProviderId(parsed.id);
       setFeedback({ tone: 'success', text: 'Provider 配置已保存到此浏览器。' });
-    } catch { setRequestStatus('error'); setFeedback({ tone: 'error', text: 'Provider 配置无效，请检查基础 URL、模型和数值参数。' }); }
+    } catch (error) { setRequestStatus('error'); setFeedback({ tone: 'error', text: errorMessage(error, 'Provider 配置无效，请检查基础 URL、模型和数值参数。') }); }
   }
 
   async function deleteProviderConfig() {
     if (!providers.some((item) => item.id === provider.id)) return;
-    const bindings = await providerDb.bindings.toArray();
-    await providerDb.transaction('rw', providerDb.providers, providerDb.bindings, async () => {
+    const storedBindings = await providerDb.bindings.toArray();
+    const remaining = providers.filter((item) => item.id !== provider.id);
+    const nextDefaultProviderId = remaining.some((item) => item.id === defaultProviderId) ? defaultProviderId : remaining[0]?.id ?? '';
+    await providerDb.transaction('rw', providerDb.providers, providerDb.bindings, providerDb.settings, async () => {
       await providerDb.providers.delete(provider.id);
-      await providerDb.bindings.bulkDelete(bindings.filter((binding) => binding.providerId === provider.id).map((binding) => binding.taskId));
+      await providerDb.bindings.bulkDelete(storedBindings.filter((binding) => binding.providerId === provider.id).map((binding) => binding.taskId));
+      if (nextDefaultProviderId) await providerDb.settings.put(ProviderSettingSchema.parse({ key: 'defaultProviderId', value: nextDefaultProviderId }));
+      else await providerDb.settings.delete('defaultProviderId');
     });
-    const remaining = await providerDb.providers.toArray();
-    setProviders(remaining); setProvider(remaining[0] ?? newProvider()); setModels([]);
+    setProviders(remaining); setBindings(storedBindings.filter((binding) => binding.providerId !== provider.id)); setDefaultProviderId(nextDefaultProviderId);
+    setProvider(remaining[0] ?? newProvider()); setModels([]);
     setFeedback({ tone: 'success', text: 'Provider 配置已删除，相关任务绑定已清理。' });
+  }
+
+  async function updateDefaultProvider(providerId: string) {
+    if (!providers.some((item) => item.id === providerId)) return;
+    await providerDb.settings.put(ProviderSettingSchema.parse({ key: 'defaultProviderId', value: providerId }));
+    setDefaultProviderId(providerId);
+    setFeedback({ tone: 'success', text: '默认 Provider 已更新。' });
+  }
+
+  async function updateTaskBinding(taskId: TaskId, providerId: string) {
+    if (!providerId) {
+      await providerDb.bindings.delete(taskId);
+      setBindings((items) => items.filter((item) => item.taskId !== taskId));
+    } else {
+      if (!providers.some((item) => item.id === providerId)) return;
+      const binding = ProviderBindingSchema.parse({ taskId, providerId });
+      await providerDb.bindings.put(binding);
+      setBindings((items) => [...items.filter((item) => item.taskId !== taskId), binding]);
+    }
+    setFeedback({ tone: 'success', text: `${TASK_LABELS[taskId]}路由已更新。` });
   }
 
   async function discoverModels() {
@@ -164,11 +227,11 @@ export function App() {
   async function testConnection() {
     setRequestStatus('requesting'); setFeedback({ tone: 'info', text: '正在测试连接…' });
     try {
-      const result = await testProviderConnection(ProviderConfigSchema.parse(provider));
+      const result = await testProviderConnection(parseEditedProvider());
       const message = `${result.message}${result.suggestion ? `：${result.suggestion}` : ''}`;
       setRequestStatus(result.ok ? 'success' : 'error'); setFeedback({ tone: result.ok ? 'success' : 'error', text: message });
       setDebug((current) => ({ ...current, raw: message }));
-    } catch { setRequestStatus('error'); setFeedback({ tone: 'error', text: 'Provider 配置无效，请检查基础 URL、模型与渠道。' }); }
+    } catch (error) { setRequestStatus('error'); setFeedback({ tone: 'error', text: errorMessage(error, 'Provider 配置无效，请检查基础 URL、模型与渠道。') }); }
   }
 
   async function addContent(kind: ContentKind) {
@@ -243,7 +306,7 @@ export function App() {
       {tab === 'map' && <MapView onOpenChat={() => setTab('chat')} />}
       {tab === 'chat' && <ChatView characters={characters} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} />}
-      {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} />}
+      {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} />}
     </main>
     <nav className="bottom-nav">{([['map', '地图'], ['chat', '聊天'], ['library', '资料'], ['settings', '设置']] as const).map(([id, label]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
   </div>;
@@ -259,9 +322,54 @@ function ChatView(props: { characters: CharacterCard[]; selectedCharacterId: str
   return <section className="chat-screen"><div className="section-heading"><div><span className="eyebrow">日常相遇</span><h2>{props.characters.find((item) => item.id === props.selectedCharacterId)?.name ?? '选择角色聊天'}</h2></div>{statusText && <span className={`request-status ${props.requestStatus}`}>{statusText}</span>}</div><div className="character-picker"><label>聊天角色<select value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">未选择</option>{props.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div><div className="messages">{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{props.messages.map((message, index) => <div className={`message ${message.role}`} key={`${message.role}-${index}`}>{message.content}</div>)}{props.busy && props.requestStatus === 'requesting' && <div className="message assistant pending">等待回复…</div>}</div><div className="composer"><textarea value={props.input} onChange={(event) => props.setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void props.onAppend(); } }} placeholder="说点什么……" /><div className="composer-actions"><button className="secondary" onClick={() => void props.onAppend()} disabled={props.busy || !props.input.trim()}>发送消息</button><button onClick={() => void props.onGenerate()} disabled={props.busy || !canGenerate}>生成回复</button></div></div></section>;
 }
 
-function SettingsView(props: { provider: ProviderConfig; setProvider: (provider: ProviderConfig) => void; providers: ProviderConfig[]; models: string[]; requestStatus: RequestStatus; onNewProvider: () => void; onSaveProvider: () => Promise<void>; onDeleteProvider: () => Promise<void>; onDiscoverModels: () => Promise<void>; onTestConnection: () => Promise<void>; debug: { prompt: string; raw: string; ops: string; state: string }; debugTab: 'Prompt' | 'Raw' | 'Ops' | 'State'; setDebugTab: (tab: 'Prompt' | 'Raw' | 'Ops' | 'State') => void }) {
+function SettingsView(props: {
+  provider: ProviderConfig;
+  setProvider: (provider: ProviderConfig) => void;
+  providers: ProviderConfig[];
+  bindings: ProviderBinding[];
+  defaultProviderId: string;
+  headersDraft: string;
+  setHeadersDraft: (value: string) => void;
+  models: string[];
+  requestStatus: RequestStatus;
+  onNewProvider: () => void;
+  onSaveProvider: () => Promise<void>;
+  onDeleteProvider: () => Promise<void>;
+  onDiscoverModels: () => Promise<void>;
+  onTestConnection: () => Promise<void>;
+  onDefaultProviderChange: (providerId: string) => Promise<void>;
+  onBindingChange: (taskId: TaskId, providerId: string) => Promise<void>;
+  debug: { prompt: string; raw: string; ops: string; state: string };
+  debugTab: 'Prompt' | 'Raw' | 'Ops' | 'State';
+  setDebugTab: (tab: 'Prompt' | 'Raw' | 'Ops' | 'State') => void;
+}) {
   const isSaved = props.providers.some((item) => item.id === props.provider.id);
-  return <section><div className="section-heading"><div><span className="eyebrow">本地设置</span><h2>Provider</h2></div>{props.requestStatus === 'requesting' && <span className="request-status requesting">请求中…</span>}</div><div className="provider-card"><div className="field-with-action"><select aria-label="Provider 配置" value={isSaved ? props.provider.id : ''} onChange={(event) => { const found = props.providers.find((item) => item.id === event.target.value); if (found) props.setProvider(found); }}><option value="">未保存的新配置</option>{props.providers.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.kind}</option>)}</select><button className="secondary" onClick={props.onNewProvider}>新建</button></div><label>渠道<select value={props.provider.kind} onChange={(event) => props.setProvider({ ...props.provider, kind: event.target.value as ProviderConfig['kind'] })}><option value="openai-compatible">OpenAI 兼容</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option><option value="generic">Generic</option></select></label><label>配置名称<input value={props.provider.name} onChange={(event) => props.setProvider({ ...props.provider, name: event.target.value })} /></label><label>基础 URL 或完整请求端点<input placeholder="https://example.com/v1" value={props.provider.endpoint} onChange={(event) => props.setProvider({ ...props.provider, endpoint: event.target.value })} /></label><label>API key（仅本地）<input type="password" value={props.provider.apiKey ?? ''} onChange={(event) => props.setProvider({ ...props.provider, apiKey: event.target.value })} /></label><label>模型<input list="model-list" placeholder="可手动填写" value={props.provider.model} onChange={(event) => props.setProvider({ ...props.provider, model: event.target.value })} /></label><datalist id="model-list">{props.models.map((model) => <option key={model} value={model} />)}</datalist><label>温度 {props.provider.temperature.toFixed(2)}<input type="range" min="0" max="2" step="0.05" value={props.provider.temperature} onChange={(event) => props.setProvider({ ...props.provider, temperature: Number(event.target.value) })} /></label><div className="button-row"><button onClick={() => void props.onSaveProvider()}>保存配置</button><button className="secondary" onClick={() => void props.onDiscoverModels()}>拉取模型</button><button className="secondary" onClick={() => void props.onTestConnection()}>连接测试</button>{isSaved && <button className="danger" onClick={() => void props.onDeleteProvider()}>删除配置</button>}</div></div><details className="advanced"><summary>高级与调试</summary><DebugView debug={props.debug} tab={props.debugTab} setTab={props.setDebugTab} /></details></section>;
+  return <section>
+    <div className="section-heading"><div><span className="eyebrow">本地设置</span><h2>Provider</h2></div>{props.requestStatus === 'requesting' && <span className="request-status requesting">请求中…</span>}</div>
+    <div className="provider-card">
+      <div className="field-with-action"><select aria-label="Provider 配置" value={isSaved ? props.provider.id : ''} onChange={(event) => { const found = props.providers.find((item) => item.id === event.target.value); if (found) props.setProvider(found); }}><option value="">未保存的新配置</option>{props.providers.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.kind}</option>)}</select><button className="secondary" onClick={props.onNewProvider}>新建</button></div>
+      <label>渠道<select value={props.provider.kind} onChange={(event) => props.setProvider({ ...props.provider, kind: event.target.value as ProviderConfig['kind'] })}><option value="openai-compatible">OpenAI 兼容</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option><option value="generic">Generic</option></select></label>
+      <label>配置名称<input value={props.provider.name} onChange={(event) => props.setProvider({ ...props.provider, name: event.target.value })} /></label>
+      <label>基础 URL 或完整请求端点<input placeholder="https://example.com/v1" value={props.provider.endpoint} onChange={(event) => props.setProvider({ ...props.provider, endpoint: event.target.value })} /></label>
+      <label>API key（仅本地）<input type="password" value={props.provider.apiKey ?? ''} onChange={(event) => props.setProvider({ ...props.provider, apiKey: event.target.value })} /></label>
+      <label>模型<input list="model-list" placeholder="可手动填写" value={props.provider.model} onChange={(event) => props.setProvider({ ...props.provider, model: event.target.value })} /></label>
+      <datalist id="model-list">{props.models.map((model) => <option key={model} value={model} />)}</datalist>
+      <label>温度 {props.provider.temperature.toFixed(2)}<input type="range" min="0" max="2" step="0.05" value={props.provider.temperature} onChange={(event) => props.setProvider({ ...props.provider, temperature: Number(event.target.value) })} /></label>
+      {props.provider.kind === 'generic' && <div className="generic-fields">
+        <label>自定义 headers（JSON）<textarea spellCheck={false} value={props.headersDraft} onChange={(event) => props.setHeadersDraft(event.target.value)} /></label>
+        <label>请求体模板<textarea spellCheck={false} placeholder={'{"model":{{model}},"messages":{{messages}},"stream":{{stream}}}'} value={props.provider.bodyTemplate ?? ''} onChange={(event) => props.setProvider({ ...props.provider, bodyTemplate: event.target.value || undefined })} /></label>
+        <label>响应文本路径<input placeholder="$.choices[0].message.content" value={props.provider.responsePath ?? ''} onChange={(event) => props.setProvider({ ...props.provider, responsePath: event.target.value || undefined })} /></label>
+        <label>流式分帧<select value={props.provider.streamFraming ?? 'sse'} onChange={(event) => props.setProvider({ ...props.provider, streamFraming: event.target.value as ProviderConfig['streamFraming'] })}><option value="sse">SSE</option><option value="ndjson">NDJSON</option><option value="json">普通 JSON</option></select></label>
+      </div>}
+      <div className="button-row"><button onClick={() => void props.onSaveProvider()}>保存配置</button><button className="secondary" onClick={() => void props.onDiscoverModels()}>拉取模型</button><button className="secondary" onClick={() => void props.onTestConnection()}>连接测试</button>{isSaved && <button className="danger" onClick={() => void props.onDeleteProvider()}>删除配置</button>}</div>
+    </div>
+    <div className="provider-card routing-card">
+      <h3>任务路由</h3>
+      <label>默认 Provider<select aria-label="默认 Provider" value={props.defaultProviderId} disabled={props.providers.length === 0} onChange={(event) => void props.onDefaultProviderChange(event.target.value)}><option value="">未设置</option>{props.providers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <div className="routing-list">{TASK_IDS.map((taskId) => <label key={taskId}><span>{TASK_LABELS[taskId]}<small>{taskId}</small></span><select aria-label={`${TASK_LABELS[taskId]} Provider`} value={props.bindings.find((binding) => binding.taskId === taskId)?.providerId ?? ''} disabled={props.providers.length === 0} onChange={(event) => void props.onBindingChange(taskId, event.target.value)}><option value="">使用默认 Provider</option>{props.providers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>)}</div>
+    </div>
+    <details className="advanced"><summary>高级与调试</summary><DebugView debug={props.debug} tab={props.debugTab} setTab={props.setDebugTab} /></details>
+  </section>;
 }
 
 function LibraryView(props: { characters: CharacterCard[]; worldbooks: WorldbookEntry[]; presets: Preset[]; name: string; setName: (value: string) => void; draftText: string; setDraftText: (value: string) => void; editing: { kind: ContentKind; id: string } | null; setEditing: (editing: { kind: ContentKind; id: string } | null) => void; addContent: (kind: ContentKind) => Promise<void>; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void>; onExportSave: () => Promise<void>; onImportSave: (file?: File) => Promise<void> }) {
