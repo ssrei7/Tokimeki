@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { migrateSave } from '../migrations';
 import { SaveFileSchema, type SaveFile } from '../schema/save';
 
 export interface ZipManifest { type: 'save' | 'character' | 'world' | 'events'; appVersion: string; schemaVersion: number }
@@ -17,7 +18,7 @@ export async function importSaveZip(input: Blob | ArrayBuffer | Uint8Array): Pro
   const source = typeof Blob !== 'undefined' && input instanceof Blob ? await input.arrayBuffer() : input;
   const zip = await JSZip.loadAsync(source); const manifestFile = zip.file('manifest.json'); const saveFile = zip.file('save.json');
   if (!manifestFile || !saveFile) throw new Error('Zip must contain manifest.json and save.json');
-  const manifest = JSON.parse(await manifestFile.async('text')) as ZipManifest; const save = SaveFileSchema.parse(JSON.parse(await saveFile.async('text')));
+  const manifest = JSON.parse(await manifestFile.async('text')) as ZipManifest; const save = migrateSave(JSON.parse(await saveFile.async('text')));
   const assets = new Map<string, Uint8Array>();
   for (const [name, entry] of Object.entries(zip.files)) if (name.startsWith('assets/') && !entry.dir) assets.set(name.slice('assets/'.length), await entry.async('uint8array'));
   const extras: Record<string, unknown> = {};

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PromptAssembler } from './core/prompt/assembler';
-import type { CharacterCard, ChatMessage, Preset, WorldbookEntry } from './data/content';
+import type { CharacterCard, ChatMessage, ChatRecord, Preset, WorldbookEntry } from './data/content';
 import { contentDb, deleteCharacter, deletePreset, deleteWorldbook, loadChat, saveCharacter, saveChat, savePreset, saveWorldbook } from './data/db/content';
 import { exportSaveZip, importSaveZip } from './data/io/zip';
 import { SaveFileSchema, type SaveFile } from './data/schema/save';
@@ -198,7 +198,9 @@ export function App() {
   }
 
   async function downloadSave() {
-    const blob = await exportSaveZip(defaultSave, {}, { characters, worldbooks, presets, chat: { characterId: selectedCharacterId, messages } });
+    if (selectedCharacterId) await saveChat({ characterId: selectedCharacterId, messages, updatedAt: now() });
+    const chats = await contentDb.chats.toArray();
+    const blob = await exportSaveZip(defaultSave, {}, { characters, worldbooks, presets, chats });
     const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
     anchor.href = url; anchor.download = 'tokimeki-save.zip'; anchor.click(); URL.revokeObjectURL(url);
     setFeedback({ tone: 'success', text: '存档已导出；Provider 配置与 API key 未包含在内。' });
@@ -211,10 +213,16 @@ export function App() {
       if (Array.isArray(extra.characters)) { const items = await Promise.all((extra.characters as CharacterCard[]).map(saveCharacter)); setCharacters(items); if (items[0]) setSelectedCharacterId(items[0].id); }
       if (Array.isArray(extra.worldbooks)) { const items = await Promise.all((extra.worldbooks as WorldbookEntry[]).map(saveWorldbook)); setWorldbooks(items); }
       if (Array.isArray(extra.presets)) { const items = await Promise.all((extra.presets as Preset[]).map(savePreset)); setPresets(items); }
-      const chat = extra.chat as { characterId?: string; messages?: ChatMessage[] } | undefined;
-      if (chat?.characterId && Array.isArray(chat.messages)) {
-        const record = await saveChat({ characterId: chat.characterId, messages: chat.messages, updatedAt: now() });
-        setSelectedCharacterId(record.characterId); setMessages(record.messages); setLoadedChatCharacterId(record.characterId);
+      const importedChats = Array.isArray(extra.chats)
+        ? await Promise.all((extra.chats as ChatRecord[]).map(saveChat))
+        : [];
+      const legacyChat = extra.chat as { characterId?: string; messages?: ChatMessage[] } | undefined;
+      if (importedChats.length === 0 && legacyChat?.characterId && Array.isArray(legacyChat.messages)) {
+        importedChats.push(await saveChat({ characterId: legacyChat.characterId, messages: legacyChat.messages, updatedAt: now() }));
+      }
+      const activeImportedChat = importedChats.find((record) => record.characterId === selectedCharacterId) ?? importedChats[0];
+      if (activeImportedChat) {
+        setSelectedCharacterId(activeImportedChat.characterId); setMessages(activeImportedChat.messages); setLoadedChatCharacterId(activeImportedChat.characterId);
       }
       setDebug((current) => ({ ...current, state: JSON.stringify(imported.save, null, 2), raw: '已导入存档与内容；Provider 设置未改变。' }));
       setFeedback({ tone: 'success', text: '导入成功；Provider 配置与 API key 未覆盖。' });
