@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PromptAssembler } from './core/prompt/assembler';
+import type { AssembledPrompt } from './core/prompt/assembler';
+import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
+import { EventBus } from './core/events/bus';
 import type { CharacterCard, ChatMessage, ChatRecord, Preset, WorldbookEntry } from './data/content';
 import { contentDb, deleteCharacter, deletePreset, deleteWorldbook, loadChat, saveCharacter, saveChat, savePreset, saveWorldbook } from './data/db/content';
 import { exportSaveZip, importSaveZip } from './data/io/zip';
@@ -24,7 +27,7 @@ const newProvider = (): ProviderConfig => ({ id: `provider-${Date.now()}`, name:
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 const TASK_LABELS: Record<TaskId, string> = {
   narrate_main: '主线叙述', narrate_daily: '日常对话', topic_tree: '话题树', world_morning: '晨间世界更新',
-  world_gen: '世界生成', map_gen: '地图生成', npc_batch: 'NPC 批处理', extract_ops: 'Ops 抽取',
+  world_gen: '世界生成', map_gen: '地图生成', npc_batch: 'NPC 批处理', extract_ops: '状态变化整理',
   summarize_day: '日记总结', summarize_chapter: '章节总结', image: '图像生成', tts: '语音生成',
 };
 
@@ -66,7 +69,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [debugTab, setDebugTab] = useState<'Prompt' | 'Raw' | 'Ops' | 'State'>('Prompt');
-  const [debug, setDebug] = useState({ prompt: '', raw: '', ops: '本阶段尚未解析 ops。', state: JSON.stringify(defaultSave, null, 2) });
+  const [debug, setDebug] = useState<{ prompt: AssembledPrompt | null; raw: string; ops: string; state: string }>({ prompt: null, raw: '', ops: '本阶段尚未解析状态变化。', state: JSON.stringify(defaultSave, null, 2) });
 
   useEffect(() => {
     void Promise.all([contentDb.characters.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.settings.get('defaultProviderId')]).then(([c, w, p, ps, bs, setting]) => {
@@ -101,13 +104,12 @@ export function App() {
   }, [loadedChatCharacterId, messages, selectedCharacterId]);
 
   const activeCharacter = characters.find((item) => item.id === selectedCharacterId);
+  const promptEvents = useMemo(() => new EventBus(), []);
   const assembler = useMemo(() => {
     const instance = new PromptAssembler();
-    instance.register({ id: 'format_contract', role: 'system', priority: 100, order: 0, build: () => '你是一个开放世界叙事游戏的角色，只输出自然语言叙述。' });
-    instance.register({ id: 'character_core', role: 'system', priority: 95, order: 1, build: () => activeCharacter ? `${activeCharacter.name}\n${activeCharacter.description}\n${activeCharacter.personality}` : null });
-    instance.register({ id: 'worldbook', role: 'system', priority: 80, order: 2, build: () => worldbooks.filter((entry) => entry.enabled).map((entry) => entry.content).join('\n') || null });
+    for (const block of createDefaultPromptBlocks()) instance.register(block);
     return instance;
-  }, [activeCharacter, worldbooks]);
+  }, []);
 
   async function appendMessage() {
     const text = input.trim();
@@ -136,10 +138,12 @@ export function App() {
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
     let assistant = '';
     const latestInput = [...next].reverse().find((message) => message.role === 'user')?.content ?? '';
-    const assembled = assembler.assemble({ input: latestInput }, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
-    setDebug((current) => ({ ...current, prompt: JSON.stringify(assembled, null, 2) }));
+    const promptFacts = { input: latestInput, character: activeCharacter, worldbooks, history: next, world: defaultSave.world };
+    promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
+    const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
+    setDebug((current) => ({ ...current, prompt: assembled }));
     try {
-      await streamChat(parsed, assembled.messages.concat(next), (delta) => {
+      await streamChat(parsed, assembled.messages, (delta) => {
         assistant += delta;
         setMessages([...next, { role: 'assistant', content: assistant }]);
       }, { onStatus: (status) => setRequestStatus(status) });
@@ -339,7 +343,7 @@ function SettingsView(props: {
   onTestConnection: () => Promise<void>;
   onDefaultProviderChange: (providerId: string) => Promise<void>;
   onBindingChange: (taskId: TaskId, providerId: string) => Promise<void>;
-  debug: { prompt: string; raw: string; ops: string; state: string };
+  debug: { prompt: AssembledPrompt | null; raw: string; ops: string; state: string };
   debugTab: 'Prompt' | 'Raw' | 'Ops' | 'State';
   setDebugTab: (tab: 'Prompt' | 'Raw' | 'Ops' | 'State') => void;
 }) {
@@ -374,14 +378,19 @@ function SettingsView(props: {
 
 function LibraryView(props: { characters: CharacterCard[]; worldbooks: WorldbookEntry[]; presets: Preset[]; name: string; setName: (value: string) => void; draftText: string; setDraftText: (value: string) => void; editing: { kind: ContentKind; id: string } | null; setEditing: (editing: { kind: ContentKind; id: string } | null) => void; addContent: (kind: ContentKind) => Promise<void>; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void>; onExportSave: () => Promise<void>; onImportSave: (file?: File) => Promise<void> }) {
   const edit = (kind: ContentKind, item: { id: string; name: string; text: string }) => { props.setEditing({ kind, id: item.id }); props.setName(item.name); props.setDraftText(item.text); };
-  return <section><div className="section-heading"><div><span className="eyebrow">本地资料</span><h2>角色 / 世界书 / 预设</h2></div></div><div className="editor-card"><input placeholder="名称" value={props.name} onChange={(event) => props.setName(event.target.value)} /><textarea placeholder="描述或内容" value={props.draftText} onChange={(event) => props.setDraftText(event.target.value)} /><div className="button-row"><button onClick={() => void props.addContent('character')}>保存角色卡</button><button onClick={() => void props.addContent('worldbook')}>保存世界书</button><button onClick={() => void props.addContent('preset')}>保存预设</button></div></div><ContentList title="角色卡" kind="character" items={props.characters.map((item) => ({ ...item, text: item.description }))} onEdit={edit} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><ContentList title="世界书" kind="worldbook" items={props.worldbooks.map((item) => ({ ...item, text: item.content }))} onEdit={edit} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><ContentList title="预设" kind="preset" items={props.presets.map((item) => ({ ...item, text: item.systemPrompt }))} onEdit={edit} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><div className="io-card"><button onClick={() => void props.onExportSave()}>导出 save.zip</button><label className="file-button">导入 save.zip<input type="file" accept=".zip" onChange={(event) => void props.onImportSave(event.target.files?.[0])} /></label></div></section>;
+  return <section><div className="section-heading"><div><span className="eyebrow">本地资料</span><h2>角色 / 世界书 / 预设</h2></div></div><div className="editor-card"><input placeholder="名称" value={props.name} onChange={(event) => props.setName(event.target.value)} /><textarea placeholder="描述或内容" value={props.draftText} onChange={(event) => props.setDraftText(event.target.value)} /><div className="button-row"><button onClick={() => void props.addContent('character')}>保存角色卡</button><button onClick={() => void props.addContent('worldbook')}>保存世界书</button><button onClick={() => void props.addContent('preset')}>保存预设</button></div></div><ContentList title="角色卡" kind="character" items={props.characters.map((item) => ({ ...item, text: item.description }))} onEdit={edit} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><ContentList title="世界书" kind="worldbook" items={props.worldbooks.map((item) => ({ ...item, text: item.content }))} onEdit={edit} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><ContentList title="预设" kind="preset" items={props.presets.map((item) => ({ ...item, text: item.systemPrompt }))} onEdit={edit} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><div className="io-card"><div><strong>世界存档</strong><p className="io-scope">包含角色卡、世界书、预设和全部聊天；不包含 Provider 配置与 API key。</p></div><button onClick={() => void props.onExportSave()}>导出世界存档</button><label className="file-button">导入世界存档<input type="file" accept=".zip" onChange={(event) => void props.onImportSave(event.target.files?.[0])} /></label></div></section>;
 }
 
 function ContentList(props: { title: string; kind: ContentKind; items: Array<{ id: string; name: string; text: string }>; onEdit: (kind: ContentKind, item: { id: string; name: string; text: string }) => void; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void> }) {
   return <div className="list-card"><div className="list-heading"><h3>{props.title}</h3><label className="file-button">导入<input type="file" accept=".json" onChange={(event) => void props.onImport(props.kind, event.target.files?.[0])} /></label></div>{props.items.length === 0 ? <p className="empty">暂无内容</p> : props.items.map((item) => <div className="list-row" key={item.id}><span>{item.name}</span><span className="button-row"><button onClick={() => props.onEdit(props.kind, item)}>编辑</button><button onClick={() => props.onExport(props.kind, item, item.name)}>导出</button><button onClick={() => void props.onDelete(props.kind, item.id)}>删除</button></span></div>)}</div>;
 }
 
-function DebugView(props: { debug: { prompt: string; raw: string; ops: string; state: string }; tab: 'Prompt' | 'Raw' | 'Ops' | 'State'; setTab: (tab: 'Prompt' | 'Raw' | 'Ops' | 'State') => void }) {
-  const content = props.tab === 'Prompt' ? props.debug.prompt : props.tab === 'Raw' ? props.debug.raw : props.tab === 'Ops' ? props.debug.ops : props.debug.state;
-  return <div className="debug-view"><div className="debug-tab-buttons">{(['Prompt', 'Raw', 'Ops', 'State'] as const).map((tab) => <button key={tab} className={props.tab === tab ? 'selected' : ''} onClick={() => props.setTab(tab)}>{tab}</button>)}</div><article className="debug-output"><pre>{content || '暂无数据'}</pre></article></div>;
+function DebugView(props: { debug: { prompt: AssembledPrompt | null; raw: string; ops: string; state: string }; tab: 'Prompt' | 'Raw' | 'Ops' | 'State'; setTab: (tab: 'Prompt' | 'Raw' | 'Ops' | 'State') => void }) {
+  const renderPrompt = () => {
+    const prompt = props.debug.prompt;
+    if (!prompt) return <p className="debug-empty">暂无 Prompt 数据</p>;
+    return <div className="prompt-debug"><div className="prompt-summary">总计 {prompt.estimatedTokens} / {prompt.budget} tokens</div>{prompt.blocks.map((block) => { const state = block.skipped ? '无数据' : block.dropped ? '已丢弃' : block.truncated ? '已截断' : '正常'; return <details key={block.id} className={`prompt-block ${block.skipped ? 'skipped' : block.dropped ? 'dropped' : block.truncated ? 'truncated' : ''}`}><summary><span>{block.id}</span><span>{block.estimatedTokens} tokens · {state}</span></summary>{block.text ? <pre>{block.text}</pre> : <p className="debug-empty">此块当前没有可注入内容。</p>}</details>; })}</div>;
+  };
+  const content = props.tab === 'Raw' ? props.debug.raw : props.tab === 'Ops' ? props.debug.ops : props.debug.state;
+  return <div className="debug-view"><div className="debug-tab-buttons">{(['Prompt', 'Raw', 'Ops', 'State'] as const).map((tab) => <button key={tab} className={props.tab === tab ? 'selected' : ''} onClick={() => props.setTab(tab)}>{tab}</button>)}</div><article className="debug-output">{props.tab === 'Prompt' ? renderPrompt() : <pre>{content || '暂无数据'}</pre>}</article></div>;
 }

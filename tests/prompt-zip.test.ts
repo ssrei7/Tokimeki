@@ -1,12 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
 import { PromptAssembler } from '../src/core/prompt/assembler';
+import { createDefaultPromptBlocks, DEFAULT_PROMPT_BLOCK_IDS } from '../src/core/prompt/default-blocks';
 import { exportSaveZip, importSaveZip } from '../src/data/io/zip';
 import { UnsupportedSchemaVersionError } from '../src/data/migrations/types';
 import type { SaveFile } from '../src/data/schema/save';
 
 describe('prompt assembler', () => {
   it('orders blocks and reports truncation', () => { const assembler = new PromptAssembler(); assembler.register({ id: 'low', role: 'system', priority: 10, order: 2, build: () => 'low '.repeat(20) }); assembler.register({ id: 'high', role: 'system', priority: 100, order: 1, build: () => 'high' }); const result = assembler.assemble({}, { budget: 4 }); expect(result.blocks.find((b) => b.id === 'high')?.dropped).toBe(false); expect(result.estimatedTokens).toBeLessThanOrEqual(4); });
+
+  it('registers all default blocks and reports blocks without stage data as skipped', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks()) assembler.register(block);
+    expect(assembler.listBlocks().map((block) => block.id)).toEqual([...DEFAULT_PROMPT_BLOCK_IDS]);
+    const result = assembler.assemble({ input: '', worldbooks: [], history: [], world: undefined }, { budget: 200, task: 'narrate_main' });
+    expect(result.blocks).toHaveLength(12);
+    expect(result.blocks.find((block) => block.id === 'relationship_state')?.skipped).toBe(true);
+    expect(result.messages.some((message) => message.content.includes('开放世界叙事游戏'))).toBe(true);
+  });
 });
 
 describe('save zip IO', () => {
