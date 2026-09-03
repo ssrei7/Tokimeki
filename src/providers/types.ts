@@ -1,0 +1,38 @@
+import { z } from 'zod';
+
+export const TaskIdSchema = z.enum([
+  'narrate_main', 'narrate_daily', 'topic_tree', 'world_morning', 'world_gen',
+  'map_gen', 'npc_batch', 'extract_ops', 'summarize_day', 'summarize_chapter', 'image', 'tts',
+]);
+export type TaskId = z.infer<typeof TaskIdSchema>;
+
+export const ProviderKindSchema = z.enum(['openai-compatible', 'anthropic', 'gemini', 'generic']);
+export type ProviderKind = z.infer<typeof ProviderKindSchema>;
+
+export const ProviderConfigSchema = z.object({
+  id: z.string().min(1), name: z.string().min(1), kind: ProviderKindSchema,
+  endpoint: z.string().url(), apiKey: z.string().optional(), model: z.string().min(1),
+  contextWindow: z.number().int().positive().default(8192), maxOutputTokens: z.number().int().positive().default(1024),
+  temperature: z.number().min(0).max(2).default(0.7), headers: z.record(z.string(), z.string()).optional(),
+  bodyTemplate: z.string().optional(), responsePath: z.string().optional(), streamFraming: z.enum(['sse', 'ndjson', 'json']).optional(),
+});
+export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
+
+export const ProviderBindingSchema = z.object({ taskId: TaskIdSchema, providerId: z.string().min(1) });
+export type ProviderBinding = z.infer<typeof ProviderBindingSchema>;
+
+export interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string }
+export interface ChatRequest { messages: ChatMessage[]; stream?: boolean }
+export interface PreparedRequest { url: string; init: RequestInit }
+
+export interface ProviderAdapter {
+  readonly kind: ProviderKind;
+  prepare(config: ProviderConfig, request: ChatRequest): PreparedRequest;
+  extractText(config: ProviderConfig, payload: unknown): string | null;
+  extractStreamText(config: ProviderConfig, chunk: string): string | null;
+}
+
+export type ConnectionErrorKind = 'cors' | 'unauthorized' | 'not_found' | 'timeout' | 'format' | 'network' | 'unknown';
+export interface ConnectionTestResult {
+  ok: boolean; kind: 'ok' | ConnectionErrorKind; message: string; status?: number; suggestion?: string; latencyMs: number;
+}
