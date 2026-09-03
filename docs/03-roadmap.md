@@ -1,0 +1,367 @@
+# 路线图
+
+每个阶段是一个**垂直切片**：跑通再扩规模，禁止同时铺开多个半成品系统（铁律 9）。
+验收标准均可手动操作验证，未全部通过不得进入下一阶段。
+
+## 总览
+
+| 阶段 | 一句话 | 难度 | schema |
+|---|---|---|---|
+| 0 | 能聊天 | 2 | v1 |
+| 1 | 能改变世界 | 3.5 | v2 |
+| 2 | 有一天 | 2.5 | v3 |
+| 3 | 有地方去 | 2.5 | v4 |
+| 4 | 有人可遇 | 2.5 | v5 |
+| 5 | 有事可做 | 3 | v6 |
+| 6 | 有方向 | 3 | v7 |
+| 7 | 有故事 | 3.5 | v8 |
+| 8 | 有生活 | 2.5 | v9 |
+| 9 | 有终端 | 2 | v10 |
+| 10 | 有生态 | 2.5 | v11 |
+
+依赖链上有一条容易搞错：**时间先于地图，地图先于相遇**。没有时间系统支撑的地图只是一张死背景板。
+
+阶段 4 是第一个值得给别人看的版本。阶段 6 之前不要评价"好不好玩"——在那之前玩家没有行动方向，空沙盒感是预期内的。
+
+界面美化不早于阶段 4（铁律 9）。
+
+阶段 0 起即采用手机竖屏优先的地图 App 式结构：默认入口为地图壳层，聊天、调试与管理页面通过底部导航/卡片进入；此处只验收布局骨架、触控尺寸、CSS 变量和组件插槽，不提前做装饰性美化。
+
+---
+
+## 阶段 0 · 能聊天
+
+**交付**
+- 项目骨架，按架构 8 节建目录；`core` 不 import `features` 的约束落地（lint 规则或约定 + 注释）
+- 存档 schema v1（`SaveFile` / `config` 全量，`world` 只含 `clock` + `player`）
+- 迁移框架：注册表、顺序执行、版本过高拒载、v0→v1 示例迁移 + 单元测试 + 旧版 fixture
+- Provider 管理：增删改、OpenAI 兼容 / Anthropic / Gemini 内置适配器 + 通用适配器（URL / header / body 模板 / JSONPath / 流式分帧）
+- 连接测试按钮，失败分类为 CORS / 401 / 404 / 超时 / 格式不符，给可读建议
+- TaskId → provider 绑定表，未绑定回落 `default`
+- 角色卡 CRUD + 世界书 CRUD + 预设 CRUD
+- Prompt 组装器：block 注册表、priority / order、token 预算与截断
+- 流式聊天界面（朴素样式，CSS 变量与组件插槽留对）
+- 地图 App 式响应式壳层（优先 360–430 CSS px 竖屏，地图入口 + 顶部状态区 + 可上拉卡片 + 底部导航；宽屏响应式扩展）
+- 调试面板四标签：Prompt / Raw / Ops（本阶段空壳）/ State
+- zip 导入导出（`manifest.json` + `save.json` + `assets/`），导出剔除 key
+
+### 提交拆分（阶段 0，严格按顺序）
+
+1. 项目骨架 + 存档 schema v1 + 迁移框架 + 迁移单元测试；跑通 build 与 test 后停下。
+2. Provider 管理 + 四个适配器 + 连接测试与错误分类 + TaskId 绑定表；跑通 build 与 test 后停下。
+3. 角色卡/世界书/预设 CRUD + Prompt 组装器 + 流式聊天界面 + 调试面板四标签 + zip 导入导出；跑通 build 与 test 后停下。
+
+每次提交完成后，按本文件末尾的“每阶段收尾清单”自检并报告，等待确认后再开始下一次提交；阶段 0 验收标准全部通过前不得进入阶段 1。
+
+**验收**
+1. 配一个 provider，连接测试通过
+2. 新建角色，与它流式对话，多轮不丢上下文
+3. 调试面板能看到最终 prompt 按 block 分组、各块 token 数、是否被裁
+4. 导出 zip，清空浏览器数据，重新导入后对话记录与角色完好
+5. 手工把存档 `schemaVersion` 改成 0，重新加载能自动迁移到 v1
+6. 把 `schemaVersion` 改成 999，加载被拒绝并提示升级
+7. `npm run build` 与 `npm test` 全绿
+8. 在窄屏竖屏（约 360–430 CSS px）下，地图入口、底部导航和聊天/调试页面均可滚动且主要控件可触达；宽屏布局不破坏同一信息架构
+
+**新增**：block 全部 12 个（见架构 5.2，缺数据的返回 null）；钩子总线搭好但只挂 `beforePromptAssemble`
+
+**做完你手上是**：一个可用的 SillyTavern 简版。别跳过——后面所有东西都长在组装器和存档结构上。
+
+---
+
+## 阶段 1 · 能改变世界
+
+**交付**
+- ops 注册表：`OpDefinition` / `registerOp` / `promptDoc` 自动汇总进 `format_contract` block
+- 三级降级解析：严格 parse → 宽松修复 → `extract_ops` 二段抽取；全败保留正文 + `opsFailed` 标记 + 重试与手动补录按钮
+- zod 白名单校验、未注册 op 丢弃 + 警告、`clamp` 限幅、单回合上限 `opsLimitPerTurn`
+- 通用 `stats` / `flags` / `inventory` 落地
+- 安全表达式求值器（expr-eval 封装），`Condition` 可用
+- 调试面板 Ops 标签：解析结果、校验失败项、clamp 触发、状态前后 diff
+- 内置 op：`add_stat` `set_stat` `set_flag` `give_item` `take_item` `add_memory`
+- 物品定义表 + 物品栏 UI
+
+**验收**
+1. AI 叙述"他递给你一朵花"，物品栏真的多一朵花，diff 面板显示变更
+2. 手工构造格式损坏的 ops 回复，正文照常显示，界面提示无状态变更，重试按钮可用
+3. AI 输出未注册的 op 名，被丢弃且警告可见，其余 op 正常执行
+4. AI 试图一次把某数值加 100，被 clamp 截断并记警告
+5. 在设置里加一个自定义 stat，AI 能通过 `add_stat` 修改它，无需改代码
+6. 条件表达式 `player.stats.money > 100` 能正确求值
+
+**schema**：v2 —— `world.stats` / `world.flags` / `world.items` / `player.inventory` / `relations`（仅 `memories`）
+
+**这是分水岭**：过了这关，项目从聊天变成游戏。这一步值得反复打磨，别急着往下走。
+
+---
+
+## 阶段 2 · 有一天
+
+**交付**
+- `CalendarConfig`（slots / 预设 leisure 6 / standard 4 / tight 3 / sandbox 无限）
+- `Clock` + `slotsUsedToday` + 时段推进
+- `ActionCostTable`，`energyCost` 列占位不启用
+- 夜间结算：`DailySettlement` 全字段
+- 日记生成（`summarize_day` 任务：每天最多一次 API 调用；无 API 或失败时使用确定性本地摘要）
+- 日记编辑 UI：用户可修改并保存生成后的文本，保存 `editedAt`，后续晨报与 prompt 使用编辑后的内容
+- 每日自动快照 + 回到指定天（保留最近 N 天全量）
+- 结算页 UI：今日足迹、遇到了谁（本阶段为空）、关系变化散文、收支、新物品、日记、明日待办
+- 钩子：`onDayStart` `onTimeAdvance` `onDaySettle`
+- op：`advance_time`
+
+**验收**
+1. 消耗时段直到用尽，触发结算，看到日记，睡觉进第二天
+2. 时段用尽后不是失败态，仍可自由查看，可主动早睡
+3. 沙盒开关打开后时段不消耗
+4. 快照回到第 1 天，状态完整恢复
+5. 切换预设（6/4/3 槽）成本表随之工作
+6. 关闭 API 后仍能推进时段、完成结算，并由本地事实生成简短日记；日记可编辑，编辑内容在重新打开与后续晨报中保持
+
+**schema**：v3 —— `config.calendar` / `config.actionCosts` / `world.clock` / `world.diary` / `world.settlements`
+
+**做完你能**过完一天、看结算、进第二天。还没有地图，但生活的骨架已经在了。这一步做完你会第一次觉得东西活了。
+
+### 变更留痕规则
+
+- 已确认的约束、取舍与接口变更写入对应的愿景、决策、架构或数据模型文档，并在路线图补充验收标准。
+- 暂时无法归类的新想法、新功能和范围扩张一律先写入 `docs/ideas.md`，阶段收尾时再挑选是否进入后续路线图；不得在当前垂直切片中顺手实现。
+
+---
+
+## 阶段 3 · 有地方去
+
+**交付**
+- `Region` / `MapNode` / `MapEdge` / `MapView`
+- SVG graph 渲染（节点 + 边 + 当前位置 + 迷雾）
+- hotspot 模式：上传底图 + 钉坐标编辑器
+- 移动消耗时段：同区域 0、跨区域按 `travelSlots`；校验边可达与 `openSlots`
+- 世界书绑节点，进入即注入（`node_worldbook` block）
+- 迷雾解锁：`reveal_node`
+- 资产存取（IndexedDB）+ 导入降采样（限高、转 webp）
+- 地图生成任务 `map_gen`：AI 输出节点/边 JSON，zod 校验后入库
+- op：`move_player` `reveal_node`
+- 钩子：`onEnterNode`（payload 带 `fromNodeId/toNodeId`）
+
+**验收**
+1. AI 生成一张 8–15 节点的地图，渲染正常，无孤立节点
+2. 点节点移动，时段正确扣除；不可达节点被拒绝并说明原因
+3. 进入绑定世界书的节点，调试面板确认该条目已注入，且排在关键词条目之前
+4. 未发现的节点显示为迷雾，`reveal_node` 后出现
+5. 上传一张图切 hotspot 模式，钉的坐标与 graph 模式共用同一份 `pos`
+6. 移动、查看地图全程零 API 调用（面板确认）
+7. 非开放时段的地点无法进入
+
+**schema**：v4 —— `world.map`
+
+**做完你能**走出去了。
+
+---
+
+## 阶段 4 · 有人可遇
+
+**交付**
+- `Schedule`（周网格 grid + 当日 overrides），AI 在建角色时一次性生成
+- "谁在这里"纯代码查询（禁止调 API）
+- 加权偶遇：日程命中 + `homeNodeId` 邻近度加权 + "N 天未见"保底
+- 多人同场：最多 3 位，说话者高亮，其他人压暗缩小
+- 动线残影：节点上显示"三天前在这见过他"
+- 地点记忆 `NodeMemory`（上限 5，重访注入）
+- 立绘系统：单张、多套可切换、回退链（activePortrait → portraits[0] → avatar → accentColor 名牌）
+- 头像用于地图图钉
+- `NpcLite` / `NpcTemplate` / 背景 NPC 现场生成（seed + 模版，不落库）
+- op：`move_npc` `add_node_memory`
+- 钩子：`onEncounter` `onDialogueEnd`
+- block：`node_memory` `scene_now`
+
+**验收**
+1. 周三下午去码头，他在那——因为他周三下午总在那，且不调 API 就能知道
+2. 连续多日游荡，不会天天撞同一个人，也不会永远遇不到想见的人
+3. 三人同场时对话中角色互相说话，不是轮流对玩家汇报
+4. 无立绘的角色显示配色名牌占位，界面不塌、不报错
+5. 混用不同尺寸的立绘，靠各自 `transform` 能对齐基线
+6. 节点上能看到几天前的相遇残影
+7. 重访某地点，调试面板确认该地点的痕迹已注入
+8. 相遇与对话不消耗行动点
+
+**schema**：v5 —— `characters[].schedule` / `characters[].visuals` / `world.npcs` / `world.npcTemplates` / `nodes[].memories`
+
+**这是项目的灵魂，也是第一个值得给别人看的版本。** 此后可以开始做界面美化。
+
+---
+
+## 阶段 5 · 有事可做
+
+**交付**
+- `TopicTree`：一次 `topic_tree` 调用生成 4–8 个 topic 及其 `response`，内联存储
+- `require`（隐藏或 `???`，设置可切）+ `unlock_topic` 双机制
+- `terminal` 区分纯聊天话题与推进型选项
+- 已用话题不置灰，返回 `usedResponse` 敷衍变体
+- daily 树跨天重生成，story 树永久保留
+- 自由输入与按钮并存，允许 AI 反向 `unlock_topic`
+- 多轴关系 `AxisDef` + `StageRule` + 阶段标签派生
+- `mood`（词 + 衰减天数）+ `situation` + `lastSeenDay` → "已 N 天未见"
+- `Knot` 心结，不处理则持续存在
+- 礼物：tag 匹配 + `specialItems` + 阶段 + mood，代码算结果，AI 只写反应
+- 拒绝判定：忙 / 心情差 / 阶段不到位则互动失败
+- `Appointment` 四元组 + 守约 / 迟到 / 失约（`onDaySettle` 判定）
+- 结算页关系变化改为散文，`showNumbers` 默认关
+- op：`unlock_topic` `mark_topic_used` `set_mood` `make_appointment`
+- block：`relationship_state`
+
+**验收**
+1. 进场景一次调用生成整棵树，之后点任意话题零延迟零 API
+2. 纯聊天话题可以逐个点完，不会推进场景
+3. 已聊过的话题再点，得到敷衍变体而非置灰
+4. 满足条件后 `???` 变成真话题；聊完 A 后 B 动态出现
+5. 送对口礼物与送错礼物反应不同，且数值变化由代码决定
+6. 配一个"亲密 60 / 信任 20"的角色，初见热络但明显防着你
+7. 关系不单调上升；心结产生后一直存在，直到满足解决条件
+8. 约好第 5 天傍晚在书店，到场为 kept，缺席为 missed 并有后果
+9. 隔 20 天再见，AI 自然处理久别情绪，且未引入任何新数值
+10. 结算页只有散文，开 `showNumbers` 才出现数字
+
+**schema**：v6 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `relations` 全字段 / `characters[].giftPrefs`
+
+**做完**相遇从一次性对话变成可经营的关系。
+
+---
+
+## 阶段 6 · 有方向
+
+**交付**
+- `world_morning` 单次合并调用：`news` + `weather` + `npcMoves` + `worldNote`
+- 报纸四类条目混排：lead（带 nodeId/slotId）/ ambience / character / ad
+- 前一天日记塞进 prompt 产生回声
+- `HookPool`：未选中的钩子回池，数日后重现或按 `expiresDay` 过期
+- `npcMoves` 写入 `Schedule.overrides`
+- 半正式 NPC 打包 `npc_batch`（可与晨报合并）
+- 天气注入 prompt，可门控事件
+- 晨报 UI，形式随世界观换皮（报纸 / 委托板 / 终端推送 / 酒馆流言）
+- 随机 NPC 转正：`promote_npc`，AI 扩写为完整角色卡并落库
+- 手动"推进世界"按钮
+
+**验收**
+1. 每天开局一次调用产出 3–6 条条目，一游戏日只调这一次
+2. lead 条目指向的地点与时段真的能触发对应事件
+3. 昨天在码头闹事，今天报纸提到码头骚乱
+4. 没选的钩子几天后重现或过期（"上周失踪案已结案"）
+5. ad 条目点进去就是招聘 / 租房 / 店铺转让入口，不需要额外菜单
+6. NPC 动向写入 overrides，当天去对应地点真能遇到
+7. 喜欢的随机 NPC 转正后有完整卡、独立记忆与日程
+8. 20 个 NPC 时每日调用量不随 NPC 数增长
+
+**schema**：v7 —— `world.morning` / `npcs[].lightMemory`
+
+**空沙盒问题在这一步解决。** 玩家每天早上知道今天可以去干什么了。
+
+---
+
+## 阶段 7 · 有故事
+
+**交付**
+- `EventDef` 事件池（支持 `content` 纯静态，不调 API）
+- 按 `(nodeId, day, slotId)` 三元组排程
+- `DirectorState`：冷却、once、阶段区间门槛、权重、`tension` 张力曲线
+- pending 队列 = 伏笔；`revealed` 支持模糊预告（"三天后有拍卖会"）
+- 日历 UI 可视化已排程事件
+- 章节收束：`ChapterSummary` + `Milestone`，二级记忆压缩
+- 事件包导入导出（`manifest.type = 'events'`）
+- op：`queue_event`
+- block：`milestones` `chapter_summary`
+
+**验收**
+1. 连续几天平淡后，导演主动抬升张力，安排一个事件
+2. 事件之间有冷却，不会天天出大事
+3. 低阶段不触发告白线，高阶段不再出"初次见面"式桥段
+4. 导演能预约三天后某地点的事件，日历可见，到期触发
+5. 玩到 40 天后，上下文里是角色卡 + 关系摘要 + 近 7 天日记 + 里程碑 + 章节摘要，原始对话已丢弃且角色不失忆、不变形
+6. 手写一个事件包 JSON 导入，无需改代码即可生效
+7. `content` 型事件完全不调 API 也能触发
+
+**schema**：v8 —— `world.eventDefs` / `world.director` / `world.chapters` / `world.milestones`
+
+**做完**从随机生活变成有起承转合。
+
+---
+
+## 阶段 8 · 有生活
+
+**交付**
+- 房租 / 定期结算
+- 打工：绑定节点 + 占用时段 + 工资
+- 开店：绑定节点 + 营业时段，玩家成为地图上的一个点，角色会路过来找（反向偶遇）
+- 住所与 `homeNodeId`，邻近度加权偶遇
+- 住所升级
+- 三条常驻软目标：住所 / 关系 / 事业
+- 启用 `energyCost`（体力作为普通 stat，成本表加列）
+- 简化经济：少量数值 + 规则化流转，不做完整模拟
+
+**验收**
+1. 房租到期扣款，金额不致死但构成节奏锚点
+2. 上班时段被占用，"翘班去见他"成为有代价的真实选择
+3. 开店营业时，角色会自己上门
+4. 搬到他家附近，日常偶遇概率可感知地上升
+5. 任何时刻都至少有一条软目标可推进
+6. 体力开启后不抬高理解门槛，可在设置里关掉
+7. 当无业游民也能玩下去，不会卡死
+
+**schema**：v9 —— `player.job` / `player.shop` / `player.homeNodeId`
+
+**约束创造生活感。** 这一步之后"绝对自由导致空虚"的风险才真正解除。
+
+---
+
+## 阶段 9 · 有终端
+
+**交付**
+- 手机 / 终端 UI（随世界观换皮）
+- 消息、通话、联系人（用 avatar）、设置入口
+- 夜间主动来信（分开后还在想你）
+- 远程约定
+- 规则约束：终端只能维持关系，不能推进关系；不解锁重要剧情节点
+
+**验收**
+1. 能发消息、打电话，界面观感明显提升
+2. 夜里收到角色主动来信
+3. 通过终端约定明天的时间地点，写进日历
+4. 深度剧情在终端里无法触发，必须到场
+5. 终端内的查看类操作全部零 API
+
+**schema**：v10 —— `world.flags` 内的终端解锁位 / 消息记录
+
+**性价比最高的模块**，本质是给聊天和设置换了个壳。可以插在阶段 5 之后任意时刻当奖励做。
+
+---
+
+## 阶段 10 · 有生态
+
+**交付**
+- 主题系统：CSS 变量 + 用户自定义 CSS 注入 + 关键组件模板覆写（消息气泡、地图、终端）
+- SillyTavern PNG 角色卡导入（v2/v3 内嵌 JSON），卡片图直接作默认立绘与头像
+- 角色包 / 世界包 / 事件包导入导出（同构，`manifest.type` 区分）
+- 导出"含图 / 仅引用"开关
+- 引用完整性检查器：孤立节点、失效 charId、断裂 unlocks 链
+- 生图与语音适配器（接口在阶段 0 已定形，此处接上）
+- Tauri 桌面版（顺带解决 CORS 与存储配额）
+- `navigator.storage.persist()`
+
+**验收**
+1. 导入一张 ST 角色卡，卡图自动成为立绘与头像，立即可用
+2. 用户自定义 CSS 能改变外观且不破坏布局
+3. 世界包导出后在干净环境导入，地图 / 角色 / 事件完整
+4. 完整性检查器能列出人为制造的断裂引用，且不阻断游玩
+5. Tauri 版能直连此前被 CORS 拦截的 provider
+
+**schema**：v11 —— 主题配置 / 资产引用扩展
+
+---
+
+## 每阶段收尾清单
+
+1. `npm run build` + `npm test` 全绿
+2. 新增 schema 字段的 migration 与 fixture 测试已提交
+3. 新增 op 的 `promptDoc` / `describe` / `clamp` 齐备
+4. 新增 feature 只通过 `register.ts` 挂钩子，核心零改动
+5. 关掉 API 后系统仍能自洽运行（只是没有文字）
+6. 调试面板能完整反映本阶段新增的状态
+7. 本阶段新想法已写进 `docs/ideas.md`，未在半成品上实现
