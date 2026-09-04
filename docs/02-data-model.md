@@ -497,18 +497,20 @@ interface WorldbookEntry {
 
 位置注入（`node_worldbook`）优先于关键词注入（`worldbook_keyword`）。
 
-### 13.1 预设（Provider prompt preset）
+### 13.1 资料预设（文风 / 提示词 preset）
 
 ```ts
 interface Preset {
   id: Id;
   name: string;
-  systemPrompt: string;
-  temperature: number;
-  maxOutputTokens: number;
+  systemPrompt: string;          // 文风与提示词模板
+  temperature: number;           // 可选的生成偏好覆盖，不是 Provider 身份
+  maxOutputTokens: number;       // 可选的生成长度覆盖，不是 Provider 身份
   updatedAt: string;
 }
 ```
+
+这里的预设属于资料内容，主要作用是复用文风和提示词。Provider、endpoint、API key 与任务路由仍由独立的 Provider 设置管理；预设不等于 Provider 配置。
 
 角色卡、世界书与预设均由本地 IndexedDB 管理；它们不写入 `SaveFile.world`，导出角色包/世界包时再按 `manifest.type` 选择性打包。
 
