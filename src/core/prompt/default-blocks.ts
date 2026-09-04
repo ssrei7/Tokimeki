@@ -12,6 +12,7 @@ export interface DefaultPromptFacts extends PromptFacts {
   character?: CharacterCard;
   worldbooks: WorldbookEntry[];
   history: ChatMessage[];
+  preset?: { name: string; systemPrompt: string };
   world: SaveFile['world'];
 }
 
@@ -23,7 +24,11 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
     ? `\n\n你可以在正文后提出状态变更。严格使用以下格式，JSON 必须是数组；不要把状态变化当作已经发生：\n<ops>\n[...]\n</ops>\n\n允许的 ops：\n${opPromptDocs}`
     : '';
   return [
-    { id: 'format_contract', role: 'system', priority: 100, order: 0, build: () => `你是开放世界叙事游戏中的角色。先输出自然语言正文。游戏状态只由确定性内核持有，不要声称提议已经生效。${opContract}` },
+    { id: 'format_contract', role: 'system', priority: 100, order: 0, build: (facts) => {
+      const preset = factsOf(facts).preset;
+      const presetText = preset?.systemPrompt ? `\n\n当前资料预设「${preset.name}」的文风/提示词：\n${preset.systemPrompt}` : '';
+      return `你是开放世界叙事游戏中的角色。先输出自然语言正文。游戏状态只由确定性内核持有，不要声称提议已经生效。${presetText}${opContract}`;
+    } },
     { id: 'character_core', role: 'system', priority: 95, order: 1, build: (facts) => {
       const character = factsOf(facts).character;
       if (!character) return null;
