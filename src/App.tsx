@@ -41,10 +41,10 @@ function parseHeadersDraft(value: string): Record<string, string> {
 }
 
 const defaultSave: SaveFile = SaveFileSchema.parse({
-  schemaVersion: 1,
+  schemaVersion: 2,
   meta: { id: 'local-save', title: '我的世界', createdAt: now(), updatedAt: now(), appVersion: '0.0.1' },
   config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }], daysPerWeek: 7, weekdayNames: ['一', '二', '三', '四', '五', '六', '日'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12 },
-  world: { clock: { day: 1, slotId: 'morning' }, player: { name: '旅人', nodeId: 'start', stats: {}, flags: {}, inventory: [] } },
+  world: { clock: { day: 1, slotId: 'morning' }, player: { name: '旅人', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {} },
 });
 
 export function App() {

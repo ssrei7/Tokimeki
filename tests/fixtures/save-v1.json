@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "v1-save",
+    "title": "V1 Save",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-01T00:00:00.000Z",
+    "appVersion": "0.0.1"
+  },
+  "config": {
+    "calendar": {
+      "slots": [{ "id": "morning", "name": "早晨", "order": 0 }],
+      "daysPerWeek": 7,
+      "weekdayNames": ["一", "二", "三", "四", "五", "六", "日"],
+      "preset": "standard",
+      "unlimitedSlots": false
+    },
+    "actionCosts": {},
+    "axisDefs": [],
+    "stageRules": [],
+    "showNumbers": false,
+    "hiddenTopicStyle": "hide",
+    "realTimeAwareness": false,
+    "opsLimitPerTurn": 12
+  },
+  "world": {
+    "clock": { "day": 4, "slotId": "morning" },
+    "player": {
+      "name": "V1 Player",
+      "nodeId": "start",
+      "stats": { "money": 10 },
+      "flags": { "intro": true },
+      "inventory": []
+    }
+  }
+}

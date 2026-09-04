@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 const IdSchema = z.string().min(1);
 
@@ -44,7 +44,12 @@ export const StageRuleSchema = z.object({
   order: z.number().int(),
 });
 
-const InventoryEntrySchema = z.object({
+export const AssetRefSchema = z.union([
+  z.object({ kind: z.literal('stored'), assetId: IdSchema }),
+  z.object({ kind: z.literal('url'), url: z.string().url() }),
+]);
+
+export const InventoryEntrySchema = z.object({
   itemId: IdSchema,
   count: z.number().int().positive(),
   gotDay: z.number().int().positive(),
@@ -67,9 +72,36 @@ export const ClockSchema = z.object({
   slotId: IdSchema,
 });
 
-export const WorldV1Schema = z.object({
+export const ItemDefSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1),
+  tags: z.array(z.string()),
+  description: z.string().optional(),
+  icon: AssetRefSchema.optional(),
+  stackable: z.boolean().optional(),
+  giftable: z.boolean().optional(),
+  value: z.number().optional(),
+});
+
+export const MemoryEntrySchema = z.object({
+  id: IdSchema,
+  text: z.string().min(1),
+  day: z.number().int().positive(),
+  nodeId: IdSchema.optional(),
+  weight: z.number().optional(),
+});
+
+export const RelationMemoryStateSchema = z.object({
+  memories: z.array(MemoryEntrySchema),
+});
+
+export const WorldV2Schema = z.object({
   clock: ClockSchema,
   player: PlayerStateSchema,
+  stats: z.record(z.string(), z.number()),
+  flags: z.record(z.string(), z.boolean()),
+  items: z.record(z.string(), ItemDefSchema),
+  relations: z.record(z.string(), RelationMemoryStateSchema),
 });
 
 export const ConfigV1Schema = z.object({
@@ -93,8 +125,10 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV1Schema,
-  world: WorldV1Schema,
+  world: WorldV2Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
+export type WorldState = z.infer<typeof WorldV2Schema>;
+export type ItemDef = z.infer<typeof ItemDefSchema>;

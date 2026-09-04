@@ -62,6 +62,10 @@ export function createCurrentSaveScenario(options: CurrentSaveScenarioOptions): 
           flags: { ...(options.flags ?? {}) },
           inventory: [],
         },
+        stats: {},
+        flags: {},
+        items: {},
+        relations: {},
       },
     }),
   };
