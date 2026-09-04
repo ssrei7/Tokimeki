@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { WorldState } from '../../data/schema/save';
 import { OpRegistry } from './registry';
 import type { OpContext, OpResult } from './types';
+import { advanceTime } from '../time';
 
 const StatTargetSchema = z.enum(['player', 'world']);
 const AddStatSchema = z.object({ op: z.literal('add_stat'), target: StatTargetSchema, key: z.string().min(1), delta: z.number().finite() });
@@ -10,6 +11,7 @@ const SetFlagSchema = z.object({ op: z.literal('set_flag'), target: StatTargetSc
 const GiveItemSchema = z.object({ op: z.literal('give_item'), id: z.string().min(1), count: z.number().int().positive().default(1), from: z.string().min(1).optional() });
 const TakeItemSchema = z.object({ op: z.literal('take_item'), id: z.string().min(1), count: z.number().int().positive().default(1) });
 const AddMemorySchema = z.object({ op: z.literal('add_memory'), target: z.string().min(1), text: z.string().min(1).max(1000) });
+const AdvanceTimeSchema = z.object({ op: z.literal('advance_time'), kind: z.string().min(1).optional(), slots: z.number().int().positive().default(1) });
 
 export function createDefaultOpRegistry(): OpRegistry {
   const registry = new OpRegistry();
@@ -57,6 +59,20 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     promptDoc: 'add_memory: {"op":"add_memory","target":"current-character-id","text":"fact grounded in this scene"}.',
     describe: (payload) => `add memory for ${payload.target}: ${payload.text}`,
     apply: (payload, context) => addMemory(payload, context),
+  });
+  registry.register({
+    op: 'advance_time', schema: AdvanceTimeSchema, clamp: { numeric: { slots: { min: 1, max: 24 } } },
+    promptDoc: 'advance_time: {"op":"advance_time","kind":"action-kind","slots":positive integer}; advances the deterministic world clock.',
+    describe: (payload) => `advance time ${payload.kind ?? ''} x${payload.slots}`.trim(),
+    apply: (payload, context) => {
+      if (!context.calendar) return { ok: false, changes: [], warning: 'Calendar is unavailable.' };
+      if (payload.kind && !context.actionCosts?.[payload.kind]) return { ok: false, changes: [], warning: `Unknown action kind: ${payload.kind}.` };
+      const result = payload.kind
+        ? advanceTime(context.world, context.calendar, Math.max(0, Math.floor((context.actionCosts ?? {})[payload.kind]?.slotCost ?? 0)) * payload.slots, context.events)
+        : advanceTime(context.world, context.calendar, payload.slots, context.events);
+      if (result.advanced === 0) return { ok: true, changes: [], warning: context.calendar.unlimitedSlots ? 'Sandbox time does not consume slots.' : 'No time slots were advanced.' };
+      return { ok: true, changes: result.changes };
+    },
   });
 }
 

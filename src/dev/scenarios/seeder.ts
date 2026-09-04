@@ -1,6 +1,6 @@
 import { exportSaveZip } from '../../data/io/zip';
 import { migrateSave } from '../../data/migrations';
-import { CURRENT_SCHEMA_VERSION, type SaveFile } from '../../data/schema/save';
+import { CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_SLOT_DEFS, type SaveFile } from '../../data/schema/save';
 
 export interface ScenarioDefinition {
   id: string;
@@ -39,13 +39,13 @@ export function createCurrentSaveScenario(options: CurrentSaveScenarioOptions): 
       },
       config: {
         calendar: {
-          slots: [{ id: 'morning', name: '早晨', order: 0 }],
+          slots: [...DEFAULT_SLOT_DEFS],
           daysPerWeek: 7,
           weekdayNames: ['一', '二', '三', '四', '五', '六', '日'],
           preset: 'standard',
           unlimitedSlots: false,
         },
-        actionCosts: {},
+        actionCosts: { ...DEFAULT_ACTION_COSTS },
         axisDefs: [],
         stageRules: [],
         showNumbers: false,
@@ -54,7 +54,8 @@ export function createCurrentSaveScenario(options: CurrentSaveScenarioOptions): 
         opsLimitPerTurn: 12,
       },
       world: {
-        clock: { day: options.day ?? 1, slotId: options.slotId ?? 'morning' },
+          clock: { day: options.day ?? 1, slotId: options.slotId ?? 'morning' },
+          slotsUsedToday: 0,
         player: {
           name: options.playerName ?? '测试玩家',
           nodeId: options.nodeId ?? 'start',
@@ -65,7 +66,9 @@ export function createCurrentSaveScenario(options: CurrentSaveScenarioOptions): 
         stats: {},
         flags: {},
         items: {},
-        relations: {},
+          relations: {},
+          diary: [],
+          settlements: [],
       },
     }),
   };

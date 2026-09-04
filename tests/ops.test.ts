@@ -1,16 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultOpRegistry } from '../src/core/ops';
+import { createDefaultOpRegistry, type OpContext } from '../src/core/ops';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 function setup() {
   const save = seedScenario(createCurrentSaveScenario({ id: 'ops-test', title: 'Ops Test', stats: { custom: 1 } }));
   save.world.items.flower = { id: 'flower', name: '花', tags: ['flower'], stackable: true, giftable: true };
   const logs: string[] = [];
+  const context: OpContext = {
+    world: save.world, actorId: 'seir', day: 3, slotId: 'evening', nodeId: 'docks',
+    log: (message: string) => logs.push(message), calendar: undefined, actionCosts: undefined,
+  };
   return {
     registry: createDefaultOpRegistry(),
     world: save.world,
     logs,
-    context: { world: save.world, actorId: 'seir', day: 3, slotId: 'evening', nodeId: 'docks', log: (message: string) => logs.push(message) },
+    context,
   };
 }
 
@@ -85,5 +89,18 @@ describe('op registry and built-ins', () => {
     expect(result.rejected).toHaveLength(1);
     expect(state.world.relations.unknown).toBeUndefined();
     expect(state.world.relations.seir.memories[0]).toEqual({ id: 'memory-seir-3-1', text: '在码头交谈', day: 3, nodeId: 'docks' });
+  });
+
+  it('advances deterministic time through the registered op', () => {
+    const state = setup();
+    state.context.calendar = {
+      slots: [{ id: 'morning', name: '早晨', order: 0 }, { id: 'noon', name: '中午', order: 1 }],
+      daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard', unlimitedSlots: false,
+    };
+    state.context.actionCosts = { explore: { slotCost: 1 } };
+    const result = state.registry.applyAll([{ op: 'advance_time', kind: 'explore' }], state.context, 12);
+    expect(result.applied).toBe(1);
+    expect(state.world.clock).toEqual({ day: 1, slotId: 'noon' });
+    expect(state.world.slotsUsedToday).toBe(1);
   });
 });

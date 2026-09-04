@@ -1,5 +1,7 @@
 import type { z } from 'zod';
 import type { WorldState } from '../../data/schema/save';
+import type { CalendarConfig, ActionCostTable } from '../../data/schema/save';
+import type { EventBus } from '../events/bus';
 
 export interface OpContext {
   world: WorldState;
@@ -8,6 +10,9 @@ export interface OpContext {
   slotId: string;
   nodeId: string;
   log(message: string): void;
+  calendar?: CalendarConfig;
+  actionCosts?: ActionCostTable;
+  events?: EventBus;
 }
 
 export interface Change {

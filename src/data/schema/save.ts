@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 const IdSchema = z.string().min(1);
 
@@ -10,6 +10,13 @@ const SlotDefSchema = z.object({
   label: z.string().optional(),
   order: z.number().int().nonnegative(),
 });
+
+export const DEFAULT_SLOT_DEFS = [
+  { id: 'morning', name: '早晨', order: 0 },
+  { id: 'noon', name: '中午', order: 1 },
+  { id: 'evening', name: '晚上', order: 2 },
+  { id: 'night', name: '深夜', order: 3 },
+] satisfies z.input<typeof SlotDefSchema>[];
 
 export const CalendarConfigSchema = z.object({
   slots: z.array(SlotDefSchema).min(1),
@@ -25,6 +32,14 @@ export const ActionCostSchema = z.object({
 });
 
 export const ActionCostTableSchema = z.record(z.string(), ActionCostSchema);
+
+export const DEFAULT_ACTION_COSTS = {
+  move_cross_region: { slotCost: 1 },
+  move_within_region: { slotCost: 0 },
+  work: { slotCost: 2 },
+  explore: { slotCost: 1 },
+  rest: { slotCost: 1 },
+} satisfies z.input<typeof ActionCostTableSchema>;
 
 export const AxisDefSchema = z.object({
   id: IdSchema,
@@ -72,6 +87,36 @@ export const ClockSchema = z.object({
   slotId: IdSchema,
 });
 
+export const DiaryEntrySchema = z.object({
+  day: z.number().int().positive(),
+  text: z.string(),
+  editedAt: z.string().datetime().optional(),
+});
+
+export const DailySettlementSchema = z.object({
+  day: z.number().int().positive(),
+  footprint: z.array(IdSchema),
+  met: z.array(IdSchema),
+  relationChanges: z.array(z.object({
+    charId: IdSchema,
+    prose: z.string(),
+    raw: z.record(z.string(), z.number()).optional(),
+  })),
+  income: z.number(),
+  expense: z.number(),
+  itemsGained: z.array(InventoryEntrySchema),
+  diary: z.string(),
+  appointmentsTomorrow: z.array(z.object({
+    id: IdSchema,
+    charId: IdSchema,
+    day: z.number().int().positive(),
+    slotId: IdSchema,
+    nodeId: IdSchema,
+    status: z.enum(['pending', 'kept', 'late', 'missed']),
+    note: z.string().optional(),
+  })),
+});
+
 export const ItemDefSchema = z.object({
   id: IdSchema,
   name: z.string().min(1),
@@ -95,13 +140,16 @@ export const RelationMemoryStateSchema = z.object({
   memories: z.array(MemoryEntrySchema),
 });
 
-export const WorldV2Schema = z.object({
+export const WorldV3Schema = z.object({
   clock: ClockSchema,
+  slotsUsedToday: z.number().int().nonnegative(),
   player: PlayerStateSchema,
   stats: z.record(z.string(), z.number()),
   flags: z.record(z.string(), z.boolean()),
   items: z.record(z.string(), ItemDefSchema),
   relations: z.record(z.string(), RelationMemoryStateSchema),
+  diary: z.array(DiaryEntrySchema),
+  settlements: z.array(DailySettlementSchema),
 });
 
 export const ConfigV1Schema = z.object({
@@ -125,10 +173,13 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV1Schema,
-  world: WorldV2Schema,
+  world: WorldV3Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV2Schema>;
+export type WorldState = z.infer<typeof WorldV3Schema>;
 export type ItemDef = z.infer<typeof ItemDefSchema>;
+export type CalendarConfig = z.infer<typeof CalendarConfigSchema>;
+export type ActionCostTable = z.infer<typeof ActionCostTableSchema>;
+export type DailySettlement = z.infer<typeof DailySettlementSchema>;

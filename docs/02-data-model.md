@@ -19,7 +19,7 @@ type Condition = string;   // expr-eval 表达式,禁止 eval
 - 时间坐标统一为 `(day, slotId)`，地点坐标统一为 `nodeId`。
 - 派生值（阶段标签、可达节点、当前在场者）可缓存但必须能重算，且不作为事实来源。
 
-`CURRENT_SCHEMA_VERSION = 2`
+`CURRENT_SCHEMA_VERSION = 3`
 
 ---
 
@@ -582,6 +582,8 @@ interface WorldState {
   flags: Record<string, boolean>;
 }
 ```
+
+阶段 2 的 schema v3 在 `WorldState` 中新增 `slotsUsedToday`、`diary` 与 `settlements`，并为 v2 存档提供自动迁移；旧存档缺失字段时分别默认为 `0` 与空数组。`DailySettlement` 记录每日足迹、相遇、关系变化、收支、新物品、日记和次日待办。
 
 ---
 
