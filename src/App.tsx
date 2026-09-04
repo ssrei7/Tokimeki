@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PromptAssembler } from './core/prompt/assembler';
 import type { AssembledPrompt } from './core/prompt/assembler';
 import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
@@ -218,8 +218,8 @@ export function App() {
     try {
       const found = await listProviderModels(provider);
       setModels(found);
-      if (found[0] && !provider.model) setProvider({ ...provider, model: found[0] });
-      setRequestStatus('success'); setFeedback({ tone: 'success', text: `已发现 ${found.length} 个模型。` });
+      setProvider((current) => ({ ...current, model: '' }));
+      setRequestStatus('success'); setFeedback({ tone: 'success', text: `已发现 ${found.length} 个模型，请在模型栏中选择。` });
       setDebug((current) => ({ ...current, raw: `已发现 ${found.length} 个模型。` }));
     } catch (error) {
       const message = errorMessage(error, '模型列表获取失败，请手动填写模型名。');
@@ -321,9 +321,32 @@ function MapView({ onOpenChat }: { onOpenChat: () => void }) {
 }
 
 function ChatView(props: { characters: CharacterCard[]; selectedCharacterId: string; setSelectedCharacterId: (id: string) => void; messages: ChatMessage[]; input: string; setInput: (value: string) => void; onAppend: () => Promise<void>; onGenerate: () => Promise<void>; requestStatus: RequestStatus; busy: boolean }) {
+  const latestRef = useRef<HTMLDivElement>(null);
+  const followLatestRef = useRef(true);
+  const previousCharacterIdRef = useRef(props.selectedCharacterId);
   const statusText = props.requestStatus === 'requesting' ? '等待回复…' : props.requestStatus === 'generating' ? '正在生成…' : props.requestStatus === 'error' ? '请求失败' : '';
   const canGenerate = canGenerateReply(props.messages, props.input);
-  return <section className="chat-screen"><div className="section-heading"><div><span className="eyebrow">日常相遇</span><h2>{props.characters.find((item) => item.id === props.selectedCharacterId)?.name ?? '选择角色聊天'}</h2></div>{statusText && <span className={`request-status ${props.requestStatus}`}>{statusText}</span>}</div><div className="character-picker"><label>聊天角色<select value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">未选择</option>{props.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div><div className="messages">{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{props.messages.map((message, index) => <div className={`message ${message.role}`} key={`${message.role}-${index}`}>{message.content}</div>)}{props.busy && props.requestStatus === 'requesting' && <div className="message assistant pending">等待回复…</div>}</div><div className="composer"><textarea value={props.input} onChange={(event) => props.setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void props.onAppend(); } }} placeholder="说点什么……" /><div className="composer-actions"><button className="secondary" onClick={() => void props.onAppend()} disabled={props.busy || !props.input.trim()}>发送消息</button><button onClick={() => void props.onGenerate()} disabled={props.busy || !canGenerate}>生成回复</button></div></div></section>;
+  const latestMessage = props.messages.at(-1)?.content;
+
+  useEffect(() => {
+    const scroller = latestRef.current?.closest('.screen');
+    if (!(scroller instanceof HTMLElement)) return;
+    const updateFollowState = () => {
+      followLatestRef.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 48;
+    };
+    scroller.addEventListener('scroll', updateFollowState, { passive: true });
+    return () => scroller.removeEventListener('scroll', updateFollowState);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (previousCharacterIdRef.current !== props.selectedCharacterId) {
+      previousCharacterIdRef.current = props.selectedCharacterId;
+      followLatestRef.current = true;
+    }
+    if (followLatestRef.current) latestRef.current?.scrollIntoView({ block: 'end' });
+  }, [latestMessage, props.busy, props.messages.length, props.requestStatus, props.selectedCharacterId]);
+
+  return <section className="chat-screen"><div className="section-heading"><div><span className="eyebrow">日常相遇</span><h2>{props.characters.find((item) => item.id === props.selectedCharacterId)?.name ?? '选择角色聊天'}</h2></div>{statusText && <span className={`request-status ${props.requestStatus}`}>{statusText}</span>}</div><div className="character-picker"><label>聊天角色<select value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">未选择</option>{props.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div><div className="messages">{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{props.messages.map((message, index) => <div className={`message ${message.role}`} key={`${message.role}-${index}`}>{message.content}</div>)}{props.busy && props.requestStatus === 'requesting' && <div className="message assistant pending">等待回复…</div>}</div><div className="composer"><textarea value={props.input} onChange={(event) => props.setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void props.onAppend(); } }} placeholder="说点什么……" /><div className="composer-actions"><button className="secondary" onClick={() => void props.onAppend()} disabled={props.busy || !props.input.trim()}>发送消息</button><button onClick={() => void props.onGenerate()} disabled={props.busy || !canGenerate}>生成回复</button></div></div><div ref={latestRef} aria-hidden="true" /></section>;
 }
 
 function SettingsView(props: {
