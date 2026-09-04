@@ -288,6 +288,7 @@
 - pending 队列 = 伏笔；`revealed` 支持模糊预告（"三天后有拍卖会"）
 - 日历 UI 可视化已排程事件
 - 章节收束：`ChapterSummary` + `Milestone`，二级记忆压缩
+- 事件回顾：保存已触发事件的标题、时间地点、参与者、选择与结果摘要及可回看的叙事记录；支持导出/删除回顾，删除只移除回顾资料，不回滚已经写入世界的事实
 - 事件包导入导出（`manifest.type = 'events'`）
 - op：`queue_event`
 - block：`milestones` `chapter_summary`
@@ -302,7 +303,7 @@
 6. 手写一个事件包 JSON 导入，无需改代码即可生效
 7. `content` 型事件完全不调 API 也能触发
 
-**schema**：v8 —— `world.eventDefs` / `world.director` / `world.chapters` / `world.milestones`
+**schema**：v8 —— `world.eventDefs` / `world.director` / `world.chapters` / `world.milestones` / `world.eventHistory`
 
 **做完**从随机生活变成有起承转合。
 
