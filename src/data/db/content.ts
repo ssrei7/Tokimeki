@@ -23,3 +23,4 @@ export async function savePreset(preset: Preset): Promise<Preset> { const parsed
 export async function deletePreset(id: string): Promise<void> { await contentDb.presets.delete(id); }
 export async function saveChat(record: ChatRecord): Promise<ChatRecord> { const parsed = ChatRecordSchema.parse(record); await contentDb.chats.put(parsed); return parsed; }
 export async function loadChat(characterId: string): Promise<ChatRecord | undefined> { return contentDb.chats.get(characterId); }
+export async function clearChats(): Promise<void> { await contentDb.chats.clear(); }

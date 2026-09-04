@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
 import { PromptAssembler } from '../src/core/prompt/assembler';
 import { createDefaultPromptBlocks, DEFAULT_PROMPT_BLOCK_IDS } from '../src/core/prompt/default-blocks';
-import { exportSaveZip, importSaveZip } from '../src/data/io/zip';
+import { exportPresetBundle, exportSaveZip, importPresetBundle, importSaveZip } from '../src/data/io/zip';
 import { UnsupportedSchemaVersionError } from '../src/data/migrations/types';
 import type { SaveFile } from '../src/data/schema/save';
 
@@ -59,5 +59,15 @@ describe('save zip IO', () => {
     const importing = importSaveZip(await zip.generateAsync({ type: 'uint8array' }));
     await expect(importing).rejects.toBeInstanceOf(UnsupportedSchemaVersionError);
     await expect(importing).rejects.toThrow('请升级 Tokimeki');
+  });
+});
+
+describe('preset bundle IO', () => {
+  it('round trips multiple prompt presets as one bundle', async () => {
+    const presets = [
+      { id: 'quiet', name: '克制文风', systemPrompt: '短句、克制。', temperature: 0.4, maxOutputTokens: 800, updatedAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'lyric', name: '抒情文风', systemPrompt: '细腻、抒情。', temperature: 0.8, maxOutputTokens: 1200, updatedAt: '2026-01-01T00:00:00.000Z' },
+    ];
+    await expect(importPresetBundle(await exportPresetBundle(presets))).resolves.toEqual(presets);
   });
 });
