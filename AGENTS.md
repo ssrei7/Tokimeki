@@ -40,6 +40,7 @@
 - API key 与全部数据只存在用户浏览器本地（IndexedDB）。
 - 不得将用户代码、key、存档内容发往任何非用户显式配置的端点。
 - 栈：React + TypeScript + Vite / Zustand / Dexie / zod / expr-eval / Tailwind + CSS 变量 / JSZip / SVG 渲染地图。引入新依赖需先说明理由并锁定版本。
+- `core/` 必须可在 Node 环境中运行：不依赖 DOM、不依赖 IndexedDB、不发起网络请求。持久化只存在于 `data/`，AI 调用只存在于 `providers/`。
 
 ## 8. 视觉资产
 - 存档只存资产 id 或外链 URL，二进制存 IndexedDB，导出打包进 zip。

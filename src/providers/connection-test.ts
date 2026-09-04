@@ -4,7 +4,14 @@ import type { ConnectionTestResult, ProviderConfig } from './types';
 export async function testProviderConnection(provider: ProviderConfig, options: { fetchImpl?: typeof fetch; timeoutMs?: number } = {}): Promise<ConnectionTestResult> {
   const fetchImpl = options.fetchImpl ?? fetch; const timeoutMs = options.timeoutMs ?? 10_000; const started = Date.now(); const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const adapter = getAdapter(provider.kind); const prepared = adapter.prepare(provider, { messages: [{ role: 'user', content: 'ping' }], stream: false }); const response = await fetchImpl(prepared.url, { ...prepared.init, signal: controller.signal }); const latencyMs = Date.now() - started;
+    const adapter = getAdapter(provider.kind);
+    if (adapter.stream) {
+      let text = '';
+      for await (const chunk of adapter.stream(provider, { messages: [{ role: 'user', content: 'ping' }], stream: false, taskId: 'narrate_main' })) text += adapter.extractStreamText(provider, chunk) ?? '';
+      const latencyMs = Date.now() - started;
+      return text ? { ok: true, kind: 'ok', message: '连接成功', latencyMs } : failure('format', '响应格式不符合适配器预期', latencyMs);
+    }
+    const prepared = adapter.prepare(provider, { messages: [{ role: 'user', content: 'ping' }], stream: false }); const response = await fetchImpl(prepared.url, { ...prepared.init, signal: controller.signal }); const latencyMs = Date.now() - started;
     if (response.status === 401 || response.status === 403) return failure('unauthorized', '认证失败（401/403）', latencyMs, response.status, '检查 API key、权限和请求头。');
     if (response.status === 404) return failure('not_found', '端点不存在（404）', latencyMs, response.status, '检查 endpoint URL 和模型服务路径。');
     if (!response.ok) return failure('network', `服务返回 HTTP ${response.status}`, latencyMs, response.status, '检查服务状态与 endpoint 配置。');

@@ -76,6 +76,9 @@
 ## 阶段 1 · 能改变世界
 
 **交付**
+- 内置 Mock provider（正式代码中的额外本地适配能力，普通 Provider 列表不展示）：按 `TaskId` 分组的固定 fixture，沿用正式 Provider / 流式解析接口，零 API、零随机
+- fixture 覆盖格式完美 / 损坏 / markdown 围栏包裹 / 未注册 op / clamp 超限 / 空 ops / 断流
+- 版本感知的 scenario 存档播种器基础框架：固定 ID/时间与通用 stats/flags，通过当前 schema 校验，并可按普通存档格式导出 zip
 - ops 注册表：`OpDefinition` / `registerOp` / `promptDoc` 自动汇总进 `format_contract` block
 - 三级降级解析：严格 parse → 宽松修复 → `extract_ops` 二段抽取；全败保留正文 + `opsFailed` 标记 + 重试与手动补录按钮
 - zod 白名单校验、未注册 op 丢弃 + 警告、`clamp` 限幅、单回合上限 `opsLimitPerTurn`
@@ -92,6 +95,7 @@
 4. AI 试图一次把某数值加 100，被 clamp 截断并记警告
 5. 在设置里加一个自定义 stat，AI 能通过 `add_stat` 修改它，无需改代码
 6. 条件表达式 `player.stats.money > 100` 能正确求值
+7. 使用 Mock provider 可确定性复现验收 1–5，无需手工构造模型回复；损坏、围栏、空 ops 与断流 fixture 也有自动测试
 
 **schema**：v2 —— `world.stats` / `world.flags` / `world.items` / `player.inventory` / `relations`（仅 `memories`）
 
@@ -112,6 +116,8 @@
 - 结算页 UI：今日足迹、遇到了谁（本阶段为空）、关系变化散文、收支、新物品、日记、明日待办
 - 钩子：`onDayStart` `onTimeAdvance` `onDaySettle`
 - op：`advance_time`
+- 无头模拟器基础入口（Vitest 或小型 CLI）：复用 Node 可运行的 core、固定 seed、动作策略与 Mock provider；可用“模拟推进”跑完整 `advanceTime → onDaySettle` 流程，不直接修改派生状态
+- scenario “直接落点”：从版本化快照构造指定日期的起始条件，并通过普通 `save.zip` 导出；它只提供起点，不冒充模拟过程
 
 **验收**
 1. 消耗时段直到用尽，触发结算，看到日记，睡觉进第二天
@@ -120,6 +126,7 @@
 4. 快照回到第 1 天，状态完整恢复
 5. 切换预设（6/4/3 槽）成本表随之工作
 6. 关闭 API 后仍能推进时段、完成结算，并由本地事实生成简短日记；日记可编辑，编辑内容在重新打开与后续晨报中保持
+7. 固定 seed 的无头模拟可在数秒内重复跑 30 天，结果一致且实际经过每日结算；直接落点存档可导入普通客户端
 
 **schema**：v3 —— `config.calendar` / `config.actionCosts` / `world.clock` / `world.diary` / `world.settlements`
 
@@ -176,6 +183,7 @@
 - op：`move_npc` `add_node_memory`
 - 钩子：`onEncounter` `onDialogueEnd`
 - block：`node_memory` `scene_now`
+- 无头统计：`20 seeds × 60 游戏日`的每角色相遇次数分布与最长未见间隔
 
 **验收**
 1. 周三下午去码头，他在那——因为他周三下午总在那，且不调 API 就能知道
@@ -211,6 +219,7 @@
 - 结算页关系变化改为散文，`showNumbers` 默认关
 - op：`unlock_topic` `mark_topic_used` `set_mood` `make_appointment`
 - block：`relationship_state`
+- 无头统计：话题枯竭速度、daily 树刷新覆盖率与可选话题数量分布
 
 **验收**
 1. 进场景一次调用生成整棵树，之后点任意话题零延迟零 API
@@ -243,6 +252,7 @@
 - 晨报 UI，形式随世界观换皮（报纸 / 委托板 / 终端推送 / 酒馆流言）
 - 随机 NPC 转正：`promote_npc`，AI 扩写为完整角色卡并落库
 - 手动"推进世界"按钮
+- 无头统计：lead 条目被模拟玩家忽略率（随机选择策略必须使用固定 seed）
 
 **验收**
 1. 每天开局一次调用产出 3–6 条条目，一游戏日只调这一次
@@ -272,6 +282,7 @@
 - 事件包导入导出（`manifest.type = 'events'`）
 - op：`queue_event`
 - block：`milestones` `chapter_summary`
+- 无头统计：事件触发间隔、冷却命中与张力曲线；汇总阶段 4–7 指标形成完整 `20 seeds × 60 游戏日`回归报告
 
 **验收**
 1. 连续几天平淡后，导演主动抬升张力，安排一个事件

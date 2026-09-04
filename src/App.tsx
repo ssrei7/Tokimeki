@@ -146,7 +146,7 @@ export function App() {
       await streamChat(parsed, assembled.messages, (delta) => {
         assistant += delta;
         setMessages([...next, { role: 'assistant', content: assistant }]);
-      }, { onStatus: (status) => setRequestStatus(status) });
+      }, { taskId: 'narrate_main', onStatus: (status) => setRequestStatus(status) });
       const completed = [...next, { role: 'assistant' as const, content: assistant }];
       setMessages(completed);
       await saveChat({ characterId: selectedCharacterId, messages: completed, updatedAt: now() });

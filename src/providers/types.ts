@@ -7,7 +7,7 @@ export const TASK_IDS = [
 export const TaskIdSchema = z.enum(TASK_IDS);
 export type TaskId = z.infer<typeof TaskIdSchema>;
 
-export const ProviderKindSchema = z.enum(['openai-compatible', 'anthropic', 'gemini', 'generic']);
+export const ProviderKindSchema = z.enum(['openai-compatible', 'anthropic', 'gemini', 'generic', 'mock']);
 export type ProviderKind = z.infer<typeof ProviderKindSchema>;
 
 export const ProviderConfigSchema = z.object({
@@ -30,7 +30,7 @@ export const ProviderSettingSchema = z.object({ key: z.literal('defaultProviderI
 export type ProviderSetting = z.infer<typeof ProviderSettingSchema>;
 
 export interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string }
-export interface ChatRequest { messages: ChatMessage[]; stream?: boolean }
+export interface ChatRequest { messages: ChatMessage[]; stream?: boolean; taskId?: TaskId }
 export interface PreparedRequest { url: string; init: RequestInit }
 
 export interface ProviderAdapter {
@@ -38,6 +38,7 @@ export interface ProviderAdapter {
   prepare(config: ProviderConfig, request: ChatRequest): PreparedRequest;
   extractText(config: ProviderConfig, payload: unknown): string | null;
   extractStreamText(config: ProviderConfig, chunk: string): string | null;
+  stream?(config: ProviderConfig, request: ChatRequest): AsyncIterable<string>;
   listModels?(config: ProviderConfig, fetchImpl?: typeof fetch): Promise<string[]>;
 }
 

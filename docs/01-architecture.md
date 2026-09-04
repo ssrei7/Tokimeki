@@ -312,6 +312,8 @@ src/
 
 `core/` 不得 import `features/`。依赖方向单向：`features → core`。
 
+`core/` 同时是浏览器应用与无头调参台共享的确定性内核，必须能直接在 Node 环境运行：不得访问 DOM、IndexedDB 或网络。持久化适配放在 `data/`，Provider 与 AI 调用放在 `providers/`；批量模拟只向 core 注入动作策略、固定 seed 与本地 provider，不复制另一套规则。
+
 ### 8.1 UI 壳层基线（手机竖屏优先）
 
 - 默认入口是地图视图；地图、地点卡片/抽屉与底部导航构成地图 App 式信息架构，聊天不是独占首页。
@@ -348,4 +350,5 @@ src/
 - 移动、查看、翻手机、点已生成话题：**零 API 调用**
 - 每游戏日的 API 调用量应与"玩家实际互动次数"成正比，与 NPC 数量无关
 - 内核任何函数不得直接发起网络请求
+- `core/` 不依赖 DOM 或 IndexedDB；同一套内核必须可由 Node/Vitest/CLI 无头运行
 - 除 `core/state` 的写入函数外，任何地方不得直接改 `WorldState`
