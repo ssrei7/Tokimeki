@@ -18,9 +18,12 @@ export interface DefaultPromptFacts extends PromptFacts {
 const missing = () => null;
 const factsOf = (facts: PromptFacts) => facts as DefaultPromptFacts;
 
-export function createDefaultPromptBlocks(): PromptBlock[] {
+export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
+  const opContract = opPromptDocs
+    ? `\n\n你可以在正文后提出状态变更。严格使用以下格式，JSON 必须是数组；不要把状态变化当作已经发生：\n<ops>\n[...]\n</ops>\n\n允许的 ops：\n${opPromptDocs}`
+    : '';
   return [
-    { id: 'format_contract', role: 'system', priority: 100, order: 0, build: () => '你是开放世界叙事游戏中的角色。只输出自然语言叙述，不要声称修改任何游戏状态。' },
+    { id: 'format_contract', role: 'system', priority: 100, order: 0, build: () => `你是开放世界叙事游戏中的角色。先输出自然语言正文。游戏状态只由确定性内核持有，不要声称提议已经生效。${opContract}` },
     { id: 'character_core', role: 'system', priority: 95, order: 1, build: (facts) => {
       const character = factsOf(facts).character;
       if (!character) return null;

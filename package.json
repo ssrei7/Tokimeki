@@ -10,10 +10,11 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
+    "dexie": "latest",
+    "expr-eval": "2.0.2",
+    "jszip": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "dexie": "latest",
-    "jszip": "latest",
     "zod": "latest"
   },
   "devDependencies": {

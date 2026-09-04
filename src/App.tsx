@@ -3,6 +3,8 @@ import { PromptAssembler } from './core/prompt/assembler';
 import type { AssembledPrompt } from './core/prompt/assembler';
 import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
 import { EventBus } from './core/events/bus';
+import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
+import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import type { CharacterCard, ChatMessage, ChatRecord, Preset, WorldbookEntry } from './data/content';
 import { contentDb, deleteCharacter, deletePreset, deleteWorldbook, loadChat, saveCharacter, saveChat, savePreset, saveWorldbook } from './data/db/content';
 import { exportSaveZip, importSaveZip } from './data/io/zip';
@@ -12,6 +14,8 @@ import { providerDb } from './providers/db';
 import { listProviderModels } from './providers/models';
 import { resolveProviderForTask } from './providers/router';
 import { streamChat, type StreamStatus } from './providers/stream';
+import { createMockProviderConfig } from './providers/adapters/mock';
+import { MOCK_FIXTURE_IDS, type MockFixtureId } from './providers/mock/fixtures';
 import { ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, type ProviderBinding, type ProviderConfig, type TaskId } from './providers/types';
 import { canGenerateReply, hasQueuedUserMessage } from './ui/chat-state';
 import './ui/theme/app.css';
@@ -20,6 +24,8 @@ type Tab = 'map' | 'chat' | 'library' | 'settings';
 type ContentKind = 'character' | 'worldbook' | 'preset';
 type RequestStatus = 'idle' | StreamStatus;
 type Feedback = { tone: 'info' | 'success' | 'error'; text: string } | null;
+type DebugState = { prompt: AssembledPrompt | null; raw: string; ops: string; state: string };
+type PendingOpsRecovery = { raw: string; actorId?: string; streamError?: string };
 
 const now = () => new Date().toISOString();
 const slug = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '') || `item-${Date.now()}`;
@@ -40,11 +46,31 @@ function parseHeadersDraft(value: string): Record<string, string> {
   return parsed as Record<string, string>;
 }
 
+function formatOpsDebug(reply: ParsedReply, applied: ApplyOpsResult, logs: string[]): string {
+  return JSON.stringify({
+    stage: reply.stage,
+    parsedOps: reply.ops,
+    parseWarnings: reply.warnings,
+    applied: applied.applied,
+    changes: applied.changes,
+    warnings: applied.warnings,
+    rejected: applied.rejected,
+    truncated: applied.truncated,
+    log: logs,
+  }, null, 2);
+}
+
 const defaultSave: SaveFile = SaveFileSchema.parse({
   schemaVersion: 2,
   meta: { id: 'local-save', title: '我的世界', createdAt: now(), updatedAt: now(), appVersion: '0.0.1' },
   config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }], daysPerWeek: 7, weekdayNames: ['一', '二', '三', '四', '五', '六', '日'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12 },
-  world: { clock: { day: 1, slotId: 'morning' }, player: { name: '旅人', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {} },
+  world: {
+    clock: { day: 1, slotId: 'morning' },
+    player: { name: '旅人', nodeId: 'start', stats: { 'custom-reputation': 0 }, flags: {}, inventory: [] },
+    stats: {}, flags: {},
+    items: { 'white-flower': { id: 'white-flower', name: '白色小花', tags: ['flower'], description: '一朵可用于 Mock 验收的白色小花。', stackable: true, giftable: true } },
+    relations: {},
+  },
 });
 
 export function App() {
@@ -68,8 +94,18 @@ export function App() {
   const [requestStatus, setRequestStatus] = useState<RequestStatus>('idle');
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const [save, setSave] = useState<SaveFile>(defaultSave);
+  const saveRef = useRef(save);
+  const [pendingOps, setPendingOps] = useState<PendingOpsRecovery | null>(null);
+  const [manualOps, setManualOps] = useState('[]');
+  const [mockFixtureId, setMockFixtureId] = useState<MockFixtureId | ''>('');
+  const [itemName, setItemName] = useState('');
+  const [itemTags, setItemTags] = useState('');
+  const [itemDescription, setItemDescription] = useState('');
+  const [statKey, setStatKey] = useState('');
+  const [statValue, setStatValue] = useState('0');
   const [debugTab, setDebugTab] = useState<'Prompt' | 'Raw' | 'Ops' | 'State'>('Prompt');
-  const [debug, setDebug] = useState<{ prompt: AssembledPrompt | null; raw: string; ops: string; state: string }>({ prompt: null, raw: '', ops: '本阶段尚未解析状态变化。', state: JSON.stringify(defaultSave, null, 2) });
+  const [debug, setDebug] = useState<DebugState>({ prompt: null, raw: '', ops: '尚未解析状态变化。', state: JSON.stringify(defaultSave, null, 2) });
 
   useEffect(() => {
     void Promise.all([contentDb.characters.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.settings.get('defaultProviderId')]).then(([c, w, p, ps, bs, setting]) => {
@@ -105,11 +141,19 @@ export function App() {
 
   const activeCharacter = characters.find((item) => item.id === selectedCharacterId);
   const promptEvents = useMemo(() => new EventBus(), []);
+  const opRegistry = useMemo(() => createDefaultOpRegistry(), []);
   const assembler = useMemo(() => {
     const instance = new PromptAssembler();
-    for (const block of createDefaultPromptBlocks()) instance.register(block);
+    for (const block of createDefaultPromptBlocks(opRegistry.promptDocs())) instance.register(block);
     return instance;
-  }, []);
+  }, [opRegistry]);
+
+  function commitSave(next: SaveFile): void {
+    const parsed = SaveFileSchema.parse({ ...next, meta: { ...next.meta, updatedAt: now() } });
+    saveRef.current = parsed;
+    setSave(parsed);
+    setDebug((current) => ({ ...current, state: JSON.stringify(parsed, null, 2) }));
+  }
 
   async function appendMessage() {
     const text = input.trim();
@@ -127,35 +171,156 @@ export function App() {
     const text = input.trim();
     const next = text ? [...messages, { role: 'user' as const, content: text }] : messages;
     if (!hasQueuedUserMessage(next) && next.length === 0) { setFeedback({ tone: 'error', text: '请先发送第一条消息。' }); return; }
-    const routedProvider = resolveProviderForTask(providers, bindings, 'narrate_main', defaultProviderId);
+    const routedProvider = mockFixtureId
+      ? createMockProviderConfig(mockFixtureId)
+      : resolveProviderForTask(providers, bindings, 'narrate_main', defaultProviderId);
     let parsed: ProviderConfig;
     try {
-      if (!routedProvider) throw new Error('请先保存并设置默认 Provider。');
+      if (!routedProvider) throw new Error('请先保存并设置默认 Provider，或在高级调试中启用 Mock fixture。');
       parsed = ProviderConfigSchema.parse(routedProvider);
     } catch (error) { setRequestStatus('error'); setFeedback({ tone: 'error', text: errorMessage(error, 'Provider 配置无效，请在设置中检查基础 URL、模型与渠道。') }); return; }
 
-    setMessages(next); setInput(''); setBusy(true); setRequestStatus('requesting'); setFeedback(null);
+    setMessages(next); setInput(''); setBusy(true); setRequestStatus('requesting'); setFeedback(null); setPendingOps(null);
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
-    let assistant = '';
+    let narrative = '';
+    const splitter = new OpsStreamSplitter();
     const latestInput = [...next].reverse().find((message) => message.role === 'user')?.content ?? '';
-    const promptFacts = { input: latestInput, character: activeCharacter, worldbooks, history: next, world: defaultSave.world };
+    const promptFacts = { input: latestInput, character: activeCharacter, worldbooks, history: next, world: saveRef.current.world };
     promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
     const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
     setDebug((current) => ({ ...current, prompt: assembled }));
     try {
       await streamChat(parsed, assembled.messages, (delta) => {
-        assistant += delta;
-        setMessages([...next, { role: 'assistant', content: assistant }]);
+        narrative += splitter.push(delta);
+        setMessages([...next, { role: 'assistant', content: narrative }]);
       }, { taskId: 'narrate_main', onStatus: (status) => setRequestStatus(status) });
-      const completed = [...next, { role: 'assistant' as const, content: assistant }];
+      const finished = splitter.finish();
+      narrative += finished.text;
+      const completed = [...next, { role: 'assistant' as const, content: narrative }];
       setMessages(completed);
       await saveChat({ characterId: selectedCharacterId, messages: completed, updatedAt: now() });
-      setDebug((current) => ({ ...current, raw: assistant }));
+      const reply = await parseReply(finished.raw, extractOps);
+      applyReplyOps(reply, selectedCharacterId);
     } catch (error) {
       const message = errorMessage(error, '请求失败');
+      const finished = splitter.finish();
+      narrative += finished.text;
+      if (narrative) {
+        const completed = [...next, { role: 'assistant' as const, content: narrative }];
+        setMessages(completed);
+        await saveChat({ characterId: selectedCharacterId, messages: completed, updatedAt: now() });
+      } else {
+        setMessages(next);
+      }
       setRequestStatus('error'); setFeedback({ tone: 'error', text: message });
-      setDebug((current) => ({ ...current, raw: message }));
+      if (finished.raw) setPendingOps({ raw: finished.raw, actorId: selectedCharacterId, streamError: message });
+      setDebug((current) => ({
+        ...current,
+        raw: finished.raw || message,
+        ops: JSON.stringify({ stage: 'stream-error', applied: 0, warnings: [message], message: '本回合未产生状态变更。' }, null, 2),
+      }));
     } finally { setBusy(false); }
+  }
+
+  async function extractOps(rawReply: string): Promise<string> {
+    const candidate = mockFixtureId
+      ? createMockProviderConfig(mockFixtureId)
+      : resolveProviderForTask(providers, bindings, 'extract_ops', defaultProviderId);
+    if (!candidate) throw new Error('未配置 extract_ops Provider 或默认 Provider。');
+    const extractProvider = ProviderConfigSchema.parse(candidate);
+    let extracted = '';
+    await streamChat(extractProvider, [
+      { role: 'system', content: '只从回复中提取状态变化，严格输出 JSON ops 数组，不要输出正文、Markdown 或解释。无法提取时输出 []。' },
+      { role: 'user', content: rawReply },
+    ], (delta) => { extracted += delta; }, { taskId: 'extract_ops' });
+    return extracted;
+  }
+
+  function applyReplyOps(reply: ParsedReply, actorId?: string): void {
+    if (reply.opsFailed) {
+      setPendingOps({ raw: reply.raw, actorId });
+      setManualOps('[]');
+      setDebug((current) => ({ ...current, raw: reply.raw, ops: JSON.stringify({ stage: reply.stage, opsFailed: true, warnings: reply.warnings, message: '本回合未产生状态变更。' }, null, 2) }));
+      setFeedback({ tone: 'info', text: '回复正文已保留，但状态变化解析失败；本回合未产生状态变更。' });
+      return;
+    }
+
+    const nextSave = structuredClone(saveRef.current);
+    const logs: string[] = [];
+    const world = nextSave.world;
+    const applied = opRegistry.applyAll(reply.ops, {
+      world,
+      actorId,
+      day: world.clock.day,
+      slotId: world.clock.slotId,
+      nodeId: world.player.nodeId,
+      log: (message) => logs.push(message),
+    }, nextSave.config.opsLimitPerTurn);
+    commitSave(nextSave);
+    promptEvents.emit('onOpsApply', { changes: applied.changes });
+    setPendingOps(null);
+    setManualOps('[]');
+    setDebug((current) => ({ ...current, raw: reply.raw, ops: formatOpsDebug(reply, applied, logs) }));
+    const issues = reply.warnings.length + applied.warnings.length + applied.rejected.length + applied.truncated;
+    setFeedback({
+      tone: issues ? 'info' : 'success',
+      text: applied.changes.length ? `回复已生成并应用 ${applied.applied} 个状态操作。` : '回复已生成，本回合没有状态变化。',
+    });
+  }
+
+  async function retryOpsExtraction(): Promise<void> {
+    if (!pendingOps || busy) return;
+    setBusy(true); setRequestStatus('requesting'); setFeedback({ tone: 'info', text: '正在重新提取状态变化…' });
+    try {
+      const reply = await parseReply(pendingOps.raw, extractOps);
+      applyReplyOps(reply, pendingOps.actorId);
+      setRequestStatus('success');
+    } catch (error) {
+      setRequestStatus('error');
+      setFeedback({ tone: 'error', text: errorMessage(error, '重新提取失败，本回合仍未产生状态变更。') });
+    } finally { setBusy(false); }
+  }
+
+  async function applyManualOps(): Promise<void> {
+    if (!pendingOps || busy) return;
+    const reply = await parseReply(`手动补录\n<ops>\n${manualOps}\n</ops>`);
+    if (reply.opsFailed) {
+      setFeedback({ tone: 'error', text: '手动 ops 不是有效的 JSON 数组。' });
+      return;
+    }
+    applyReplyOps({ ...reply, raw: pendingOps.raw }, pendingOps.actorId);
+  }
+
+  function addItemDefinition(): void {
+    const trimmedName = itemName.trim();
+    if (!trimmedName) return;
+    const id = slug(trimmedName);
+    const next = structuredClone(saveRef.current);
+    next.world.items[id] = {
+      id,
+      name: trimmedName,
+      tags: itemTags.split(',').map((tag) => tag.trim()).filter(Boolean),
+      ...(itemDescription.trim() ? { description: itemDescription.trim() } : {}),
+      stackable: true,
+      giftable: true,
+    };
+    commitSave(next);
+    setItemName(''); setItemTags(''); setItemDescription('');
+    setFeedback({ tone: 'success', text: `物品定义 ${trimmedName} 已保存。` });
+  }
+
+  function addCustomStat(): void {
+    const key = slug(statKey);
+    const value = Number(statValue);
+    if (!statKey.trim() || !Number.isFinite(value)) {
+      setFeedback({ tone: 'error', text: '请输入 stat 名称和有效数字。' });
+      return;
+    }
+    const next = structuredClone(saveRef.current);
+    next.world.player.stats[key] = value;
+    commitSave(next);
+    setStatKey(''); setStatValue('0');
+    setFeedback({ tone: 'success', text: `自定义 stat ${key} 已保存。` });
   }
 
   function parseEditedProvider(): ProviderConfig {
@@ -267,7 +432,7 @@ export function App() {
   async function downloadSave() {
     if (selectedCharacterId) await saveChat({ characterId: selectedCharacterId, messages, updatedAt: now() });
     const chats = await contentDb.chats.toArray();
-    const blob = await exportSaveZip(defaultSave, {}, { characters, worldbooks, presets, chats });
+    const blob = await exportSaveZip(saveRef.current, {}, { characters, worldbooks, presets, chats });
     const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
     anchor.href = url; anchor.download = 'tokimeki-save.zip'; anchor.click(); URL.revokeObjectURL(url);
     setFeedback({ tone: 'success', text: '存档已导出；Provider 配置与 API key 未包含在内。' });
@@ -291,7 +456,8 @@ export function App() {
       if (activeImportedChat) {
         setSelectedCharacterId(activeImportedChat.characterId); setMessages(activeImportedChat.messages); setLoadedChatCharacterId(activeImportedChat.characterId);
       }
-      setDebug((current) => ({ ...current, state: JSON.stringify(imported.save, null, 2), raw: '已导入存档与内容；Provider 设置未改变。' }));
+      commitSave(imported.save);
+      setDebug((current) => ({ ...current, raw: '已导入存档与内容；Provider 设置未改变。' }));
       setFeedback({ tone: 'success', text: '导入成功；Provider 配置与 API key 未覆盖。' });
     } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '导入失败') }); }
   }
@@ -304,13 +470,13 @@ export function App() {
   };
 
   return <div className="app-shell">
-    <header className="topbar"><div><small>第 1 天 · 早晨</small><h1>Tokimeki</h1></div></header>
+    <header className="topbar"><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small><h1>Tokimeki</h1></div></header>
     <main className="screen">
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView onOpenChat={() => setTab('chat')} />}
-      {tab === 'chat' && <ChatView characters={characters} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} />}
-      {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} />}
-      {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} />}
+      {tab === 'chat' && <ChatView characters={characters} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
+      {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} />}
+      {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} />}
     </main>
     <nav className="bottom-nav">{([['map', '地图'], ['chat', '聊天'], ['library', '资料'], ['settings', '设置']] as const).map(([id, label]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
   </div>;
@@ -320,7 +486,23 @@ function MapView({ onOpenChat }: { onOpenChat: () => void }) {
   return <section className="map-screen"><div className="map-canvas"><span className="map-pin active">你</span><span className="map-pin pin-a">旧市场</span><span className="map-pin pin-b">西码头</span><div className="map-road road-a" /><div className="map-road road-b" /></div><div className="place-card"><span className="eyebrow">当前位置</span><h2>起点街区</h2><p>从地图出发，去遇见今天的世界。</p><button onClick={onOpenChat}>打开聊天</button></div></section>;
 }
 
-function ChatView(props: { characters: CharacterCard[]; selectedCharacterId: string; setSelectedCharacterId: (id: string) => void; messages: ChatMessage[]; input: string; setInput: (value: string) => void; onAppend: () => Promise<void>; onGenerate: () => Promise<void>; requestStatus: RequestStatus; busy: boolean }) {
+function ChatView(props: {
+  characters: CharacterCard[];
+  selectedCharacterId: string;
+  setSelectedCharacterId: (id: string) => void;
+  messages: ChatMessage[];
+  input: string;
+  setInput: (value: string) => void;
+  onAppend: () => Promise<void>;
+  onGenerate: () => Promise<void>;
+  requestStatus: RequestStatus;
+  busy: boolean;
+  pendingOps: PendingOpsRecovery | null;
+  manualOps: string;
+  setManualOps: (value: string) => void;
+  onRetryOps: () => Promise<void>;
+  onApplyManualOps: () => Promise<void>;
+}) {
   const latestRef = useRef<HTMLDivElement>(null);
   const followLatestRef = useRef(true);
   const previousCharacterIdRef = useRef(props.selectedCharacterId);
@@ -346,7 +528,18 @@ function ChatView(props: { characters: CharacterCard[]; selectedCharacterId: str
     if (followLatestRef.current) latestRef.current?.scrollIntoView({ block: 'end' });
   }, [latestMessage, props.busy, props.messages.length, props.requestStatus, props.selectedCharacterId]);
 
-  return <section className="chat-screen"><div className="section-heading"><div><span className="eyebrow">日常相遇</span><h2>{props.characters.find((item) => item.id === props.selectedCharacterId)?.name ?? '选择角色聊天'}</h2></div>{statusText && <span className={`request-status ${props.requestStatus}`}>{statusText}</span>}</div><div className="character-picker"><label>聊天角色<select value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">未选择</option>{props.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div><div className="messages">{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{props.messages.map((message, index) => <div className={`message ${message.role}`} key={`${message.role}-${index}`}>{message.content}</div>)}{props.busy && props.requestStatus === 'requesting' && <div className="message assistant pending">等待回复…</div>}</div><div className="composer"><textarea value={props.input} onChange={(event) => props.setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void props.onAppend(); } }} placeholder="说点什么……" /><div className="composer-actions"><button className="secondary" onClick={() => void props.onAppend()} disabled={props.busy || !props.input.trim()}>发送消息</button><button onClick={() => void props.onGenerate()} disabled={props.busy || !canGenerate}>生成回复</button></div></div><div ref={latestRef} aria-hidden="true" /></section>;
+  return <section className="chat-screen">
+    <div className="section-heading"><div><span className="eyebrow">日常相遇</span><h2>{props.characters.find((item) => item.id === props.selectedCharacterId)?.name ?? '选择角色聊天'}</h2></div>{statusText && <span className={`request-status ${props.requestStatus}`}>{statusText}</span>}</div>
+    <div className="character-picker"><label>聊天角色<select value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">未选择</option>{props.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
+    <div className="messages">{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{props.messages.map((message, index) => <div className={`message ${message.role}`} key={`${message.role}-${index}`}>{message.content}</div>)}{props.busy && props.requestStatus === 'requesting' && <div className="message assistant pending">等待回复…</div>}</div>
+    {props.pendingOps && <div className="ops-recovery" role="alert">
+      <strong>本回合未产生状态变更</strong>
+      <p>{props.pendingOps.streamError ? '回复流中断，已保留收到的正文。你可以重试提取或手动补录。' : '正文已保留，但 ops 无法解析。你可以重试提取或手动补录。'}</p>
+      <textarea aria-label="手动补录 ops JSON" spellCheck={false} value={props.manualOps} onChange={(event) => props.setManualOps(event.target.value)} />
+      <div className="button-row"><button className="secondary" disabled={props.busy} onClick={() => void props.onRetryOps()}>重试提取</button><button disabled={props.busy} onClick={() => void props.onApplyManualOps()}>应用手动 ops</button></div>
+    </div>}
+    <div className="composer"><textarea value={props.input} onChange={(event) => props.setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void props.onAppend(); } }} placeholder="说点什么……" /><div className="composer-actions"><button className="secondary" onClick={() => void props.onAppend()} disabled={props.busy || !props.input.trim()}>发送消息</button><button onClick={() => void props.onGenerate()} disabled={props.busy || !canGenerate}>生成回复</button></div></div><div ref={latestRef} aria-hidden="true" />
+  </section>;
 }
 
 function SettingsView(props: {
@@ -369,6 +562,14 @@ function SettingsView(props: {
   debug: { prompt: AssembledPrompt | null; raw: string; ops: string; state: string };
   debugTab: 'Prompt' | 'Raw' | 'Ops' | 'State';
   setDebugTab: (tab: 'Prompt' | 'Raw' | 'Ops' | 'State') => void;
+  save: SaveFile;
+  statKey: string;
+  setStatKey: (value: string) => void;
+  statValue: string;
+  setStatValue: (value: string) => void;
+  onAddStat: () => void;
+  mockFixtureId: MockFixtureId | '';
+  setMockFixtureId: (value: MockFixtureId | '') => void;
 }) {
   const isSaved = props.providers.some((item) => item.id === props.provider.id);
   return <section>
@@ -395,13 +596,21 @@ function SettingsView(props: {
       <label>默认 Provider<select aria-label="默认 Provider" value={props.defaultProviderId} disabled={props.providers.length === 0} onChange={(event) => void props.onDefaultProviderChange(event.target.value)}><option value="">未设置</option>{props.providers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <div className="routing-list">{TASK_IDS.map((taskId) => <label key={taskId}><span>{TASK_LABELS[taskId]}<small>{taskId}</small></span><select aria-label={`${TASK_LABELS[taskId]} Provider`} value={props.bindings.find((binding) => binding.taskId === taskId)?.providerId ?? ''} disabled={props.providers.length === 0} onChange={(event) => void props.onBindingChange(taskId, event.target.value)}><option value="">使用默认 Provider</option>{props.providers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>)}</div>
     </div>
+    <div className="provider-card">
+      <h3>自定义 stats</h3>
+      <div className="field-with-action"><input placeholder="stat 名称" value={props.statKey} onChange={(event) => props.setStatKey(event.target.value)} /><input type="number" placeholder="初始值" value={props.statValue} onChange={(event) => props.setStatValue(event.target.value)} /></div>
+      <button className="secondary" onClick={props.onAddStat}>保存玩家 stat</button>
+      <div className="stat-list">{Object.entries(props.save.world.player.stats).map(([key, value]) => <span key={key}>{key}: {value}</span>)}</div>
+    </div>
     <details className="advanced"><summary>高级与调试</summary><DebugView debug={props.debug} tab={props.debugTab} setTab={props.setDebugTab} /></details>
+    <details className="advanced"><summary>Mock provider 验收工具</summary><div className="provider-card mock-tools"><p className="io-scope">仅开发验收使用，不进入普通 Provider 列表；选择后在聊天页点击“生成回复”即可零 API 重现 fixture。</p><label>fixture<select aria-label="Mock fixture" value={props.mockFixtureId} onChange={(event) => props.setMockFixtureId(event.target.value as MockFixtureId | '')}><option value="">关闭 Mock</option>{MOCK_FIXTURE_IDS.map((id) => <option key={id} value={id}>{id}</option>)}</select></label></div></details>
   </section>;
 }
 
-function LibraryView(props: { characters: CharacterCard[]; worldbooks: WorldbookEntry[]; presets: Preset[]; name: string; setName: (value: string) => void; draftText: string; setDraftText: (value: string) => void; editing: { kind: ContentKind; id: string } | null; setEditing: (editing: { kind: ContentKind; id: string } | null) => void; addContent: (kind: ContentKind) => Promise<void>; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void>; onExportSave: () => Promise<void>; onImportSave: (file?: File) => Promise<void> }) {
+function LibraryView(props: { characters: CharacterCard[]; worldbooks: WorldbookEntry[]; presets: Preset[]; save: SaveFile; name: string; setName: (value: string) => void; draftText: string; setDraftText: (value: string) => void; editing: { kind: ContentKind; id: string } | null; setEditing: (editing: { kind: ContentKind; id: string } | null) => void; addContent: (kind: ContentKind) => Promise<void>; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void>; onExportSave: () => Promise<void>; onImportSave: (file?: File) => Promise<void>; itemName: string; setItemName: (value: string) => void; itemTags: string; setItemTags: (value: string) => void; itemDescription: string; setItemDescription: (value: string) => void; onAddItem: () => void }) {
   const edit = (kind: ContentKind, item: { id: string; name: string; text: string }) => { props.setEditing({ kind, id: item.id }); props.setName(item.name); props.setDraftText(item.text); };
-  return <section><div className="section-heading"><div><span className="eyebrow">本地资料</span><h2>角色 / 世界书 / 预设</h2></div></div><div className="editor-card"><input placeholder="名称" value={props.name} onChange={(event) => props.setName(event.target.value)} /><textarea placeholder="描述或内容" value={props.draftText} onChange={(event) => props.setDraftText(event.target.value)} /><div className="button-row"><button onClick={() => void props.addContent('character')}>保存角色卡</button><button onClick={() => void props.addContent('worldbook')}>保存世界书</button><button onClick={() => void props.addContent('preset')}>保存预设</button></div></div><ContentList title="角色卡" kind="character" items={props.characters.map((item) => ({ ...item, text: item.description }))} onEdit={edit} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><ContentList title="世界书" kind="worldbook" items={props.worldbooks.map((item) => ({ ...item, text: item.content }))} onEdit={edit} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><ContentList title="预设" kind="preset" items={props.presets.map((item) => ({ ...item, text: item.systemPrompt }))} onEdit={edit} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><div className="io-card"><div><strong>世界存档</strong><p className="io-scope">包含角色卡、世界书、预设和全部聊天；不包含 Provider 配置与 API key。</p></div><button onClick={() => void props.onExportSave()}>导出世界存档</button><label className="file-button">导入世界存档<input type="file" accept=".zip" onChange={(event) => void props.onImportSave(event.target.files?.[0])} /></label></div></section>;
+  const inventory = Object.entries(props.save.world.player.inventory.reduce<Record<string, number>>((counts, entry) => ({ ...counts, [entry.itemId]: (counts[entry.itemId] ?? 0) + entry.count }), {}));
+  return <section><div className="section-heading"><div><span className="eyebrow">本地资料</span><h2>角色 / 世界书 / 预设</h2></div></div><div className="editor-card"><input placeholder="名称" value={props.name} onChange={(event) => props.setName(event.target.value)} /><textarea placeholder="描述或内容" value={props.draftText} onChange={(event) => props.setDraftText(event.target.value)} /><div className="button-row"><button onClick={() => void props.addContent('character')}>保存角色卡</button><button onClick={() => void props.addContent('worldbook')}>保存世界书</button><button onClick={() => void props.addContent('preset')}>保存预设</button></div></div><div className="list-card"><div className="list-heading"><h3>物品定义</h3></div><div className="editor-card"><input placeholder="物品名称" value={props.itemName} onChange={(event) => props.setItemName(event.target.value)} /><input placeholder="标签，用逗号分隔" value={props.itemTags} onChange={(event) => props.setItemTags(event.target.value)} /><textarea placeholder="物品描述" value={props.itemDescription} onChange={(event) => props.setItemDescription(event.target.value)} /><button onClick={props.onAddItem}>保存物品定义</button></div>{Object.values(props.save.world.items).map((item) => <div className="list-row" key={item.id}><span>{item.name}<small>{item.id} · {item.tags.join(', ')}</small></span></div>)}</div><div className="list-card"><div className="list-heading"><h3>物品栏</h3></div>{inventory.length === 0 ? <p className="empty">暂无物品</p> : inventory.map(([itemId, count]) => <div className="list-row" key={itemId}><span>{props.save.world.items[itemId]?.name ?? itemId}</span><span>x{count}</span></div>)}</div><ContentList title="角色卡" kind="character" items={props.characters.map((item) => ({ ...item, text: item.description }))} onEdit={edit} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><ContentList title="世界书" kind="worldbook" items={props.worldbooks.map((item) => ({ ...item, text: item.content }))} onEdit={edit} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><ContentList title="预设" kind="preset" items={props.presets.map((item) => ({ ...item, text: item.systemPrompt }))} onEdit={edit} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><div className="io-card"><div><strong>世界存档</strong><p className="io-scope">包含角色卡、世界书、预设和全部聊天；不包含 Provider 配置与 API key。</p></div><button onClick={() => void props.onExportSave()}>导出世界存档</button><label className="file-button">导入世界存档<input type="file" accept=".zip" onChange={(event) => void props.onImportSave(event.target.files?.[0])} /></label></div></section>;
 }
 
 function ContentList(props: { title: string; kind: ContentKind; items: Array<{ id: string; name: string; text: string }>; onEdit: (kind: ContentKind, item: { id: string; name: string; text: string }) => void; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void> }) {

@@ -25,7 +25,7 @@ function repliesForTask(taskId: TaskId): Record<MockFixtureId, MockFixture> {
       id: 'perfect',
       chunks: [
         `${prefix} 他递给你一朵白色小花。\n<ops>\n`,
-        '[{"op":"give_item","id":"white-flower","from":"mock-character"},',
+        '[{"op":"give_item","id":"white-flower"},',
         '{"op":"add_stat","target":"player","key":"custom-reputation","delta":2}]\n</ops>',
       ],
     },

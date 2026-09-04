@@ -18,6 +18,14 @@ describe('prompt assembler', () => {
     expect(result.blocks.find((block) => block.id === 'relationship_state')?.skipped).toBe(true);
     expect(result.messages.some((message) => message.content.includes('开放世界叙事游戏'))).toBe(true);
   });
+
+  it('includes registered op documentation in the format contract', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks('- add_stat example')) assembler.register(block);
+    const result = assembler.assemble({ input: '', worldbooks: [], history: [], world: undefined }, { budget: 300, task: 'narrate_main' });
+    expect(result.messages[0].content).toContain('<ops>');
+    expect(result.messages[0].content).toContain('add_stat example');
+  });
 });
 
 describe('save zip IO', () => {
