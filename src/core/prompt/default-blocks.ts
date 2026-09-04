@@ -1,4 +1,4 @@
-import type { CharacterCard, ChatMessage, WorldbookEntry } from '../../data/content';
+import type { CharacterCard, ChatMessage, PresetBundle, WorldbookEntry } from '../../data/content';
 import type { SaveFile } from '../../data/schema/save';
 import type { PromptBlock, PromptFacts } from './assembler';
 
@@ -12,7 +12,7 @@ export interface DefaultPromptFacts extends PromptFacts {
   character?: CharacterCard;
   worldbooks: WorldbookEntry[];
   history: ChatMessage[];
-  preset?: { name: string; systemPrompt: string };
+  presetBundle?: PresetBundle;
   world: SaveFile['world'];
 }
 
@@ -25,8 +25,8 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
     : '';
   return [
     { id: 'format_contract', role: 'system', priority: 100, order: 0, build: (facts) => {
-      const preset = factsOf(facts).preset;
-      const presetText = preset?.systemPrompt ? `\n\n当前资料预设「${preset.name}」的文风/提示词：\n${preset.systemPrompt}` : '';
+      const presetBundle = factsOf(facts).presetBundle;
+      const presetText = presetBundle?.entries.length ? `\n\n当前资料预设包「${presetBundle.name}」的全部条目：\n${presetBundle.entries.map((entry) => `[${entry.name}]\n${entry.systemPrompt}`).join('\n\n')}` : '';
       return `你是开放世界叙事游戏中的角色。先输出自然语言正文。游戏状态只由确定性内核持有，不要声称提议已经生效。${presetText}${opContract}`;
     } },
     { id: 'character_core', role: 'system', priority: 95, order: 1, build: (facts) => {

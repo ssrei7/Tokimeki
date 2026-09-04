@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { migrateSave } from '../migrations';
 import { SaveFileSchema, type SaveFile } from '../schema/save';
-import { PresetSchema, type Preset } from '../content';
+import { PresetBundleSchema, PresetSchema, type Preset, type PresetBundle } from '../content';
 
 export interface ZipManifest { type: 'save' | 'character' | 'world' | 'events' | 'preset'; appVersion: string; schemaVersion: number }
 export interface ImportedSaveZip { manifest: ZipManifest; save: SaveFile; assets: Map<string, Uint8Array>; extras: Record<string, unknown> }
@@ -27,23 +27,27 @@ export async function importSaveZip(input: Blob | ArrayBuffer | Uint8Array): Pro
   return { manifest, save, assets, extras };
 }
 
-export async function exportPresetBundle(presets: readonly Preset[], appVersion = '0.0.1'): Promise<Blob> {
-  const parsed = presets.map((preset) => PresetSchema.parse(preset));
+export async function exportPresetBundle(bundle: PresetBundle | readonly Preset[], appVersion = '0.0.1'): Promise<Blob> {
+  const parsedBundle: PresetBundle = Array.isArray(bundle)
+    ? { id: 'imported-bundle', name: 'Imported preset bundle', entries: bundle.map((preset) => PresetSchema.parse(preset)), updatedAt: new Date().toISOString() }
+    : PresetBundleSchema.parse(bundle);
   const zip = new JSZip();
   zip.file('manifest.json', JSON.stringify({ type: 'preset', appVersion, schemaVersion: 1 }, null, 2));
-  zip.file('presets.json', JSON.stringify(parsed, null, 2));
+  zip.file('preset-bundle.json', JSON.stringify(parsedBundle, null, 2));
   return zip.generateAsync({ type: 'blob' });
 }
 
-export async function importPresetBundle(input: Blob | ArrayBuffer | Uint8Array): Promise<Preset[]> {
+export async function importPresetBundle(input: Blob | ArrayBuffer | Uint8Array): Promise<PresetBundle> {
   const source = typeof Blob !== 'undefined' && input instanceof Blob ? await input.arrayBuffer() : input;
   const zip = await JSZip.loadAsync(source);
   const manifestFile = zip.file('manifest.json');
-  const presetsFile = zip.file('presets.json');
-  if (!manifestFile || !presetsFile) throw new Error('Preset bundle must contain manifest.json and presets.json');
+  const bundleFile = zip.file('preset-bundle.json');
+  const legacyFile = zip.file('presets.json');
+  if (!manifestFile || (!bundleFile && !legacyFile)) throw new Error('Preset bundle must contain manifest.json and preset-bundle.json');
   const manifest = JSON.parse(await manifestFile.async('text')) as Partial<ZipManifest>;
   if (manifest.type !== 'preset') throw new Error('This zip is not a preset bundle.');
-  const value: unknown = JSON.parse(await presetsFile.async('text'));
+  const value: unknown = JSON.parse(await (bundleFile ?? legacyFile!).async('text'));
+  if (bundleFile) return PresetBundleSchema.parse(value);
   if (!Array.isArray(value) || value.length === 0) throw new Error('Preset bundle must contain at least one preset.');
-  return value.map((preset) => PresetSchema.parse(preset));
+  return PresetBundleSchema.parse({ id: 'imported-bundle', name: 'Imported preset bundle', entries: value.map((preset) => PresetSchema.parse(preset)), updatedAt: new Date().toISOString() });
 }

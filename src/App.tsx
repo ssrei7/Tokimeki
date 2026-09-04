@@ -5,8 +5,8 @@ import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
 import { EventBus } from './core/events/bus';
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
-import type { CharacterCard, ChatMessage, ChatRecord, Preset, WorldbookEntry } from './data/content';
-import { clearChats, contentDb, deleteCharacter, deletePreset, deleteWorldbook, loadChat, saveCharacter, saveChat, savePreset, saveWorldbook } from './data/db/content';
+import type { CharacterCard, ChatMessage, ChatRecord, Preset, PresetBundle, WorldbookEntry } from './data/content';
+import { clearChats, contentDb, deleteCharacter, deletePreset, deletePresetBundle, deleteWorldbook, loadChat, saveCharacter, saveChat, savePreset, savePresetBundle, saveWorldbook } from './data/db/content';
 import { exportPresetBundle, exportSaveZip, importPresetBundle, importSaveZip } from './data/io/zip';
 import { DEFAULT_ACTION_COSTS, DEFAULT_SLOT_DEFS, SaveFileSchema, type SaveFile } from './data/schema/save';
 import { testProviderConnection } from './providers/connection-test';
@@ -89,11 +89,14 @@ export function App() {
   const [characters, setCharacters] = useState<CharacterCard[]>([]);
   const [worldbooks, setWorldbooks] = useState<WorldbookEntry[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [presetBundles, setPresetBundles] = useState<PresetBundle[]>([]);
+  const [selectedPresetBundleId, setSelectedPresetBundleId] = useState('');
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [selectedCharacterId, setSelectedCharacterId] = useState('');
   const [loadedChatCharacterId, setLoadedChatCharacterId] = useState('');
   const [name, setName] = useState('');
   const [draftText, setDraftText] = useState('');
+  const [presetBundleName, setPresetBundleName] = useState('');
   const [editing, setEditing] = useState<{ kind: ContentKind; id: string } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -121,8 +124,10 @@ export function App() {
   const [debug, setDebug] = useState<DebugState>({ prompt: null, raw: '', ops: '尚未解析状态变化。', state: JSON.stringify(defaultSave, null, 2) });
 
   useEffect(() => {
-    void Promise.all([contentDb.characters.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.settings.get('defaultProviderId')]).then(([c, w, p, ps, bs, setting]) => {
-      setCharacters(c); setWorldbooks(w); setPresets(p); setSelectedPresetId(p[0]?.id ?? ''); setProviders(ps);
+    void Promise.all([contentDb.characters.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), contentDb.presetBundles.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.settings.get('defaultProviderId')]).then(([c, w, p, bundles, ps, bs, setting]) => {
+      const fallback = bundles.length || !p.length ? bundles : [{ id: 'bundle-legacy', name: '默认预设包', entries: p, updatedAt: now() }];
+      setCharacters(c); setWorldbooks(w); setPresets(p); setPresetBundles(fallback); setSelectedPresetBundleId(fallback[0]?.id ?? ''); setProviders(ps);
+      if (!bundles.length && fallback[0]) void savePresetBundle(fallback[0]);
       setBindings(bs);
       if (c[0]) setSelectedCharacterId(c[0].id);
       if (ps[0]) setProvider(ps[0]);
@@ -198,8 +203,8 @@ export function App() {
     let narrative = '';
     const splitter = new OpsStreamSplitter();
     const latestInput = [...next].reverse().find((message) => message.role === 'user')?.content ?? '';
-    const activePreset = presets.find((item) => item.id === selectedPresetId);
-    const promptFacts = { input: latestInput, character: activeCharacter, preset: activePreset, worldbooks, history: next, world: saveRef.current.world };
+    const activePresetBundle = presetBundles.find((item) => item.id === selectedPresetBundleId);
+    const promptFacts = { input: latestInput, character: activeCharacter, presetBundle: activePresetBundle, worldbooks, history: next, world: saveRef.current.world };
     promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
     const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
     setDebug((current) => ({ ...current, prompt: assembled }));
@@ -425,7 +430,15 @@ export function App() {
     const id = editing?.kind === kind ? editing.id : slug(name);
     if (kind === 'character') { const item = await saveCharacter({ id, name, description: draftText, personality: '', updatedAt: now() }); setCharacters((items) => [...items.filter((old) => old.id !== id), item]); if (!selectedCharacterId) setSelectedCharacterId(id); }
     if (kind === 'worldbook') { const item = await saveWorldbook({ id, name, content: draftText, keys: [], enabled: true, priority: 50 }); setWorldbooks((items) => [...items.filter((old) => old.id !== id), item]); }
-    if (kind === 'preset') { const item = await savePreset({ id, name, systemPrompt: draftText, temperature: 0.7, maxOutputTokens: 1024, updatedAt: now() }); setPresets((items) => [...items.filter((old) => old.id !== id), item]); }
+    if (kind === 'preset') {
+      const item = await savePreset({ id, name, systemPrompt: draftText, temperature: 0.7, maxOutputTokens: 1024, updatedAt: now() });
+      const current = presetBundles.find((bundle) => bundle.id === selectedPresetBundleId);
+      const bundle = current ?? { id: `bundle-${slug(name)}`, name: `${name}预设包`, entries: [], updatedAt: now() };
+      const updated = await savePresetBundle({ ...bundle, entries: [...bundle.entries.filter((entry) => entry.id !== id), item], updatedAt: now() });
+      setPresets((items) => [...items.filter((old) => old.id !== id), item]);
+      setPresetBundles((items) => [...items.filter((old) => old.id !== updated.id), updated]);
+      if (!selectedPresetBundleId) setSelectedPresetBundleId(updated.id);
+    }
     setName(''); setDraftText(''); setEditing(null); setFeedback({ tone: 'success', text: '内容已保存。' });
   }
 
@@ -441,33 +454,69 @@ export function App() {
       const value = JSON.parse(await file.text());
       if (kind === 'character') { const item = await saveCharacter(value as CharacterCard); setCharacters((items) => [...items.filter((old) => old.id !== item.id), item]); }
       if (kind === 'worldbook') { const item = await saveWorldbook(value as WorldbookEntry); setWorldbooks((items) => [...items.filter((old) => old.id !== item.id), item]); }
-      if (kind === 'preset') { const item = await savePreset(value as Preset); setPresets((items) => [...items.filter((old) => old.id !== item.id), item]); }
+      if (kind === 'preset') {
+        const item = await savePreset(value as Preset);
+        const current = presetBundles.find((bundle) => bundle.id === selectedPresetBundleId);
+        const bundle = current ?? { id: `bundle-${slug(item.name)}`, name: `${item.name}预设包`, entries: [], updatedAt: now() };
+        const updated = await savePresetBundle({ ...bundle, entries: [...bundle.entries.filter((entry) => entry.id !== item.id), item], updatedAt: now() });
+        setPresets((items) => [...items.filter((old) => old.id !== item.id), item]);
+        setPresetBundles((items) => [...items.filter((old) => old.id !== updated.id), updated]);
+        if (!selectedPresetBundleId) setSelectedPresetBundleId(updated.id);
+      }
       setFeedback({ tone: 'success', text: '导入成功。' });
     } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '导入失败') }); }
   }
 
   async function exportPresetBundleFile(): Promise<void> {
-    if (presets.length === 0) { setFeedback({ tone: 'error', text: '暂无可导出的预设。' }); return; }
-    const blob = await exportPresetBundle(presets);
+    const bundle = presetBundles.find((item) => item.id === selectedPresetBundleId);
+    if (!bundle) { setFeedback({ tone: 'error', text: '请先创建或选择一个预设包。' }); return; }
+    const blob = await exportPresetBundle(bundle);
     const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
     anchor.href = url; anchor.download = 'tokimeki-presets.zip'; anchor.click(); URL.revokeObjectURL(url);
-    setFeedback({ tone: 'success', text: `已导出 ${presets.length} 个预设。` });
+    setFeedback({ tone: 'success', text: `已导出预设包“${bundle.name}”（${bundle.entries.length} 个条目）。` });
   }
 
   async function importPresetBundleFile(file?: File): Promise<void> {
     if (!file) return;
     try {
       const imported = await importPresetBundle(file);
-      const items = await Promise.all(imported.map(savePreset));
-      setPresets((current) => [...current.filter((old) => !items.some((item) => item.id === old.id)), ...items]);
-      if (!selectedPresetId && items[0]) setSelectedPresetId(items[0].id);
-      setFeedback({ tone: 'success', text: `已导入 ${items.length} 个预设。` });
+      const bundle = await savePresetBundle(imported);
+      setPresets((current) => [...current.filter((old) => !bundle.entries.some((item) => item.id === old.id)), ...bundle.entries]);
+      setPresetBundles((current) => [...current.filter((old) => old.id !== bundle.id), bundle]);
+      setSelectedPresetBundleId(bundle.id);
+      setFeedback({ tone: 'success', text: `已导入预设包“${bundle.name}”（${bundle.entries.length} 个条目）。` });
     } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '预设包导入失败') }); }
+  }
+
+  async function createPresetBundle(): Promise<void> {
+    const bundleName = presetBundleName.trim();
+    if (!bundleName) { setFeedback({ tone: 'error', text: '请先填写预设包名称。' }); return; }
+    const bundle = await savePresetBundle({ id: `bundle-${slug(bundleName)}`, name: bundleName, entries: [], updatedAt: now() });
+    setPresetBundles((items) => [...items.filter((item) => item.id !== bundle.id), bundle]);
+    setSelectedPresetBundleId(bundle.id); setPresetBundleName('');
+    setFeedback({ tone: 'success', text: `已创建预设包“${bundle.name}”，现在可以添加预设条目。` });
+  }
+
+  async function renamePresetBundle(): Promise<void> {
+    const bundleName = presetBundleName.trim();
+    const current = presetBundles.find((item) => item.id === selectedPresetBundleId);
+    if (!current || !bundleName) return;
+    const bundle = await savePresetBundle({ ...current, name: bundleName, updatedAt: now() });
+    setPresetBundles((items) => items.map((item) => item.id === bundle.id ? bundle : item));
+    setPresetBundleName(''); setFeedback({ tone: 'success', text: '预设包名称已更新。' });
+  }
+
+  async function removePresetBundle(id: string): Promise<void> {
+    await deletePresetBundle(id);
+    const remaining = presetBundles.filter((item) => item.id !== id);
+    setPresetBundles(remaining);
+    if (selectedPresetBundleId === id) setSelectedPresetBundleId(remaining[0]?.id ?? '');
+    setFeedback({ tone: 'success', text: '预设包已删除。' });
   }
 
   async function downloadSave() {
     if (selectedCharacterId) await saveChat({ characterId: selectedCharacterId, messages, updatedAt: now() });
-    const extras: Record<string, unknown> = { characters, worldbooks, presets };
+    const extras: Record<string, unknown> = { characters, worldbooks, presets, presetBundles };
     if (includeChatsOnExport) extras.chats = await contentDb.chats.toArray();
     const blob = await exportSaveZip(saveRef.current, {}, extras);
     const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
@@ -488,7 +537,12 @@ export function App() {
       const imported = await importSaveZip(file); const extra = imported.extras;
       if (Array.isArray(extra.characters)) { const items = await Promise.all((extra.characters as CharacterCard[]).map(saveCharacter)); setCharacters(items); if (items[0]) setSelectedCharacterId(items[0].id); }
       if (Array.isArray(extra.worldbooks)) { const items = await Promise.all((extra.worldbooks as WorldbookEntry[]).map(saveWorldbook)); setWorldbooks(items); }
-      if (Array.isArray(extra.presets)) { const items = await Promise.all((extra.presets as Preset[]).map(savePreset)); setPresets(items); setSelectedPresetId(items[0]?.id ?? ''); }
+      if (Array.isArray(extra.presets)) { const items = await Promise.all((extra.presets as Preset[]).map(savePreset)); setPresets(items); }
+      if (Array.isArray(extra.presetBundles)) { const bundles = await Promise.all((extra.presetBundles as PresetBundle[]).map(savePresetBundle)); setPresetBundles(bundles); setSelectedPresetBundleId(bundles[0]?.id ?? ''); }
+      else if (Array.isArray(extra.presets) && extra.presets.length > 0) {
+        const bundle = await savePresetBundle({ id: 'bundle-imported', name: '导入的预设包', entries: extra.presets as Preset[], updatedAt: now() });
+        setPresetBundles([bundle]); setSelectedPresetBundleId(bundle.id);
+      }
       const importedChats = Array.isArray(extra.chats)
         ? await Promise.all((extra.chats as ChatRecord[]).map(saveChat))
         : [];
@@ -509,7 +563,13 @@ export function App() {
   const onDelete = async (kind: ContentKind, id: string) => {
     if (kind === 'character') { await deleteCharacter(id); setCharacters((items) => items.filter((item) => item.id !== id)); if (selectedCharacterId === id) setSelectedCharacterId(''); }
     if (kind === 'worldbook') { await deleteWorldbook(id); setWorldbooks((items) => items.filter((item) => item.id !== id)); }
-    if (kind === 'preset') { await deletePreset(id); setPresets((items) => items.filter((item) => item.id !== id)); }
+    if (kind === 'preset') {
+      await deletePreset(id);
+      const affected = presetBundles.filter((bundle) => bundle.entries.some((entry) => entry.id === id));
+      const updated = await Promise.all(affected.map((bundle) => savePresetBundle({ ...bundle, entries: bundle.entries.filter((entry) => entry.id !== id), updatedAt: now() })));
+      setPresetBundles((items) => items.map((bundle) => updated.find((item) => item.id === bundle.id) ?? bundle));
+      setPresets((items) => items.filter((item) => item.id !== id));
+    }
     setFeedback({ tone: 'success', text: '内容已删除。' });
   };
 
@@ -519,7 +579,7 @@ export function App() {
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView onOpenChat={() => setTab('chat')} />}
       {tab === 'chat' && <ChatView characters={characters} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
-      {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} selectedPresetId={selectedPresetId} setSelectedPresetId={setSelectedPresetId} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} />}
+      {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} presetBundleName={presetBundleName} setPresetBundleName={setPresetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} selectedPresetId={selectedPresetId} setSelectedPresetId={setSelectedPresetId} />}
       {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} />}
     </main>
     <nav className="bottom-nav">{([['map', '地图'], ['chat', '聊天'], ['library', '资料'], ['settings', '设置']] as const).map(([id, label]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
@@ -652,10 +712,18 @@ function SettingsView(props: {
   </section>;
 }
 
-function LibraryView(props: { characters: CharacterCard[]; worldbooks: WorldbookEntry[]; presets: Preset[]; selectedPresetId: string; setSelectedPresetId: (value: string) => void; save: SaveFile; name: string; setName: (value: string) => void; draftText: string; setDraftText: (value: string) => void; editing: { kind: ContentKind; id: string } | null; setEditing: (editing: { kind: ContentKind; id: string } | null) => void; addContent: (kind: ContentKind) => Promise<void>; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void>; onExportSave: () => Promise<void>; onImportSave: (file?: File) => Promise<void>; onExportPresetBundle: () => Promise<void>; onImportPresetBundle: (file?: File) => Promise<void>; includeChatsOnExport: boolean; setIncludeChatsOnExport: (value: boolean) => void; onClearChats: () => Promise<void>; itemName: string; setItemName: (value: string) => void; itemTags: string; setItemTags: (value: string) => void; itemDescription: string; setItemDescription: (value: string) => void; onAddItem: () => void }) {
+function PresetBundleView(props: { presetBundles: PresetBundle[]; selectedPresetBundleId: string; setSelectedPresetBundleId: (value: string) => void; presetBundleName: string; setPresetBundleName: (value: string) => void; onCreatePresetBundle: () => Promise<void>; onRenamePresetBundle: () => Promise<void>; onDeletePresetBundle: (id: string) => Promise<void>; onExportPresetBundle: () => Promise<void>; onImportPresetBundle: (file?: File) => Promise<void>; onEditPreset: (entry: Preset) => void; onDeletePreset: (id: string) => Promise<void>; onExportPreset: (entry: Preset) => void }) {
+  const selected = props.presetBundles.find((bundle) => bundle.id === props.selectedPresetBundleId);
+  return <div className="list-card"><div className="list-heading"><h3>预设包</h3><div className="button-row"><button className="secondary" disabled={!selected} onClick={() => void props.onExportPresetBundle()}>导出当前预设包</button><label className="file-button">导入预设包<input type="file" accept=".zip" onChange={(event) => void props.onImportPresetBundle(event.target.files?.[0])} /></label></div></div><div className="field-with-action"><input placeholder="预设包名称" value={props.presetBundleName} onChange={(event) => props.setPresetBundleName(event.target.value)} /><button onClick={() => void (selected ? props.onRenamePresetBundle() : props.onCreatePresetBundle())}>{selected ? '更新包名称' : '新建预设包'}</button></div><label>当前预设包<select value={props.selectedPresetBundleId} onChange={(event) => props.setSelectedPresetBundleId(event.target.value)}><option value="">不使用预设包</option>{props.presetBundles.map((bundle) => <option key={bundle.id} value={bundle.id}>{bundle.name}</option>)}</select></label><p className="io-scope">切换预设包后，包内所有条目会在下一次生成回复时同时生效。</p>{props.presetBundles.map((bundle) => <div className="list-card" key={bundle.id}><div className="list-heading"><strong>{bundle.name}</strong><span className="button-row"><button onClick={() => { props.setSelectedPresetBundleId(bundle.id); props.setPresetBundleName(bundle.name); }}>编辑</button><button onClick={() => void props.onDeletePresetBundle(bundle.id)}>删除</button></span></div>{bundle.entries.length === 0 ? <p className="empty">暂无预设条目</p> : bundle.entries.map((entry) => <div className="list-row" key={entry.id}><span>{entry.name}<small>{entry.systemPrompt || '无提示词内容'}</small></span><span className="button-row"><button onClick={() => props.onEditPreset(entry)}>编辑</button><button onClick={() => void props.onDeletePreset(entry.id)}>删除</button><button onClick={() => props.onExportPreset(entry)}>导出</button></span></div>)}</div>)}</div>;
+}
+
+function LibraryView(props: { characters: CharacterCard[]; worldbooks: WorldbookEntry[]; presets: Preset[]; presetBundles: PresetBundle[]; selectedPresetBundleId: string; setSelectedPresetBundleId: (value: string) => void; presetBundleName: string; setPresetBundleName: (value: string) => void; onCreatePresetBundle: () => Promise<void>; onRenamePresetBundle: () => Promise<void>; onDeletePresetBundle: (id: string) => Promise<void>; save: SaveFile; name: string; setName: (value: string) => void; draftText: string; setDraftText: (value: string) => void; editing: { kind: ContentKind; id: string } | null; setEditing: (editing: { kind: ContentKind; id: string } | null) => void; addContent: (kind: ContentKind) => Promise<void>; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void>; onExportSave: () => Promise<void>; onImportSave: (file?: File) => Promise<void>; onExportPresetBundle: () => Promise<void>; onImportPresetBundle: (file?: File) => Promise<void>; includeChatsOnExport: boolean; setIncludeChatsOnExport: (value: boolean) => void; onClearChats: () => Promise<void>; itemName: string; setItemName: (value: string) => void; itemTags: string; setItemTags: (value: string) => void; itemDescription: string; setItemDescription: (value: string) => void; onAddItem: () => void; selectedPresetId?: string; setSelectedPresetId?: (value: string) => void }) {
+  props.setSelectedPresetId = props.setSelectedPresetId ?? (() => undefined);
+  return <section><div className="section-heading"><div><span className="eyebrow">本地资料</span><h2>角色 / 世界书 / 预设包</h2></div></div><div className="editor-card"><input placeholder="名称" value={props.name} onChange={(event) => props.setName(event.target.value)} /><textarea placeholder="描述或内容" value={props.draftText} onChange={(event) => props.setDraftText(event.target.value)} /><div className="button-row"><button onClick={() => void props.addContent('character')}>保存角色卡</button><button onClick={() => void props.addContent('worldbook')}>保存世界书</button><button onClick={() => void props.addContent('preset')}>添加预设条目</button></div></div><ContentList title="角色卡" kind="character" items={props.characters.map((item) => ({ ...item, text: item.description }))} onEdit={(kind, item) => { props.setEditing({ kind, id: item.id }); props.setName(item.name); props.setDraftText(item.text); }} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><ContentList title="世界书" kind="worldbook" items={props.worldbooks.map((item) => ({ ...item, text: item.content }))} onEdit={(kind, item) => { props.setEditing({ kind, id: item.id }); props.setName(item.name); props.setDraftText(item.text); }} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><PresetBundleView presetBundles={props.presetBundles} selectedPresetBundleId={props.selectedPresetBundleId} setSelectedPresetBundleId={props.setSelectedPresetBundleId} presetBundleName={props.presetBundleName} setPresetBundleName={props.setPresetBundleName} onCreatePresetBundle={props.onCreatePresetBundle} onRenamePresetBundle={props.onRenamePresetBundle} onDeletePresetBundle={props.onDeletePresetBundle} onExportPresetBundle={props.onExportPresetBundle} onImportPresetBundle={props.onImportPresetBundle} onEditPreset={(entry) => { props.setEditing({ kind: 'preset', id: entry.id }); props.setName(entry.name); props.setDraftText(entry.systemPrompt); }} onDeletePreset={(id) => props.onDelete('preset', id)} onExportPreset={(entry) => props.onExport('preset', entry, entry.name)} /><div className="list-card"><h3>物品栏</h3>{props.save.world.player.inventory.length === 0 ? <p className="empty">暂无物品</p> : props.save.world.player.inventory.map((entry) => <div className="list-row" key={`${entry.itemId}-${entry.gotDay}`}><span>{props.save.world.items[entry.itemId]?.name ?? entry.itemId}</span><span>x{entry.count}</span></div>)}</div><div className="io-card"><div><strong>世界存档</strong><p className="io-scope">包含资料和可选聊天；不包含 Provider 配置与 API key。</p><label className="checkbox-line"><input type="checkbox" checked={props.includeChatsOnExport} onChange={(event) => props.setIncludeChatsOnExport(event.target.checked)} />包含聊天记录</label></div><button onClick={() => void props.onExportSave()}>导出世界存档</button><label className="file-button">导入世界存档<input type="file" accept=".zip" onChange={(event) => void props.onImportSave(event.target.files?.[0])} /></label><button className="danger" onClick={() => void props.onClearChats()}>清除全部聊天</button></div></section>;
   const edit = (kind: ContentKind, item: { id: string; name: string; text: string }) => { props.setEditing({ kind, id: item.id }); props.setName(item.name); props.setDraftText(item.text); };
   const inventory = props.save.world.player.inventory;
   const characterNames = new Map(props.characters.map((character) => [character.id, character.name]));
+  // @ts-ignore Legacy unreachable markup is retained temporarily for migration compatibility.
   return <section><div className="section-heading"><div><span className="eyebrow">本地资料</span><h2>角色 / 世界书 / 预设</h2></div></div><div className="editor-card"><input placeholder="名称" value={props.name} onChange={(event) => props.setName(event.target.value)} /><textarea placeholder="描述或内容" value={props.draftText} onChange={(event) => props.setDraftText(event.target.value)} /><div className="button-row"><button onClick={() => void props.addContent('character')}>保存角色卡</button><button onClick={() => void props.addContent('worldbook')}>保存世界书</button><button onClick={() => void props.addContent('preset')}>保存预设</button></div></div><div className="list-card"><div className="list-heading"><h3>物品定义</h3></div><div className="editor-card"><input placeholder="物品名称" value={props.itemName} onChange={(event) => props.setItemName(event.target.value)} /><input placeholder="标签，用逗号分隔" value={props.itemTags} onChange={(event) => props.setItemTags(event.target.value)} /><textarea placeholder="物品描述" value={props.itemDescription} onChange={(event) => props.setItemDescription(event.target.value)} /><button onClick={props.onAddItem}>保存物品定义</button></div>{Object.values(props.save.world.items).map((item) => <div className="list-row" key={item.id}><span>{item.name}<small>{item.id} · {item.tags.join(', ')}</small></span></div>)}</div><div className="list-card"><div className="list-heading"><h3>物品栏（当前世界状态）</h3></div><p className="io-scope">这里显示内核实际持有的数量；每条记录都保留获得时的来源。</p>{inventory.length === 0 ? <p className="empty">暂无物品</p> : inventory.map((entry, index) => <div className="list-row" key={`${entry.itemId}-${entry.gotDay}-${index}`}><span>{props.save.world.items[entry.itemId]?.name ?? entry.itemId}<small>来源：{entry.fromCharId ? characterNames.get(entry.fromCharId) ?? entry.fromCharId : '世界/系统'} · 第 {entry.gotDay} 天{entry.gotNodeId ? ` · 地点 ${entry.gotNodeId}` : ''}</small></span><span>x{entry.count}</span></div>)}</div><ContentList title="角色卡" kind="character" items={props.characters.map((item) => ({ ...item, text: item.description }))} onEdit={edit} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><ContentList title="世界书" kind="worldbook" items={props.worldbooks.map((item) => ({ ...item, text: item.content }))} onEdit={edit} onDelete={props.onDelete} onExport={props.onExport} onImport={props.onImport} /><div className="list-card"><div className="list-heading"><h3>预设选项</h3><div className="button-row"><button className="secondary" onClick={() => void props.onExportPresetBundle()} disabled={props.presets.length === 0}>导出全部预设</button><label className="file-button">导入预设包<input type="file" accept=".zip" onChange={(event) => void props.onImportPresetBundle(event.target.files?.[0])} /></label></div></div><label>当前文风/提示词预设<select value={props.selectedPresetId} onChange={(event) => props.setSelectedPresetId(event.target.value)}><option value="">不使用预设</option>{props.presets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><p className="io-scope">预设包将多个文风/提示词预设作为独立选项保存；切换后下一次生成回复使用所选预设。</p>{props.presets.length === 0 ? <p className="empty">暂无内容</p> : props.presets.map((item) => <div className="list-row" key={item.id}><span>{item.name}</span><span className="button-row"><button onClick={() => props.onExport('preset', item, item.name)}>导出单项</button></span></div>)}</div><div className="io-card"><div><strong>世界存档</strong><p className="io-scope">包含角色卡、世界书、预设和可选聊天；不包含 Provider 配置与 API key。</p><label className="checkbox-line"><input type="checkbox" checked={props.includeChatsOnExport} onChange={(event) => props.setIncludeChatsOnExport(event.target.checked)} />包含聊天记录</label></div><button onClick={() => void props.onExportSave()}>导出世界存档</button><label className="file-button">导入世界存档<input type="file" accept=".zip" onChange={(event) => void props.onImportSave(event.target.files?.[0])} /></label><button className="danger" onClick={() => void props.onClearChats()}>清除全部聊天</button></div></section>;
 }
 

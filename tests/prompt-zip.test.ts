@@ -26,6 +26,19 @@ describe('prompt assembler', () => {
     expect(result.messages[0].content).toContain('<ops>');
     expect(result.messages[0].content).toContain('add_stat example');
   });
+
+  it('injects every entry from the selected preset bundle together', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks()) assembler.register(block);
+    const result = assembler.assemble({ input: '', worldbooks: [], history: [], world: undefined, presetBundle: {
+      id: 'bundle', name: '组合风格', updatedAt: '2026-01-01T00:00:00.000Z', entries: [
+        { id: 'a', name: '短句', systemPrompt: '使用短句。', temperature: 0.5, maxOutputTokens: 100, updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'b', name: '克制', systemPrompt: '保持克制。', temperature: 0.5, maxOutputTokens: 100, updatedAt: '2026-01-01T00:00:00.000Z' },
+      ],
+    } }, { budget: 300, task: 'narrate_main' });
+    expect(result.messages[0].content).toContain('使用短句。');
+    expect(result.messages[0].content).toContain('保持克制。');
+  });
 });
 
 describe('save zip IO', () => {
@@ -68,6 +81,6 @@ describe('preset bundle IO', () => {
       { id: 'quiet', name: '克制文风', systemPrompt: '短句、克制。', temperature: 0.4, maxOutputTokens: 800, updatedAt: '2026-01-01T00:00:00.000Z' },
       { id: 'lyric', name: '抒情文风', systemPrompt: '细腻、抒情。', temperature: 0.8, maxOutputTokens: 1200, updatedAt: '2026-01-01T00:00:00.000Z' },
     ];
-    await expect(importPresetBundle(await exportPresetBundle(presets))).resolves.toEqual(presets);
+    await expect(importPresetBundle(await exportPresetBundle(presets))).resolves.toEqual(expect.objectContaining({ entries: presets }));
   });
 });

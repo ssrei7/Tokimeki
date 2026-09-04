@@ -508,9 +508,16 @@ interface Preset {
   maxOutputTokens: number;       // 可选的生成长度覆盖，不是 Provider 身份
   updatedAt: string;
 }
+
+interface PresetBundle {
+  id: Id;
+  name: string;
+  entries: Preset[];              // 包内所有条目同时生效
+  updatedAt: string;
+}
 ```
 
-这里的预设属于资料内容，主要作用是复用文风和提示词。Provider、endpoint、API key 与任务路由仍由独立的 Provider 设置管理；预设不等于 Provider 配置。
+这里的预设条目属于资料内容，主要作用是复用文风和提示词。用户切换的是 `PresetBundle`，包内所有条目在下一次生成时同时注入；条目本身不再作为独立生效选项。Provider、endpoint、API key 与任务路由仍由独立的 Provider 设置管理；预设包不等于 Provider 配置。
 
 角色卡、世界书与预设均由本地 IndexedDB 管理；它们不写入 `SaveFile.world`，导出角色包/世界包时再按 `manifest.type` 选择性打包。
 
