@@ -790,8 +790,8 @@ export function App() {
   };
 
   return <div className="app-shell">
-    <header className="topbar"><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small><h1>Tokimeki</h1></div></header>
-    <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''}`}>
+    {tab !== 'map' && <header className="topbar"><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small><h1>Tokimeki</h1></div></header>}
+    <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''} ${tab === 'map' ? 'map-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onToggleMode={toggleMapMode} onUpdateNodePosition={updateNodePosition} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
@@ -866,9 +866,10 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
     const rect = event.currentTarget.getBoundingClientRect(); const focalX = event.clientX - rect.left; const focalY = event.clientY - rect.top;
     setOffset((current) => ({ x: focalX - ((focalX - current.x) / zoom) * nextZoom, y: focalY - ((focalY - current.y) / zoom) * nextZoom })); setZoom(nextZoom);
   };
+  const currentSlotName = save.config.calendar.slots.find((slot) => slot.id === save.world.clock.slotId)?.name ?? save.world.clock.slotId;
   return <section className="map-screen">
     <div className="map-top-panel">
-      <div className="map-toolbar"><div><span className="eyebrow">世界地图</span><h2>{currentNode?.name ?? save.world.player.nodeId}</h2></div><span className="io-scope">{map.view.mode === 'graph' ? 'Graph' : 'Hotspot'} · {Math.round(zoom * 100)}%</span></div>
+      <div className="map-toolbar"><div className="map-title"><h1>Tokimeki</h1><strong>{currentNode?.name ?? save.world.player.nodeId}</strong></div><div className="map-toolbar-meta"><span>第 {save.world.clock.day} 天 · {currentSlotName}</span><span>{map.view.mode === 'graph' ? 'Graph' : 'Hotspot'} · {Math.round(zoom * 100)}%</span></div></div>
       <details className="map-menu"><summary><span>地图工具</span><span>点击展开</span></summary><div className="map-menu-content">
         <div className="map-controls"><button className="secondary" onClick={onToggleMode}>切换到 {map.view.mode === 'graph' ? 'Hotspot' : 'Graph'}</button><label className="file-button">上传底图<input type="file" accept="image/*" onChange={(event) => void onImportBackground(event.target.files?.[0])} /></label><button className="secondary" onClick={() => void onGenerateMap(requirements)} disabled={mapGenerating}>{mapGenerating ? '正在生成地图…' : 'AI 生成地图'}</button><button className="secondary" onClick={() => setZoom((value) => Math.min(2.5, Number((value + 0.1).toFixed(2))))}>放大</button><button className="secondary" onClick={() => setZoom((value) => Math.max(0.65, Number((value - 0.1).toFixed(2))))}>缩小</button><button className="secondary" onClick={resetViewport}>重置视野</button></div>
         <div className="map-generation-panel"><label>地图生成要求<textarea value={requirements} onChange={(event) => setRequirements(event.target.value)} placeholder="例如：沿海小镇，包含车站、海边和一处适合夜晚散步的地点。" /></label><div className="map-expand-row"><label>从地点扩展<select value={anchorNodeId} onChange={(event) => setAnchorNodeId(event.target.value)}>{nodes.map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label><label>新增数量<input type="number" min="1" max="8" value={expandCount} onChange={(event) => setExpandCount(event.target.value)} /></label><button className="secondary" onClick={() => void onExpandMap(anchorNodeId, Math.max(1, Math.min(8, Number(expandCount) || 1)), requirements)} disabled={mapGenerating || !anchorNodeId}>扩展地点</button></div></div>
