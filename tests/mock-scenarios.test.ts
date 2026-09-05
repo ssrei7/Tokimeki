@@ -7,6 +7,7 @@ import { MOCK_FIXTURE_IDS, MOCK_FIXTURES } from '../src/providers/mock/fixtures'
 import { listProviderModels } from '../src/providers/models';
 import { streamChat } from '../src/providers/stream';
 import { TASK_IDS } from '../src/providers/types';
+import { createStage4EncounterScenario } from '../src/dev/scenarios/stage4';
 
 describe('mock provider', () => {
   it('groups every fixed fixture by TaskId', () => {
@@ -63,5 +64,14 @@ describe('version-aware scenario seeder', () => {
     const imported = await importSaveZip(await exportScenarioZip(definition));
     expect(imported.manifest.type).toBe('save');
     expect(imported.save).toEqual(seedScenario(definition));
+  });
+
+  it('provides a deterministic stage 4 encounter fixture with scheduled characters', () => {
+    const fixture = seedScenario(createStage4EncounterScenario());
+    expect(fixture.world.clock).toEqual({ day: 3, slotId: 'noon' });
+    expect(fixture.world.map.nodes.docks?.openSlots).toEqual(['noon']);
+    expect(Object.keys(fixture.world.characters)).toEqual(['seir', 'rin']);
+    expect(fixture.world.characters.seir.schedule?.grid['2:noon']?.nodeId).toBe('docks');
+    expect(fixture.world.npcs['vendor-1']?.homeNodeId).toBe('docks');
   });
 });
