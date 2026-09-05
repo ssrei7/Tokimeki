@@ -1,5 +1,6 @@
 import type { EventBus } from '../events/bus';
 import type { CalendarConfig, ActionCostTable, DailySettlement, WorldState } from '../../data/schema/save';
+import { buildLocalDiary } from './diary';
 
 export interface TimeAdvanceResult {
   requested: number;
@@ -70,10 +71,20 @@ export function advanceTime(world: WorldState, calendar: CalendarConfig, slots: 
 
 export function settleDay(world: WorldState, _calendar: CalendarConfig, events?: EventBus): DailySettlement {
   const day = world.clock.day;
-  const diary = `第 ${day} 天结束。你在 ${world.player.nodeId} 度过了这一天。`;
-  const settlement: DailySettlement = { day, footprint: [world.player.nodeId], met: [], relationChanges: [], income: 0, expense: 0, itemsGained: [], diary, appointmentsTomorrow: [] };
+  const facts = { day, footprint: [world.player.nodeId], met: [], relationChanges: [], income: 0, expense: 0, itemsGained: [], appointmentsTomorrow: [] };
+  const settlement: DailySettlement = { ...facts, diary: buildLocalDiary(facts) };
   world.settlements.push(settlement);
-  if (!world.diary.some((entry) => entry.day === day)) world.diary.push({ day, text: diary });
+  if (!world.diary.some((entry) => entry.day === day)) world.diary.push({ day, text: settlement.diary });
   events?.emit('onDaySettle', { day, settlement });
+  return settlement;
+}
+
+export function endDay(world: WorldState, calendar: CalendarConfig, events?: EventBus): DailySettlement {
+  const settlement = settleDay(world, calendar, events);
+  const orderedSlots = [...calendar.slots].sort((a, b) => a.order - b.order).slice(0, availableSlots(calendar));
+  world.clock.day += 1;
+  world.clock.slotId = orderedSlots[0]?.id ?? world.clock.slotId;
+  world.slotsUsedToday = 0;
+  events?.emit('onDayStart', { day: world.clock.day });
   return settlement;
 }

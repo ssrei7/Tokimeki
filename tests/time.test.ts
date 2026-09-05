@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EventBus } from '../src/core/events/bus';
-import { advanceAction, advanceTime, availableSlots, slotsForPreset } from '../src/core/time';
+import { advanceAction, advanceTime, availableSlots, endDay, slotsForPreset, updateDiaryEntry } from '../src/core/time';
+import { DEFAULT_SLOT_DEFS } from '../src/data/schema/save';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import { simulateDays } from '../src/dev/simulator';
 
@@ -42,10 +43,13 @@ describe('deterministic time kernel', () => {
     expect(slotsForPreset('leisure')).toBe(6);
     expect(slotsForPreset('standard')).toBe(4);
     expect(slotsForPreset('tight')).toBe(3);
+    expect(availableSlots({ ...setup().config.calendar, preset: 'leisure', slots: [...DEFAULT_SLOT_DEFS] })).toBe(6);
     const sandbox = setup('sandbox');
     expect(availableSlots(sandbox.config.calendar)).toBe(6);
     expect(advanceTime(sandbox.world, sandbox.config.calendar, 3).advanced).toBe(0);
     expect(sandbox.world.clock.day).toBe(1);
+    expect(endDay(sandbox.world, sandbox.config.calendar).day).toBe(1);
+    expect(sandbox.world.clock).toEqual({ day: 2, slotId: 'morning' });
   });
 
   it('uses action costs without requiring an AI provider', () => {
@@ -60,5 +64,14 @@ describe('deterministic time kernel', () => {
     const save = setup();
     expect(simulateDays(save.world, save.config.calendar, 3, 42)).toEqual(simulateDays(save.world, save.config.calendar, 3, 42));
     expect(simulateDays(save.world, save.config.calendar, 3, 42).settledDays).toEqual([1, 2, 3]);
+  });
+
+  it('builds a local facts-only diary and keeps user edits authoritative', () => {
+    const save = setup();
+    advanceTime(save.world, save.config.calendar, 4);
+    expect(save.world.diary[0]?.text).toContain('没有记录到新的相遇');
+    expect(updateDiaryEntry(save.world, 1, '我自己写下的第一天。', '2026-09-05T00:00:00.000Z')).toBe(true);
+    expect(save.world.diary[0]).toEqual({ day: 1, text: '我自己写下的第一天。', editedAt: '2026-09-05T00:00:00.000Z' });
+    expect(save.world.settlements[0]?.diary).toBe('我自己写下的第一天。');
   });
 });

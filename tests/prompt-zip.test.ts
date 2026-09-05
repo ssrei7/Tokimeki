@@ -39,6 +39,18 @@ describe('prompt assembler', () => {
     expect(result.messages[0].content).toContain('使用短句。');
     expect(result.messages[0].content).toContain('保持克制。');
   });
+
+  it('uses the latest edited diary text in prompt context', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks()) assembler.register(block);
+    const result = assembler.assemble({ input: '', worldbooks: [], history: [], world: {
+      clock: { day: 3, slotId: 'morning' }, slotsUsedToday: 0,
+      player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] },
+      stats: {}, flags: {}, items: {}, relations: {}, settlements: [],
+      diary: [{ day: 1, text: '原文' }, { day: 2, text: '用户编辑后的日记', editedAt: '2026-09-05T00:00:00.000Z' }],
+    } }, { budget: 4096, task: 'narrate_main' });
+    expect(result.blocks.find((block) => block.id === 'recent_diary')?.text).toContain('用户编辑后的日记');
+  });
 });
 
 describe('save zip IO', () => {

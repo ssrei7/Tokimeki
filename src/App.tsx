@@ -5,6 +5,7 @@ import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
 import { EventBus } from './core/events/bus';
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
+import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
 import { PresetBundleSchema, type CharacterCard, type ChatMessage, type ChatRecord, type Preset, type PresetBundle, type WorldbookEntry } from './data/content';
 import { clearChats, contentDb, deleteCharacter, deletePreset, deletePresetBundle, deleteWorldbook, loadChat, saveCharacter, saveChat, savePreset, savePresetBundle, saveWorldbook } from './data/db/content';
 import { exportPresetBundle, exportSaveZip, importPresetBundle, importSaveZip } from './data/io/zip';
@@ -20,7 +21,7 @@ import { ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TAS
 import { canGenerateReply, hasQueuedUserMessage } from './ui/chat-state';
 import './ui/theme/app.css';
 
-type Tab = 'map' | 'chat' | 'library' | 'settings';
+type Tab = 'map' | 'day' | 'chat' | 'library' | 'settings';
 type ContentKind = 'character' | 'worldbook' | 'preset';
 type RequestStatus = 'idle' | StreamStatus;
 type Feedback = { tone: 'info' | 'success' | 'error'; text: string } | null;
@@ -110,6 +111,7 @@ export function App() {
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [save, setSave] = useState<SaveFile>(defaultSave);
   const saveRef = useRef(save);
+  const pendingDiaryDaysRef = useRef<number[]>([]);
   const [pendingOps, setPendingOps] = useState<PendingOpsRecovery | null>(null);
   const [manualOps, setManualOps] = useState('[]');
   const [mockFixtureId, setMockFixtureId] = useState<MockFixtureId | ''>('');
@@ -119,6 +121,7 @@ export function App() {
   const [statKey, setStatKey] = useState('');
   const [statValue, setStatValue] = useState('0');
   const [includeChatsOnExport, setIncludeChatsOnExport] = useState(true);
+  const [summarizingDay, setSummarizingDay] = useState<number | null>(null);
   const [debugTab, setDebugTab] = useState<'Prompt' | 'Raw' | 'Ops' | 'State'>('Prompt');
   const [debug, setDebug] = useState<DebugState>({ prompt: null, raw: '', ops: '尚未解析状态变化。', state: JSON.stringify(defaultSave, null, 2) });
 
@@ -169,11 +172,87 @@ export function App() {
     return instance;
   }, [opRegistry]);
 
+  useEffect(() => promptEvents.subscribe('onDaySettle', ({ day }) => {
+    if (!pendingDiaryDaysRef.current.includes(day)) pendingDiaryDaysRef.current.push(day);
+  }), [promptEvents]);
+
   function commitSave(next: SaveFile): void {
     const parsed = SaveFileSchema.parse({ ...next, meta: { ...next.meta, updatedAt: now() } });
     saveRef.current = parsed;
     setSave(parsed);
     setDebug((current) => ({ ...current, state: JSON.stringify(parsed, null, 2) }));
+    const settledDays = pendingDiaryDaysRef.current.splice(0);
+    if (settledDays.length) queueMicrotask(() => settledDays.forEach((day) => { void generateDayDiary(day); }));
+  }
+
+  async function generateDayDiary(day: number): Promise<void> {
+    const settlement = saveRef.current.world.settlements.find((item) => item.day === day);
+    const diaryProvider = resolveProviderForTask(providers, bindings, 'summarize_day', defaultProviderId);
+    if (!settlement || !diaryProvider) return;
+    setSummarizingDay(day);
+    let generated = '';
+    const splitter = new OpsStreamSplitter();
+    try {
+      const parsed = ProviderConfigSchema.parse(diaryProvider);
+      await streamChat(parsed, [
+        { role: 'system', content: '根据确定性日结事实写一段简短中文日记。只返回日记正文，不输出 JSON、ops 或未提供的事实。' },
+        { role: 'user', content: JSON.stringify(settlement) },
+      ], (delta) => { generated += splitter.push(delta); }, { taskId: 'summarize_day' });
+      generated += splitter.finish().text;
+      const text = generated.trim();
+      if (!text) return;
+      const next = structuredClone(saveRef.current);
+      const diaryEntry = next.world.diary.find((entry) => entry.day === day);
+      if (!diaryEntry || diaryEntry.editedAt) return;
+      diaryEntry.text = text;
+      const nextSettlement = next.world.settlements.find((item) => item.day === day);
+      if (nextSettlement) nextSettlement.diary = text;
+      commitSave(next);
+      setFeedback({ tone: 'success', text: `第 ${day} 天日记已生成；仍可手动编辑。` });
+    } catch (error) {
+      setFeedback({ tone: 'info', text: `第 ${day} 天已使用本地事实日记：${errorMessage(error, '日记生成失败')}` });
+    } finally {
+      setSummarizingDay((current) => current === day ? null : current);
+    }
+  }
+
+  function runDayAction(kind: string): void {
+    const next = structuredClone(saveRef.current);
+    const result = advanceAction(next.world, next.config.calendar, next.config.actionCosts, kind, promptEvents);
+    commitSave(next);
+    if (result.settledDays.length) {
+      setTab('day');
+      setFeedback({ tone: 'success', text: `第 ${result.settledDays.at(-1)} 天已结算，已进入下一天。` });
+      return;
+    }
+    setFeedback({ tone: 'info', text: result.advanced ? `行动完成，消耗 ${result.advanced} 个时段。` : '当前模式不消耗时段。' });
+  }
+
+  function sleepEarly(): void {
+    const next = structuredClone(saveRef.current);
+    const settlement = endDay(next.world, next.config.calendar, promptEvents);
+    commitSave(next);
+    setTab('day');
+    setFeedback({ tone: 'success', text: `第 ${settlement.day} 天已提前结算，已进入下一天。` });
+  }
+
+  function saveDiaryEdit(day: number, text: string): void {
+    if (!text.trim()) { setFeedback({ tone: 'error', text: '日记内容不能为空。' }); return; }
+    const next = structuredClone(saveRef.current);
+    if (!updateDiaryEntry(next.world, day, text.trim(), now())) return;
+    commitSave(next);
+    setFeedback({ tone: 'success', text: `第 ${day} 天日记已保存。` });
+  }
+
+  function setCalendarPreset(preset: SaveFile['config']['calendar']['preset']): void {
+    if (saveRef.current.world.slotsUsedToday > 0) { setFeedback({ tone: 'info', text: '请在一天开始、尚未消耗时段时切换节奏。' }); return; }
+    const next = structuredClone(saveRef.current);
+    next.config.calendar.preset = preset;
+    next.config.calendar.unlimitedSlots = preset === 'sandbox';
+    const orderedSlots = [...next.config.calendar.slots].sort((a, b) => a.order - b.order);
+    next.world.clock.slotId = orderedSlots[0]?.id ?? next.world.clock.slotId;
+    commitSave(next);
+    setFeedback({ tone: 'success', text: `每日节奏已切换为 ${preset}。` });
   }
 
   async function appendMessage() {
@@ -581,16 +660,43 @@ export function App() {
     <main className="screen">
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView onOpenChat={() => setTab('chat')} />}
+      {tab === 'day' && <DayView save={save} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
       {tab === 'chat' && <ChatView characters={characters} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} presetBundleName={presetBundleName} setPresetBundleName={setPresetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} />}
       {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} />}
     </main>
-    <nav className="bottom-nav">{([['map', '地图'], ['chat', '聊天'], ['library', '资料'], ['settings', '设置']] as const).map(([id, label]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
+    <nav className="bottom-nav">{([['map', '地图'], ['day', '日程'], ['chat', '聊天'], ['library', '资料'], ['settings', '设置']] as const).map(([id, label]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
   </div>;
 }
 
 function MapView({ onOpenChat }: { onOpenChat: () => void }) {
   return <section className="map-screen"><div className="map-canvas"><span className="map-pin active">你</span><span className="map-pin pin-a">旧市场</span><span className="map-pin pin-b">西码头</span><div className="map-road road-a" /><div className="map-road road-b" /></div><div className="place-card"><span className="eyebrow">当前位置</span><h2>起点街区</h2><p>从地图出发，去遇见今天的世界。</p><button onClick={onOpenChat}>打开聊天</button></div></section>;
+}
+
+function DayView(props: { save: SaveFile; summarizingDay: number | null; onAction: (kind: string) => void; onSleep: () => void; onSaveDiary: (day: number, text: string) => void; onPresetChange: (preset: SaveFile['config']['calendar']['preset']) => void }) {
+  const { calendar } = props.save.config;
+  const capacity = availableSlots(calendar);
+  const used = props.save.world.slotsUsedToday;
+  const remaining = Math.max(0, capacity - used);
+  const latestSettlement = props.save.world.settlements.at(-1);
+  const latestDiary = latestSettlement ? props.save.world.diary.find((entry) => entry.day === latestSettlement.day) : undefined;
+  const slotName = calendar.slots.find((slot) => slot.id === props.save.world.clock.slotId)?.name ?? props.save.world.clock.slotId;
+  const actionButtons = [
+    { kind: 'explore', label: '探索', cost: props.save.config.actionCosts.explore?.slotCost ?? 0 },
+    { kind: 'rest', label: '休息', cost: props.save.config.actionCosts.rest?.slotCost ?? 0 },
+    { kind: 'work', label: '工作', cost: props.save.config.actionCosts.work?.slotCost ?? 0 },
+  ];
+  return <section>
+    <div className="section-heading"><div><span className="eyebrow">生活节奏</span><h2>第 {props.save.world.clock.day} 天 · {slotName}</h2></div><span className="slot-count">{calendar.unlimitedSlots ? '无限时段' : `${used} / ${capacity}`}</span></div>
+    <div className="day-card"><label>每日节奏<select value={calendar.preset} disabled={used > 0} onChange={(event) => props.onPresetChange(event.target.value as SaveFile['config']['calendar']['preset'])}><option value="leisure">悠闲 · 6 时段</option><option value="standard">标准 · 4 时段</option><option value="tight">紧凑 · 3 时段</option><option value="sandbox">沙盒 · 不消耗</option></select></label><p className="io-scope">行动只修改本地确定性状态，不调用 API。节奏仅能在当天尚未行动时切换。</p><div className="day-actions">{actionButtons.map((action) => <button key={action.kind} onClick={() => props.onAction(action.kind)} disabled={!calendar.unlimitedSlots && action.cost > remaining}>{action.label}<small>{calendar.unlimitedSlots ? '不消耗' : `${action.cost} 时段`}</small></button>)}<button className="secondary" onClick={props.onSleep}>提前休息<small>结算今天</small></button></div></div>
+    <div className="settlement-card"><div className="list-heading"><h3>最近结算</h3>{props.summarizingDay === latestSettlement?.day && <span className="request-status requesting">正在生成日记…</span>}</div>{latestSettlement ? <><div className="settlement-grid"><span>日期<strong>第 {latestSettlement.day} 天</strong></span><span>足迹<strong>{latestSettlement.footprint.join('、') || '无'}</strong></span><span>遇见<strong>{latestSettlement.met.join('、') || '无人'}</strong></span><span>收支<strong>{latestSettlement.income - latestSettlement.expense}</strong></span><span>新物品<strong>{latestSettlement.itemsGained.length ? latestSettlement.itemsGained.map((entry) => `${entry.itemId} ×${entry.count}`).join('、') : '无'}</strong></span><span>明日待办<strong>{latestSettlement.appointmentsTomorrow.length ? latestSettlement.appointmentsTomorrow.map((item) => item.note ?? item.id).join('、') : '无'}</strong></span></div><div className="relation-summary"><strong>关系变化</strong>{latestSettlement.relationChanges.length ? latestSettlement.relationChanges.map((change) => <p key={change.charId}>{change.prose}</p>) : <p className="empty">本阶段暂无相遇记录。</p>}</div>{latestDiary && <DiaryEditor entry={latestDiary} onSave={props.onSaveDiary} />}</> : <p className="empty">完成今天或选择提前休息后，这里会显示日结算与日记。</p>}</div>
+  </section>;
+}
+
+function DiaryEditor(props: { entry: SaveFile['world']['diary'][number]; onSave: (day: number, text: string) => void }) {
+  const [text, setText] = useState(props.entry.text);
+  useEffect(() => { setText(props.entry.text); }, [props.entry.day, props.entry.text]);
+  return <div className="diary-editor"><div className="list-heading"><strong>第 {props.entry.day} 天日记</strong>{props.entry.editedAt && <small>已手动编辑</small>}</div><textarea value={text} onChange={(event) => setText(event.target.value)} /><button onClick={() => props.onSave(props.entry.day, text)}>保存日记</button></div>;
 }
 
 function ChatView(props: {

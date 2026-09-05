@@ -228,6 +228,8 @@ type TaskId =
 
 配置两层：`Provider`（endpoint / key / model / 参数 / contextWindow）与 `binding`（TaskId → providerId）。未绑定的任务回落到 `default` provider。
 
+`summarize_day` 只在一个游戏日首次完成结算后自动调用一次，不随行动次数增加；未配置 Provider、请求失败或返回空文本时保留确定性的本地事实摘要。当前没有其他夜间生成任务可合并，因此保持独立调用；阶段 6 的晨报发生在次日开始且使用不同事实边界，不与日记调用合并。
+
 ### 6.2 适配器
 
 内置 OpenAI 兼容、Anthropic、Gemini。**必须同时提供通用适配器**：用户自填 URL、header 模板、请求体模板（含 `{{messages}}` `{{model}}` 等占位符）、响应取值路径（JSONPath）、流式分帧规则。这样新服务无需等发版。

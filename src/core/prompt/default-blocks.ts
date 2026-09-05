@@ -43,7 +43,10 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
     { id: 'node_worldbook', role: 'system', priority: 80, order: 4, build: missing },
     { id: 'node_memory', role: 'system', priority: 70, order: 5, build: missing },
     { id: 'char_memory', role: 'system', priority: 65, order: 6, build: missing },
-    { id: 'recent_diary', role: 'system', priority: 60, order: 7, build: missing },
+    { id: 'recent_diary', role: 'system', priority: 60, order: 7, build: (facts) => {
+      const diary = factsOf(facts).world?.diary.slice(-7);
+      return diary?.length ? `最近日记：\n${diary.map((entry) => `第 ${entry.day} 天：${entry.text}`).join('\n')}` : null;
+    } },
     { id: 'milestones', role: 'system', priority: 55, order: 8, build: missing },
     { id: 'worldbook_keyword', role: 'system', priority: 50, order: 9, build: (facts) => {
       const { input, worldbooks } = factsOf(facts);

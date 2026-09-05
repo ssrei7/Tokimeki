@@ -23,7 +23,7 @@ button.danger { background: #fee4e2; color: #b42318; }
 .map-road { position: absolute; height: 8px; border-radius: 8px; background: #fff9; transform-origin: left center; }
 .road-a { width: 62%; left: 25%; top: 45%; transform: rotate(-28deg); }
 .road-b { width: 52%; left: 43%; top: 48%; transform: rotate(32deg); }
-.place-card, .provider-card, .editor-card, .list-card, .io-card { border: 1px solid #e4e8ef; border-radius: 8px; padding: 16px; background: #fff; box-shadow: 0 4px 16px #3440540d; }
+.place-card, .provider-card, .editor-card, .list-card, .io-card, .day-card, .settlement-card { border: 1px solid #e4e8ef; border-radius: 8px; padding: 16px; background: #fff; box-shadow: 0 4px 16px #3440540d; }
 .place-card p { color: #667085; margin: 8px 0 14px; }
 .provider-card, .editor-card { display: grid; gap: 10px; margin-bottom: 14px; }
 .provider-card label { display: grid; gap: 6px; color: #475467; font-size: 13px; }
@@ -99,7 +99,20 @@ button.danger { background: #fee4e2; color: #b42318; }
 .fixture-list { display: grid; gap: 6px; color: #667085; font-size: 12px; line-height: 1.4; }
 .fixture-list div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 8px; padding-top: 6px; border-top: 1px solid #eef0f3; }
 .fixture-list strong { color: #344054; }
-.bottom-nav { position: fixed; z-index: 5; bottom: 0; left: 50%; transform: translateX(-50%); width: min(760px, 100%); display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid #e4e8ef; }
+.day-card, .settlement-card { display: grid; gap: 14px; margin-bottom: 14px; }
+.day-card label { display: grid; gap: 6px; color: #475467; font-size: 13px; }
+.day-card select { width: 100%; border: 1px solid #d7dce5; border-radius: 8px; padding: 11px 12px; background: #fff; }
+.slot-count { color: #475467; font-size: 13px; }
+.day-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.day-actions button { height: auto; min-height: 60px; display: grid; place-content: center; gap: 3px; }
+.day-actions small { font-size: 11px; opacity: .78; }
+.settlement-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.settlement-grid span { display: grid; gap: 3px; padding: 10px; border-radius: 8px; background: #f8fafc; color: #667085; font-size: 12px; }
+.settlement-grid strong { color: #1d2433; overflow-wrap: anywhere; }
+.relation-summary { display: grid; gap: 6px; }
+.diary-editor { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid #eef0f3; }
+.diary-editor textarea { min-height: 120px; }
+.bottom-nav { position: fixed; z-index: 5; bottom: 0; left: 50%; transform: translateX(-50%); width: min(760px, 100%); display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid #e4e8ef; }
 .bottom-nav button { min-height: 44px; background: transparent; color: #667085; }
 .bottom-nav button.selected { background: #e9efff; color: #315efb; }
 @media (min-width: 761px) { .app-shell { min-height: 100vh; box-shadow: 0 0 30px #34405414; } }

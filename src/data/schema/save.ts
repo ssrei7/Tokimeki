@@ -16,6 +16,8 @@ export const DEFAULT_SLOT_DEFS = [
   { id: 'noon', name: '中午', order: 1 },
   { id: 'evening', name: '晚上', order: 2 },
   { id: 'night', name: '深夜', order: 3 },
+  { id: 'late-night', name: '午夜', order: 4 },
+  { id: 'dawn', name: '黎明', order: 5 },
 ] satisfies z.input<typeof SlotDefSchema>[];
 
 export const CalendarConfigSchema = z.object({
