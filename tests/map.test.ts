@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EventBus } from '../src/core/events/bus';
-import { createMapNode, movePlayer, revealNode } from '../src/core/map';
+import { createMapNode, deleteMapNode, movePlayer, revealNode, updateMapNode } from '../src/core/map';
 import { createDefaultMap, SaveFileSchema, type WorldState } from '../src/data/schema/save';
 
 function worldWithMap(): WorldState {
@@ -67,5 +67,24 @@ describe('deterministic map movement', () => {
     expect(createMapNode(world.map, { name: '未知区域', regionId: 'missing', kind: [], discovered: true, pos: { x: 1, y: 1 }, anchorNodeId: 'start', travelSlots: 1 }).ok).toBe(false);
     expect(createMapNode(world.map, { name: '无锚点', regionId: 'start-region', kind: [], discovered: true, pos: { x: 1, y: 1 }, anchorNodeId: 'missing', travelSlots: 1 }).ok).toBe(false);
     expect(world.map).toEqual(before);
+  });
+
+  it('updates editable node fields without changing its stable id', () => {
+    const world = worldWithMap(); world.map.nodes.market.worldbookIds = ['market-lore'];
+    const result = updateMapNode(world.map, 'market', { name: '中央市场', description: '重新整修后的市场。', regionId: 'start-region', kind: ['commercial', 'indoor'], openSlots: ['noon'], discovered: false, pos: { x: 320, y: 280 } });
+    expect(result).toEqual({ ok: true, nodeId: 'market' });
+    expect(world.map.nodes.market.id).toBe('market');
+    expect(world.map.nodes.market.name).toBe('中央市场');
+    expect(world.map.nodes.market.worldbookIds).toEqual(['market-lore']);
+    expect(world.map.nodes.market.openSlots).toEqual(['noon']);
+  });
+
+  it('deletes only safe non-current nodes and their connected edges', () => {
+    const world = worldWithMap();
+    expect(deleteMapNode(world.map, 'start', 'start').warning).toContain('当前位置');
+    expect(deleteMapNode(world.map, 'market', 'start').warning).toContain('孤立');
+    expect(deleteMapNode(world.map, 'docks', 'start')).toEqual({ ok: true, nodeId: 'docks' });
+    expect(world.map.nodes.docks).toBeUndefined();
+    expect(world.map.edges.some((edge) => edge.from === 'docks' || edge.to === 'docks')).toBe(false);
   });
 });

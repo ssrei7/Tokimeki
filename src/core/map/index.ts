@@ -30,6 +30,16 @@ export interface MapEditResult {
   warning?: string;
 }
 
+export interface UpdateMapNodeInput {
+  name: string;
+  description?: string;
+  regionId: string;
+  kind: string[];
+  openSlots?: string[];
+  discovered: boolean;
+  pos: { x: number; y: number };
+}
+
 export function createMapNode(map: MapState, input: CreateMapNodeInput): MapEditResult {
   const name = input.name.trim();
   if (!name) return { ok: false, warning: '地点名称不能为空。' };
@@ -57,6 +67,47 @@ export function createMapNode(map: MapState, input: CreateMapNodeInput): MapEdit
   map.nodes[nodeId] = node;
   map.edges.push(edge);
   return { ok: true, nodeId };
+}
+
+export function updateMapNode(map: MapState, nodeId: string, input: UpdateMapNodeInput): MapEditResult {
+  const existing = map.nodes[nodeId];
+  if (!existing) return { ok: false, warning: `地点不存在：${nodeId}。` };
+  const name = input.name.trim();
+  if (!name) return { ok: false, warning: '地点名称不能为空。' };
+  if (!map.regions[input.regionId]) return { ok: false, warning: `区域不存在：${input.regionId}。` };
+  if (!Number.isFinite(input.pos.x) || !Number.isFinite(input.pos.y)) return { ok: false, warning: '地点坐标无效。' };
+  map.nodes[nodeId] = MapNodeSchema.parse({
+    ...existing,
+    name,
+    description: input.description?.trim() || undefined,
+    regionId: input.regionId,
+    kind: [...new Set(input.kind.map((value) => value.trim()).filter(Boolean))],
+    openSlots: input.openSlots?.length ? [...new Set(input.openSlots)] : undefined,
+    discovered: input.discovered,
+    pos: { x: Math.max(0, Math.min(map.view.size.w, input.pos.x)), y: Math.max(0, Math.min(map.view.size.h, input.pos.y)) },
+  });
+  return { ok: true, nodeId };
+}
+
+export function deleteMapNode(map: MapState, nodeId: string, currentNodeId: string): MapEditResult {
+  if (!map.nodes[nodeId]) return { ok: false, warning: `地点不存在：${nodeId}。` };
+  if (nodeId === currentNodeId) return { ok: false, warning: '不能删除玩家当前位置。' };
+  const remainingIds = Object.keys(map.nodes).filter((id) => id !== nodeId);
+  if (remainingIds.length === 0) return { ok: false, warning: '地图至少需要保留一个地点。' };
+  const remainingEdges = map.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId);
+  if (!isMapConnected(remainingIds, remainingEdges)) return { ok: false, warning: '删除该地点会使地图产生孤立区域，请先调整路线。' };
+  delete map.nodes[nodeId];
+  map.edges = remainingEdges;
+  return { ok: true, nodeId };
+}
+
+function isMapConnected(nodeIds: string[], edges: MapEdge[]): boolean {
+  if (nodeIds.length < 2) return nodeIds.length === 1;
+  const adjacent = new Map(nodeIds.map((id) => [id, new Set<string>()]));
+  for (const edge of edges) { adjacent.get(edge.from)?.add(edge.to); adjacent.get(edge.to)?.add(edge.from); }
+  const seen = new Set<string>(); const queue = [nodeIds[0]];
+  while (queue.length) { const id = queue.shift()!; if (seen.has(id)) continue; seen.add(id); for (const next of adjacent.get(id) ?? []) if (!seen.has(next)) queue.push(next); }
+  return seen.size === nodeIds.length;
 }
 
 export function movePlayer(world: WorldState, calendar: CalendarConfig, targetNodeId: string, events?: EventBus): MapOperationResult {
