@@ -1112,9 +1112,11 @@ function ChatView(props: {
   const statusText = props.requestStatus === 'requesting' ? '等待回复…' : props.requestStatus === 'generating' ? '正在生成…' : props.requestStatus === 'error' ? '请求失败' : '';
   const canGenerate = canGenerateReply(props.messages, props.input);
   const latestMessage = props.messages.at(-1)?.content;
+  const latestRole = props.messages.at(-1)?.role;
   const olderMessageCount = Math.max(0, props.messages.length - 40);
   const visibleMessages = showOlderMessages ? props.messages : props.messages.slice(olderMessageCount);
   const [portraitUrl, setPortraitUrl] = useState<string>();
+  const [quickReplySelected, setQuickReplySelected] = useState(false);
   const activePortrait = props.worldCharacter?.visuals.portraits.find((portrait) => portrait.id === props.worldCharacter?.visuals.activePortraitId) ?? props.worldCharacter?.visuals.portraits[0];
   const accentColor = props.worldCharacter?.visuals.accentColor ?? '#315efb';
   const characterName = props.characters.find((item) => item.id === props.selectedCharacterId)?.name ?? '选择角色聊天';
@@ -1162,14 +1164,18 @@ function ChatView(props: {
     }
   }, [latestMessage, props.busy, props.messages.length, props.requestStatus, props.selectedCharacterId]);
 
+  useEffect(() => {
+    if (latestRole === 'assistant' && !props.busy) setQuickReplySelected(false);
+  }, [latestRole, props.busy]);
+
   return <section className="chat-screen vn-chat-screen">
     <div className="section-heading"><div><span className="eyebrow">面对面</span><h2>{characterName}</h2></div>{statusText && <span className={`request-status ${props.requestStatus}`}>{statusText}</span>}</div>
     <div className="character-picker"><label>聊天角色<select value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">未选择</option>{props.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
     <div className="vn-stage" style={{ '--vn-accent': accentColor } as CSSProperties}>
       <div className="vn-portrait-area" aria-label={`${characterName}的立绘`}>
-        {portraitUrl ? <img className="vn-portrait" src={portraitUrl} alt={`${characterName}的立绘`} /> : <div className="vn-portrait-fallback" aria-label={`${characterName}的默认头像`}>{characterName.slice(0, 1)}</div>}
+        {portraitUrl ? <img className="vn-portrait" src={portraitUrl} alt={`${characterName}的立绘`} /> : <div className="vn-portrait-empty" aria-label="暂无立绘" />}
       </div>
-      <div className="vn-choices" aria-label="快速回应"><button className="secondary" onClick={() => props.setInput('我点了点头。')}>点头回应</button><button className="secondary" onClick={() => props.setInput('我先听你说。')}>先听你说</button></div>
+      {!quickReplySelected && <div className="vn-choices" aria-label="快速回应"><button className="secondary" onClick={() => { props.setInput('我点了点头。'); setQuickReplySelected(true); }}>点头回应</button><button className="secondary" onClick={() => { props.setInput('我先听你说。'); setQuickReplySelected(true); }}>先听你说</button></div>}
       <div className="vn-dialogue-box">
         <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && !showOlderMessages && <button className="history-toggle" onClick={() => setShowOlderMessages(true)}>查看更早的 {olderMessageCount} 条消息</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.map((message, index) => <div className={`vn-line ${message.role}`} key={`${message.role}-${olderMessageCount + index}`}><span className="vn-speaker">{message.role === 'assistant' ? characterName : message.role === 'user' ? '你' : ''}</span><span className="vn-line-text">{message.content}</span></div>)}{props.busy && props.requestStatus === 'requesting' && <div className="vn-line assistant pending"><span className="vn-speaker">{characterName}</span><span className="vn-line-text">等待回复…</span></div>}</div>
       </div>
