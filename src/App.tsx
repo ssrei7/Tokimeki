@@ -720,6 +720,7 @@ function ChatView(props: {
 }) {
   const latestRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
+  const composerBottomInset = 76;
   const followLatestRef = useRef(true);
   const previousCharacterIdRef = useRef(props.selectedCharacterId);
   const statusText = props.requestStatus === 'requesting' ? '等待回复…' : props.requestStatus === 'generating' ? '正在生成…' : props.requestStatus === 'error' ? '请求失败' : '';
@@ -730,7 +731,7 @@ function ChatView(props: {
     const scroller = latestRef.current?.closest('.screen');
     if (!(scroller instanceof HTMLElement)) return;
     const updateFollowState = () => {
-      followLatestRef.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 48;
+      followLatestRef.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= composerBottomInset + 48;
     };
     scroller.addEventListener('scroll', updateFollowState, { passive: true });
     return () => scroller.removeEventListener('scroll', updateFollowState);
@@ -741,7 +742,19 @@ function ChatView(props: {
       previousCharacterIdRef.current = props.selectedCharacterId;
       followLatestRef.current = true;
     }
-    if (followLatestRef.current) composerRef.current?.scrollIntoView({ block: 'end' });
+    if (!followLatestRef.current) return;
+    const composer = composerRef.current;
+    const scroller = composer?.closest('.screen');
+    if (!(composer instanceof HTMLElement) || !(scroller instanceof HTMLElement)) return;
+    const scrollerRect = scroller.getBoundingClientRect();
+    const composerRect = composer.getBoundingClientRect();
+    const visibleTop = scrollerRect.top;
+    const visibleBottom = scrollerRect.bottom - composerBottomInset;
+    if (composerRect.bottom > visibleBottom) {
+      scroller.scrollTop += composerRect.bottom - visibleBottom;
+    } else if (composerRect.top < visibleTop) {
+      scroller.scrollTop -= visibleTop - composerRect.top;
+    }
   }, [latestMessage, props.busy, props.messages.length, props.requestStatus, props.selectedCharacterId]);
 
   return <section className="chat-screen">

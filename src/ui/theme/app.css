@@ -43,7 +43,7 @@ button.danger { background: #fee4e2; color: #b42318; }
 .message.assistant { align-self: flex-start; background: #fff; border: 1px solid #e4e8ef; }
 .message.pending { color: #667085; }
 .empty { color: #98a2b3; text-align: center; padding: 36px 0; }
-.composer { position: sticky; bottom: 0; display: grid; gap: 8px; padding-top: 12px; background: #f8fafc; }
+.composer { position: sticky; bottom: calc(68px + env(safe-area-inset-bottom)); z-index: 2; display: grid; gap: 8px; padding-top: 12px; background: #f8fafc; }
 .composer textarea { min-height: 68px; resize: vertical; }
 .composer-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
