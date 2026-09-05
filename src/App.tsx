@@ -745,7 +745,13 @@ function ChatView(props: {
       followLatestRef.current = true;
       setShowOlderMessages(false);
     }
-    if (followLatestRef.current) messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'auto' });
+    if (followLatestRef.current) {
+      const scroller = messagesRef.current;
+      if (scroller) {
+        scroller.scrollTop = scroller.scrollHeight;
+        requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; });
+      }
+    }
   }, [latestMessage, props.busy, props.messages.length, props.requestStatus, props.selectedCharacterId]);
 
   return <section className="chat-screen">
