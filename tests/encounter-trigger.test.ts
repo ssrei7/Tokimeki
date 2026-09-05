@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { EventBus } from '../src/core/events/bus';
-import { triggerEncounter } from '../src/core/encounter';
+import { triggerEncounter, updateEncounterOutcome } from '../src/core/encounter';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 function setup() {
@@ -43,5 +43,15 @@ describe('encounter trigger and log', () => {
     save.world.map.nodes.docks = { id: 'docks', name: '西码头', regionId: 'start-region', kind: ['outdoor'], worldbookIds: [], discovered: true, visitCount: 0, memories: [], pos: { x: 800, y: 350 } };
     expect(triggerEncounter(save.world, config, { nodeId: 'docks', trigger: 'character_move' }).triggered).toBe(false);
     expect(save.world.encounterLog).toHaveLength(0);
+  });
+
+  it('records the player choice without consuming time', () => {
+    const save = setup();
+    const result = triggerEncounter(save.world, config, { nodeId: 'start', trigger: 'enter' });
+    const beforeClock = structuredClone(save.world.clock);
+    const updated = updateEncounterOutcome(save.world, result.entry!.id, 'urgent_leave');
+    expect(updated.ok).toBe(true);
+    expect(save.world.encounterLog[0].outcome).toBe('urgent_leave');
+    expect(save.world.clock).toEqual(beforeClock);
   });
 });

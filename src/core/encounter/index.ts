@@ -6,5 +6,5 @@ export { moveNpc } from './movement';
 export type { MoveNpcResult } from './movement';
 export { selectEncounterCandidates } from './selection';
 export type { EncounterCandidate, EncounterSelectionOptions } from './selection';
-export { triggerEncounter } from './trigger';
-export type { EncounterTriggerOptions, EncounterTriggerResult } from './trigger';
+export { triggerEncounter, updateEncounterOutcome } from './trigger';
+export type { EncounterOutcomeResult, EncounterTriggerOptions, EncounterTriggerResult } from './trigger';

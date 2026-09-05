@@ -21,6 +21,12 @@ export interface EncounterTriggerResult {
   changes: Array<{ path: string; before: unknown; after: unknown; description: string }>;
 }
 
+export interface EncounterOutcomeResult {
+  ok: boolean;
+  changes: Array<{ path: string; before: unknown; after: unknown; description: string }>;
+  warning?: string;
+}
+
 /** Resolve and record one encounter without making any provider/API call. */
 export function triggerEncounter(world: WorldState, config: EncounterConfig, options: EncounterTriggerOptions): EncounterTriggerResult {
   const day = Math.max(1, Math.floor(options.day ?? world.clock.day));
@@ -52,6 +58,19 @@ export function triggerEncounter(world: WorldState, config: EncounterConfig, opt
     candidates,
     entry,
     changes: [{ path: 'world.encounterLog', before, after: world.encounterLog.length, description: `Encountered ${entry.characterIds.join(', ')} at ${entry.nodeId}.` }],
+  };
+}
+
+export function updateEncounterOutcome(world: WorldState, entryId: string, outcome: EncounterLogEntry['outcome']): EncounterOutcomeResult {
+  const index = world.encounterLog.findIndex((entry) => entry.id === entryId);
+  if (index < 0) return { ok: false, changes: [], warning: `Unknown encounter: ${entryId}.` };
+  const entry = world.encounterLog[index];
+  if (entry.outcome === outcome) return { ok: true, changes: [] };
+  const before = entry.outcome;
+  entry.outcome = outcome;
+  return {
+    ok: true,
+    changes: [{ path: `world.encounterLog.${index}.outcome`, before, after: outcome, description: `Encounter ${entryId} outcome changed to ${outcome}.` }],
   };
 }
 
