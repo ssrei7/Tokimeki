@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseGeneratedMap, parseGeneratedMapExpansion } from '../src/core/map';
+import { parseGeneratedMap, parseGeneratedMapExpansion, parseGeneratedNodeSuggestion } from '../src/core/map';
 
 function generatedPayload() {
   const nodes = Array.from({ length: 8 }, (_, index) => ({ id: index === 0 ? 'start' : `node-${index}`, name: index === 0 ? '起点' : `地点 ${index}`, regionId: 'town', kind: ['outdoor'], pos: { x: index * 100, y: 200 } }));
@@ -7,6 +7,11 @@ function generatedPayload() {
 }
 
 describe('map generation parser', () => {
+  it('parses editable node name and description suggestions', () => {
+    expect(parseGeneratedNodeSuggestion('{"name":"灯塔书店","description":"临海的安静旧书店。"}')).toEqual({ name: '灯塔书店', description: '临海的安静旧书店。' });
+    expect(parseGeneratedNodeSuggestion('{"location":{"title":"雨巷茶馆","desc":"雨天会亮起暖黄色灯光。"}}')).toEqual({ name: '雨巷茶馆', description: '雨天会亮起暖黄色灯光。' });
+  });
+
   it('normalizes valid generated JSON and reveals the current node', () => {
     const map = parseGeneratedMap(JSON.stringify(generatedPayload()), 'start');
     expect(Object.keys(map.nodes)).toHaveLength(8);

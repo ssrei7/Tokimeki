@@ -17,6 +17,7 @@ const GeneratedNodeSchema = z.object({
 });
 
 const GeneratedRegionSchema = z.object({ id: z.string().min(1), name: z.string().min(1), description: z.string().optional() });
+const GeneratedNodeSuggestionSchema = z.object({ name: z.string().min(1), description: z.string().min(1) });
 const GeneratedMapSchema = z.object({
   regions: z.union([z.record(z.string(), GeneratedRegionSchema), z.array(GeneratedRegionSchema)]).optional(),
   nodes: z.union([z.record(z.string(), GeneratedNodeSchema), z.array(GeneratedNodeSchema)]),
@@ -48,6 +49,14 @@ export function parseGeneratedMap(text: string, currentNodeId: string): MapState
     edges: parsed.edges,
     view: { mode: parsed.view?.mode ?? 'graph', background: parsed.view?.background, size: parsed.view?.size ?? { w: 1000, h: 700 } },
   };
+}
+
+export function parseGeneratedNodeSuggestion(text: string): z.infer<typeof GeneratedNodeSuggestionSchema> {
+  const raw = extractJson(text);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return GeneratedNodeSuggestionSchema.parse(raw);
+  const record = raw as Record<string, unknown>;
+  const nested = record.location && typeof record.location === 'object' && !Array.isArray(record.location) ? record.location as Record<string, unknown> : record;
+  return GeneratedNodeSuggestionSchema.parse({ name: nested.name ?? nested.title, description: nested.description ?? nested.desc });
 }
 
 export function parseGeneratedMapExpansion(text: string, existing: MapState, anchorNodeId: string, count: number): MapState {

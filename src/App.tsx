@@ -3,7 +3,7 @@ import { PromptAssembler } from './core/prompt/assembler';
 import type { AssembledPrompt } from './core/prompt/assembler';
 import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
 import { EventBus } from './core/events/bus';
-import { createMapNode, movePlayer, parseGeneratedMap, parseGeneratedMapExpansion, type CreateMapNodeInput } from './core/map';
+import { createMapNode, movePlayer, parseGeneratedMap, parseGeneratedMapExpansion, parseGeneratedNodeSuggestion, type CreateMapNodeInput } from './core/map';
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
@@ -347,6 +347,26 @@ export function App() {
       setFeedback({ tone: 'success', text: `地图扩展成功：新增 ${count} 个地点。` });
     } catch (error) {
       setFeedback({ tone: 'error', text: errorMessage(error, '地图扩展失败。') });
+    } finally { setMapGenerating(false); }
+  }
+
+  async function suggestMapNode(input: { requirements: string; regionName: string; anchorName: string }): Promise<{ name: string; description: string } | null> {
+    const mapProvider = resolveProviderForTask(providers, bindings, 'map_gen', defaultProviderId);
+    if (!mapProvider) { setFeedback({ tone: 'error', text: '请先在设置中配置 map_gen Provider。' }); return null; }
+    setMapGenerating(true);
+    let generated = '';
+    try {
+      const parsedProvider = ProviderConfigSchema.parse(mapProvider);
+      await streamChat(parsedProvider, [
+        { role: 'system', content: '为开放世界地图中的一个新地点创作名称和简短描述。只返回 JSON：{"name":"地点名","description":"描述"}。不要输出坐标、状态或其他字段。' },
+        { role: 'user', content: JSON.stringify(input) },
+      ], (delta) => { generated += delta; }, { taskId: 'map_gen' });
+      const suggestion = parseGeneratedNodeSuggestion(generated);
+      setFeedback({ tone: 'success', text: 'AI 已填写地点名称与描述，请确认后再保存。' });
+      return suggestion;
+    } catch (error) {
+      setFeedback({ tone: 'error', text: errorMessage(error, '地点名称与描述生成失败。') });
+      return null;
     } finally { setMapGenerating(false); }
   }
 
@@ -802,7 +822,7 @@ export function App() {
     {tab !== 'map' && <header className="topbar"><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small><h1>Tokimeki</h1></div></header>}
     <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''} ${tab === 'map' ? 'map-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
-      {tab === 'map' && <MapView save={save} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onToggleMode={toggleMapMode} onUpdateNodePosition={updateNodePosition} onCreateNode={addMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
+      {tab === 'map' && <MapView save={save} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onToggleMode={toggleMapMode} onUpdateNodePosition={updateNodePosition} onCreateNode={addMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
       {tab === 'chat' && <ChatView characters={characters} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} presetBundleName={presetBundleName} setPresetBundleName={setPresetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} />}
@@ -812,7 +832,7 @@ export function App() {
   </div>;
 }
 
-function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, onUpdateNodePosition, onCreateNode, onGenerateMap, onExpandMap, mapGenerating }: { save: SaveFile; onMove: (nodeId: string) => void; onOpenChat: () => void; onImportBackground: (file?: File) => Promise<void>; onToggleMode: () => void; onUpdateNodePosition: (nodeId: string, pos: { x: number; y: number }) => void; onCreateNode: (input: CreateMapNodeInput) => boolean; onGenerateMap: (requirements?: string) => Promise<void>; onExpandMap: (anchorNodeId: string, count: number, requirements?: string) => Promise<void>; mapGenerating: boolean }) {
+function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, onUpdateNodePosition, onCreateNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating }: { save: SaveFile; onMove: (nodeId: string) => void; onOpenChat: () => void; onImportBackground: (file?: File) => Promise<void>; onToggleMode: () => void; onUpdateNodePosition: (nodeId: string, pos: { x: number; y: number }) => void; onCreateNode: (input: CreateMapNodeInput) => boolean; onSuggestNode: (input: { requirements: string; regionName: string; anchorName: string }) => Promise<{ name: string; description: string } | null>; onGenerateMap: (requirements?: string) => Promise<void>; onExpandMap: (anchorNodeId: string, count: number, requirements?: string) => Promise<void>; mapGenerating: boolean }) {
   const map = save.world.map;
   const currentNode = map.nodes[save.world.player.nodeId];
   const nodes = Object.values(map.nodes);
@@ -826,6 +846,8 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
   const dragRef = useRef({ pointerId: -1, startX: 0, startY: 0, originX: 0, originY: 0, moved: false });
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef({ distance: 0, zoom: 1, contentX: 0, contentY: 0 });
+  const graphSurfaceRef = useRef<SVGSVGElement>(null);
+  const hotspotSurfaceRef = useRef<HTMLDivElement>(null);
   const [editorMode, setEditorMode] = useState(false);
   const [editorPos, setEditorPos] = useState<{ x: number; y: number } | null>(null);
   const [editorName, setEditorName] = useState('');
@@ -836,6 +858,7 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
   const [editorOpenSlots, setEditorOpenSlots] = useState<string[]>([]);
   const [editorDiscovered, setEditorDiscovered] = useState(true);
   const [editorTravelSlots, setEditorTravelSlots] = useState('1');
+  const [editorRequirements, setEditorRequirements] = useState('');
   useEffect(() => {
     let objectUrl: string | undefined;
     let cancelled = false;
@@ -860,12 +883,20 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
   };
   const handleHotspotClick = (event: MouseEvent<HTMLDivElement>) => {
     if (dragRef.current.moved) return;
+    if (editorMode) return;
     const pos = pointOnMap(event.clientX, event.clientY, event.currentTarget);
-    if (editorMode) { setEditorPos(pos); return; }
     if (pinNodeId) onUpdateNodePosition(pinNodeId, pos);
   };
-  const handleGraphClick = (event: MouseEvent<SVGSVGElement>) => { if (editorMode && !dragRef.current.moved) setEditorPos(pointOnMap(event.clientX, event.clientY, event.currentTarget)); };
-  const closeEditor = () => { setEditorPos(null); setEditorName(''); setEditorDescription(''); setEditorKind(''); setEditorOpenSlots([]); };
+  const handleMapCanvasClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (!editorMode || dragRef.current.moved) return;
+    const surface = map.view.mode === 'graph' ? graphSurfaceRef.current : hotspotSurfaceRef.current;
+    if (surface) setEditorPos(pointOnMap(event.clientX, event.clientY, surface));
+  };
+  const closeEditor = () => { setEditorPos(null); setEditorName(''); setEditorDescription(''); setEditorKind(''); setEditorOpenSlots([]); setEditorRequirements(''); };
+  const generateEditorText = async () => {
+    const suggestion = await onSuggestNode({ requirements: editorRequirements.trim(), regionName: map.regions[editorRegionId]?.name ?? editorRegionId, anchorName: map.nodes[editorAnchorId]?.name ?? editorAnchorId });
+    if (suggestion) { setEditorName(suggestion.name); setEditorDescription(suggestion.description); }
+  };
   const saveEditorNode = () => {
     if (!editorPos) return;
     const created = onCreateNode({ name: editorName, description: editorDescription, regionId: editorRegionId, kind: editorKind.split(/[,，]/), openSlots: editorOpenSlots, discovered: editorDiscovered, pos: editorPos, anchorNodeId: editorAnchorId, travelSlots: Math.max(0, Math.floor(Number(editorTravelSlots) || 0)) });
@@ -908,14 +939,16 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
         <div className="map-generation-panel"><label>地图生成要求<textarea value={requirements} onChange={(event) => setRequirements(event.target.value)} placeholder="例如：沿海小镇，包含车站、海边和一处适合夜晚散步的地点。" /></label><div className="map-expand-row"><label>从地点扩展<select value={anchorNodeId} onChange={(event) => setAnchorNodeId(event.target.value)}>{nodes.map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label><label>新增数量<input type="number" min="1" max="8" value={expandCount} onChange={(event) => setExpandCount(event.target.value)} /></label><button className="secondary" onClick={() => void onExpandMap(anchorNodeId, Math.max(1, Math.min(8, Number(expandCount) || 1)), requirements)} disabled={mapGenerating || !anchorNodeId}>扩展地点</button></div></div>
       </div></details>
     </div>
-    <div className="map-canvas" onWheel={mapWheel} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
-      {map.view.mode === 'graph' ? <svg className={`map-svg ${editorMode ? 'editing' : ''}`} onClick={handleGraphClick} style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: '0 0' }} viewBox={`0 0 ${map.view.size.w} ${map.view.size.h}`} role="img" aria-label="世界地图">
+    <div className="map-canvas" onClick={handleMapCanvasClick} onWheel={mapWheel} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
+      {map.view.mode === 'graph' ? <svg ref={graphSurfaceRef} className={`map-svg ${editorMode ? 'editing' : ''}`} style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: '0 0' }} viewBox={`0 0 ${map.view.size.w} ${map.view.size.h}`} role="img" aria-label="世界地图">
         <g className="map-edges">{map.edges.map((edge) => { const from = map.nodes[edge.from]; const to = map.nodes[edge.to]; if (!from || !to) return null; const visible = from.discovered || to.discovered; return <line key={edgeKey(edge)} className={visible ? '' : 'fog'} x1={from.pos.x} y1={from.pos.y} x2={to.pos.x} y2={to.pos.y} />; })}</g>
         <g className="map-nodes">{nodes.map((node) => { const isCurrent = node.id === save.world.player.nodeId; const canSelect = node.discovered && !isCurrent; return <g key={node.id} className={`map-node ${node.discovered ? 'discovered' : 'undiscovered'} ${isCurrent ? 'current' : ''}`} role={canSelect ? 'button' : undefined} tabIndex={canSelect ? 0 : undefined} onClick={(event) => { event.stopPropagation(); if (canSelect && !editorMode && !dragRef.current.moved) onMove(node.id); }} onKeyDown={(event) => { if (canSelect && !editorMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onMove(node.id); } }}><circle cx={node.pos.x} cy={node.pos.y} r={isCurrent ? 22 : 18} /><text x={node.pos.x} y={node.pos.y + 42} textAnchor="middle">{node.discovered ? node.name : '未发现地点'}</text>{isCurrent && <text className="map-node-marker" x={node.pos.x} y={node.pos.y + 5} textAnchor="middle">你</text>}</g>; })}</g>
-      </svg> : <div className="hotspot-editor"><div className={`hotspot-canvas ${editorMode ? 'editing' : ''}`} onClick={handleHotspotClick} style={{ aspectRatio: `${map.view.size.w} / ${map.view.size.h}`, backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined, transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: '0 0' }} role="application" aria-label="Hotspot 坐标编辑器">{nodes.map((node) => <button key={node.id} className={`hotspot-pin ${node.id === save.world.player.nodeId ? 'current' : ''}`} style={{ left: `${(node.pos.x / map.view.size.w) * 100}%`, top: `${(node.pos.y / map.view.size.h) * 100}%` }} onClick={(event) => { event.stopPropagation(); if (!editorMode) setPinNodeId(node.id); }} title={node.name}>{node.discovered ? node.name : '未发现'}</button>)}{!backgroundUrl && <span className="hotspot-empty">上传底图后，在此点击为所选地点钉坐标。</span>}</div><label className="hotspot-select">选择要定位的地点<select value={pinNodeId} onChange={(event) => setPinNodeId(event.target.value)}>{nodes.map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label><p className="io-scope">当前选中地点：{map.nodes[pinNodeId]?.name ?? '未选择'}。点击底图即可更新坐标；graph 与 hotspot 共用同一份 pos。</p></div>}
+      </svg> : <div className="hotspot-editor"><div ref={hotspotSurfaceRef} className={`hotspot-canvas ${editorMode ? 'editing' : ''}`} onClick={handleHotspotClick} style={{ aspectRatio: `${map.view.size.w} / ${map.view.size.h}`, backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined, transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: '0 0' }} role="application" aria-label="Hotspot 坐标编辑器">{nodes.map((node) => <button key={node.id} className={`hotspot-pin ${node.id === save.world.player.nodeId ? 'current' : ''}`} style={{ left: `${(node.pos.x / map.view.size.w) * 100}%`, top: `${(node.pos.y / map.view.size.h) * 100}%` }} onClick={(event) => { event.stopPropagation(); if (!editorMode) setPinNodeId(node.id); }} title={node.name}>{node.discovered ? node.name : '未发现'}</button>)}{!backgroundUrl && <span className="hotspot-empty">上传底图后，在此点击为所选地点钉坐标。</span>}</div><label className="hotspot-select">选择要定位的地点<select value={pinNodeId} onChange={(event) => setPinNodeId(event.target.value)}>{nodes.map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label><p className="io-scope">当前选中地点：{map.nodes[pinNodeId]?.name ?? '未选择'}。点击底图即可更新坐标；graph 与 hotspot 共用同一份 pos。</p></div>}
       {editorMode && !editorPos && <div className="map-editor-hint">点击地图空白位置放置新地点；仍可拖动和缩放地图。</div>}
       {editorPos && <div className="map-editor-card" role="dialog" aria-label="新建地点" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
         <div className="list-heading"><strong>新建地点</strong><small>{Math.round(editorPos.x)}, {Math.round(editorPos.y)}</small></div>
+        <label>AI 生成要求<textarea value={editorRequirements} onChange={(event) => setEditorRequirements(event.target.value)} placeholder="例如：安静的海边小店，适合傍晚约会。" /></label>
+        <button className="secondary" disabled={mapGenerating} onClick={() => void generateEditorText()}>{mapGenerating ? '正在生成…' : 'AI 生成名称与描述'}</button>
         <label>名称<input autoFocus value={editorName} onChange={(event) => setEditorName(event.target.value)} /></label>
         <label>描述<textarea value={editorDescription} onChange={(event) => setEditorDescription(event.target.value)} /></label>
         <div className="map-editor-grid"><label>区域<select value={editorRegionId} onChange={(event) => setEditorRegionId(event.target.value)}>{Object.values(map.regions).map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}</select></label><label>连接到<select value={editorAnchorId} onChange={(event) => setEditorAnchorId(event.target.value)}>{nodes.map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label></div>
