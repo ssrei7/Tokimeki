@@ -8,3 +8,5 @@ export { selectEncounterCandidates } from './selection';
 export type { EncounterCandidate, EncounterSelectionOptions } from './selection';
 export { triggerEncounter, updateEncounterOutcome } from './trigger';
 export type { EncounterOutcomeResult, EncounterTriggerOptions, EncounterTriggerResult } from './trigger';
+export { addCharacterToWorld, formalCharacterFromCard } from './roster';
+export type { RosterResult } from './roster';
