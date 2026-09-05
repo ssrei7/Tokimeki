@@ -42,6 +42,18 @@ button.danger { background: #fee4e2; color: #b42318; }
 .map-canvas { touch-action: none; cursor: grab; }
 .map-canvas:active { cursor: grabbing; }
 .map-screen-host .map-canvas { flex: 1 1 auto; min-height: 0; }
+.map-svg.editing, .hotspot-canvas.editing { cursor: crosshair; }
+.map-editor-hint { position: absolute; z-index: 5; top: 10px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 20px); padding: 7px 10px; border-radius: 999px; background: #1d2939dd; color: #fff; font-size: 11px; line-height: 1.4; text-align: center; pointer-events: none; }
+.map-editor-card { position: absolute; z-index: 6; right: 10px; bottom: 10px; left: 10px; display: grid; gap: 8px; max-height: calc(100% - 20px); overflow-y: auto; padding: 12px; border: 1px solid #d7dce5; border-radius: 8px; background: #fffffff2; box-shadow: 0 10px 30px #1d293955; cursor: default; overscroll-behavior: contain; touch-action: pan-y; }
+.map-editor-card label { display: grid; gap: 5px; color: #475467; font-size: 12px; }
+.map-editor-card input, .map-editor-card textarea, .map-editor-card select { width: 100%; border: 1px solid #d7dce5; border-radius: 7px; padding: 8px 10px; background: #fff; }
+.map-editor-card textarea { min-height: 62px; resize: vertical; }
+.map-editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.map-editor-card fieldset { margin: 0; padding: 8px; border: 1px solid #e4e8ef; border-radius: 7px; }
+.map-editor-card legend { padding: 0 4px; color: #667085; font-size: 11px; }
+.map-slot-options { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.map-slot-options label, .map-editor-check { display: inline-flex; grid-template-columns: auto 1fr; align-items: center; gap: 5px; }
+.map-slot-options input, .map-editor-check input { width: auto; }
 .map-svg { display: block; width: 100%; height: 100%; min-height: 430px; }
 .map-screen-host .map-svg { min-height: 0; }
 .map-edges line { stroke: #ffffff; stroke-width: 12; stroke-linecap: round; opacity: .9; }

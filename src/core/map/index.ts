@@ -1,7 +1,7 @@
 import { evaluateCondition } from '../expr';
 import { advanceTime, availableSlots } from '../time';
 import type { EventBus } from '../events/bus';
-import type { CalendarConfig, MapEdge, WorldState } from '../../data/schema/save';
+import { MapEdgeSchema, MapNodeSchema, type CalendarConfig, type MapEdge, type MapState, type WorldState } from '../../data/schema/save';
 
 export interface MapOperationResult {
   ok: boolean;
@@ -10,6 +10,53 @@ export interface MapOperationResult {
   cost: number;
   fromNodeId?: string;
   toNodeId?: string;
+}
+
+export interface CreateMapNodeInput {
+  name: string;
+  description?: string;
+  regionId: string;
+  kind: string[];
+  openSlots?: string[];
+  discovered: boolean;
+  pos: { x: number; y: number };
+  anchorNodeId: string;
+  travelSlots: number;
+}
+
+export interface MapEditResult {
+  ok: boolean;
+  nodeId?: string;
+  warning?: string;
+}
+
+export function createMapNode(map: MapState, input: CreateMapNodeInput): MapEditResult {
+  const name = input.name.trim();
+  if (!name) return { ok: false, warning: '地点名称不能为空。' };
+  if (!map.regions[input.regionId]) return { ok: false, warning: `区域不存在：${input.regionId}。` };
+  if (!map.nodes[input.anchorNodeId]) return { ok: false, warning: `连接锚点不存在：${input.anchorNodeId}。` };
+  if (!Number.isFinite(input.pos.x) || !Number.isFinite(input.pos.y)) return { ok: false, warning: '地点坐标无效。' };
+  if (!Number.isInteger(input.travelSlots) || input.travelSlots < 0) return { ok: false, warning: '移动成本必须是非负整数。' };
+  const baseId = name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '') || 'location';
+  let nodeId = baseId; let suffix = 2;
+  while (map.nodes[nodeId]) { nodeId = `${baseId}-${suffix}`; suffix += 1; }
+  const node = MapNodeSchema.parse({
+    id: nodeId,
+    name,
+    regionId: input.regionId,
+    kind: [...new Set(input.kind.map((value) => value.trim()).filter(Boolean))],
+    description: input.description?.trim() || undefined,
+    worldbookIds: [],
+    openSlots: input.openSlots?.length ? [...new Set(input.openSlots)] : undefined,
+    discovered: input.discovered,
+    visitCount: 0,
+    memories: [],
+    pos: { x: Math.max(0, Math.min(map.view.size.w, input.pos.x)), y: Math.max(0, Math.min(map.view.size.h, input.pos.y)) },
+  });
+  const edge = MapEdgeSchema.parse({ from: input.anchorNodeId, to: nodeId, travelSlots: input.travelSlots });
+  map.nodes[nodeId] = node;
+  map.edges.push(edge);
+  return { ok: true, nodeId };
 }
 
 export function movePlayer(world: WorldState, calendar: CalendarConfig, targetNodeId: string, events?: EventBus): MapOperationResult {

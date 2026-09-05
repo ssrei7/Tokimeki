@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EventBus } from '../src/core/events/bus';
-import { movePlayer, revealNode } from '../src/core/map';
+import { createMapNode, movePlayer, revealNode } from '../src/core/map';
 import { createDefaultMap, SaveFileSchema, type WorldState } from '../src/data/schema/save';
 
 function worldWithMap(): WorldState {
@@ -48,5 +48,24 @@ describe('deterministic map movement', () => {
   it('reveals a node without consuming time', () => {
     const world = worldWithMap(); const result = revealNode(world, 'docks');
     expect(result.ok).toBe(true); expect(world.map.nodes.docks.discovered).toBe(true); expect(world.slotsUsedToday).toBe(0);
+  });
+
+  it('creates a validated map node and connecting edge with a unique id', () => {
+    const world = worldWithMap();
+    const first = createMapNode(world.map, { name: '海边咖啡馆', description: '可以看海。', regionId: 'start-region', kind: ['indoor', 'cafe'], openSlots: ['morning'], discovered: true, pos: { x: 1200, y: -20 }, anchorNodeId: 'start', travelSlots: 1 });
+    const second = createMapNode(world.map, { name: '海边咖啡馆', regionId: 'start-region', kind: [], discovered: false, pos: { x: 400, y: 200 }, anchorNodeId: 'start', travelSlots: 0 });
+    expect(first).toEqual({ ok: true, nodeId: '海边咖啡馆' });
+    expect(second).toEqual({ ok: true, nodeId: '海边咖啡馆-2' });
+    expect(world.map.nodes['海边咖啡馆'].pos).toEqual({ x: 1000, y: 0 });
+    expect(world.map.nodes['海边咖啡馆'].openSlots).toEqual(['morning']);
+    expect(world.map.edges.at(-2)).toEqual({ from: 'start', to: '海边咖啡馆', travelSlots: 1 });
+  });
+
+  it('rejects invalid manual map edits without changing the map', () => {
+    const world = worldWithMap(); const before = structuredClone(world.map);
+    expect(createMapNode(world.map, { name: '', regionId: 'start-region', kind: [], discovered: true, pos: { x: 1, y: 1 }, anchorNodeId: 'start', travelSlots: 1 }).ok).toBe(false);
+    expect(createMapNode(world.map, { name: '未知区域', regionId: 'missing', kind: [], discovered: true, pos: { x: 1, y: 1 }, anchorNodeId: 'start', travelSlots: 1 }).ok).toBe(false);
+    expect(createMapNode(world.map, { name: '无锚点', regionId: 'start-region', kind: [], discovered: true, pos: { x: 1, y: 1 }, anchorNodeId: 'missing', travelSlots: 1 }).ok).toBe(false);
+    expect(world.map).toEqual(before);
   });
 });
