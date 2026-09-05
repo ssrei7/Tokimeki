@@ -922,7 +922,7 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
       pinchRef.current = { distance: Math.max(1, Math.hypot(dx, dy)), zoom, contentX: (centerX - offset.x) / zoom, contentY: (centerY - offset.y) / zoom }; dragRef.current.pointerId = -1; return;
     }
     if (event.button !== 0) return;
-    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: offset.x, originY: offset.y, moved: false }; event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: offset.x, originY: offset.y, moved: false };
   };
   const movePan = (event: PointerEvent<HTMLDivElement>) => {
     if (pointersRef.current.has(event.pointerId)) pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -932,7 +932,7 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
       const nextZoom = Math.max(0.65, Math.min(2.5, Number((pinchRef.current.zoom * Math.hypot(dx, dy) / pinchRef.current.distance).toFixed(2))));
       setZoom(nextZoom); setOffset({ x: centerX - pinchRef.current.contentX * nextZoom, y: centerY - pinchRef.current.contentY * nextZoom }); return;
     }
-    if (dragRef.current.pointerId !== event.pointerId) return; const dx = event.clientX - dragRef.current.startX; const dy = event.clientY - dragRef.current.startY; if (Math.abs(dx) + Math.abs(dy) > 4) dragRef.current.moved = true; setOffset({ x: dragRef.current.originX + dx, y: dragRef.current.originY + dy });
+    if (dragRef.current.pointerId !== event.pointerId) return; const dx = event.clientX - dragRef.current.startX; const dy = event.clientY - dragRef.current.startY; if (Math.abs(dx) + Math.abs(dy) > 4 && !dragRef.current.moved) { dragRef.current.moved = true; event.currentTarget.setPointerCapture(event.pointerId); } setOffset({ x: dragRef.current.originX + dx, y: dragRef.current.originY + dy });
   };
   const endPan = (event: PointerEvent<HTMLDivElement>) => { pointersRef.current.delete(event.pointerId); if (pointersRef.current.size < 2) pinchRef.current.distance = 0; if (dragRef.current.pointerId === event.pointerId) dragRef.current.pointerId = -1; };
   const changeZoom = (delta: number) => setZoom((value) => Math.max(0.65, Math.min(2.5, Number((value + delta).toFixed(2)))));

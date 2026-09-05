@@ -25,22 +25,20 @@ describe('deterministic map movement', () => {
     expect(result.ok).toBe(true); expect(result.cost).toBe(0); expect(world.player.nodeId).toBe('market'); expect(world.slotsUsedToday).toBe(0); expect(entered).toEqual([{ fromNodeId: 'start', toNodeId: 'market' }]);
   });
 
-  it('rejects hidden, unreachable, closed, and time-expensive moves', () => {
+  it('rejects hidden or unknown destinations but allows travel across day boundaries', () => {
     const world = worldWithMap();
     const calendar = { slots: [{ id: 'morning', name: '早晨', order: 0 }, { id: 'noon', name: '中午', order: 1 }, { id: 'evening', name: '晚上', order: 2 }, { id: 'night', name: '深夜', order: 3 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard' as const, unlimitedSlots: false };
     expect(movePlayer(world, calendar, 'docks').warning).toContain('hidden');
     expect(movePlayer(world, calendar, 'unknown').warning).toContain('Unknown destination');
     expect(movePlayer(world, calendar, 'market').ok).toBe(true);
     world.map.nodes.docks.discovered = true; world.slotsUsedToday = 3;
-    expect(movePlayer(world, calendar, 'docks').warning).toContain('Not enough time slots');
+    const result = movePlayer(world, calendar, 'docks');
+    expect(result.ok).toBe(true); expect(result.cost).toBe(2); expect(world.clock.day).toBe(2); expect(world.slotsUsedToday).toBe(1);
   });
 
-  it('applies cross-region travel cost and open-slot checks', () => {
+  it('finds a cheapest multi-edge route and treats open slots as non-blocking metadata', () => {
     const world = worldWithMap(); const calendar = { slots: [{ id: 'morning', name: '早晨', order: 0 }, { id: 'noon', name: '中午', order: 1 }, { id: 'evening', name: '晚上', order: 2 }, { id: 'night', name: '深夜', order: 3 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'leisure' as const, unlimitedSlots: false };
-    movePlayer(world, calendar, 'market');
     world.map.nodes.docks.discovered = true; world.map.nodes.docks.openSlots = ['evening'];
-    expect(movePlayer(world, calendar, 'docks').warning).toContain('closed');
-    world.map.nodes.docks.openSlots = ['morning'];
     const result = movePlayer(world, calendar, 'docks');
     expect(result.ok).toBe(true); expect(result.cost).toBe(2); expect(world.slotsUsedToday).toBe(2); expect(world.clock.slotId).toBe('evening');
   });

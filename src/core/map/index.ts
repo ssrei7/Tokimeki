@@ -1,5 +1,4 @@
-import { evaluateCondition } from '../expr';
-import { advanceTime, availableSlots } from '../time';
+import { advanceTime } from '../time';
 import type { EventBus } from '../events/bus';
 import { MapEdgeSchema, MapNodeSchema, type CalendarConfig, type MapEdge, type MapState, type WorldState } from '../../data/schema/save';
 
@@ -120,24 +119,9 @@ export function movePlayer(world: WorldState, calendar: CalendarConfig, targetNo
   if (fromNodeId === targetNodeId) return { ok: true, changes: [], cost: 0, fromNodeId, toNodeId: targetNodeId, warning: 'Already at this node.' };
   if (!target.discovered) return rejected(`Destination node is hidden: ${targetNodeId}.`);
 
-  const edge = findEdge(map.edges, fromNodeId, targetNodeId);
-  if (!edge) return rejected(`No reachable edge from ${fromNodeId} to ${targetNodeId}.`);
-  if (target.openSlots && !target.openSlots.includes(world.clock.slotId)) {
-    return rejected(`Destination ${target.name} is closed during slot ${world.clock.slotId}.`);
-  }
-  if (edge.condition) {
-    try {
-      const scope = { player: world.player, world } as unknown as Parameters<typeof evaluateCondition>[1];
-      if (!evaluateCondition(edge.condition, scope)) return rejected('The route condition is not satisfied.');
-    } catch (error) {
-      return rejected(`Route condition could not be evaluated: ${error instanceof Error ? error.message : 'unknown error'}.`);
-    }
-  }
-
-  const cost = fromNode.regionId === target.regionId ? 0 : edge.travelSlots;
-  if (!calendar.unlimitedSlots && world.slotsUsedToday + cost > availableSlots(calendar)) {
-    return rejected(`Not enough time slots for this move: requires ${cost}, remaining ${Math.max(0, availableSlots(calendar) - world.slotsUsedToday)}.`);
-  }
+  const route = findShortestRoute(map, fromNodeId, targetNodeId);
+  if (!route) return rejected(`No route from ${fromNodeId} to ${targetNodeId}.`);
+  const cost = calendar.unlimitedSlots ? 0 : route.cost;
 
   const changes: MapOperationResult['changes'] = [];
   if (cost > 0) changes.push(...advanceTime(world, calendar, cost, events).changes);
@@ -164,8 +148,26 @@ export function revealNode(world: WorldState, nodeId: string): MapOperationResul
   };
 }
 
-function findEdge(edges: MapEdge[], from: string, to: string): MapEdge | undefined {
-  return edges.find((edge) => (edge.from === from && edge.to === to) || (!edge.oneWay && edge.from === to && edge.to === from));
+function findShortestRoute(map: MapState, fromNodeId: string, toNodeId: string): { cost: number } | undefined {
+  const distances = new Map<string, number>(Object.keys(map.nodes).map((id) => [id, id === fromNodeId ? 0 : Number.POSITIVE_INFINITY]));
+  const pending = new Set(distances.keys());
+  while (pending.size) {
+    let current: string | undefined; let currentDistance = Number.POSITIVE_INFINITY;
+    for (const id of pending) { const distance = distances.get(id) ?? Number.POSITIVE_INFINITY; if (distance < currentDistance) { current = id; currentDistance = distance; } }
+    if (!current || !Number.isFinite(currentDistance)) break;
+    if (current === toNodeId) return { cost: currentDistance };
+    pending.delete(current);
+    for (const edge of map.edges) {
+      const next = edge.from === current ? edge.to : edge.to === current ? edge.from : undefined;
+      if (!next || !pending.has(next)) continue;
+      const from = map.nodes[current]; const to = map.nodes[next];
+      if (!from || !to) continue;
+      const edgeCost = from.regionId === to.regionId ? 0 : edge.travelSlots;
+      const candidate = currentDistance + edgeCost;
+      if (candidate < (distances.get(next) ?? Number.POSITIVE_INFINITY)) distances.set(next, candidate);
+    }
+  }
+  return undefined;
 }
 
 function rejected(warning: string): MapOperationResult {
