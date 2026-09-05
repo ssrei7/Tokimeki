@@ -73,10 +73,17 @@ export function parseGeneratedMapExpansion(text: string, existing: MapState, anc
 function normalizeExpansionPayload(raw: unknown, anchorNodeId: string): unknown {
   if (Array.isArray(raw)) raw = { nodes: raw };
   if (!raw || typeof raw !== 'object') return raw;
-  const record = raw as Record<string, unknown>;
-  const nodes = record.nodes ?? record.newNodes ?? record.locations ?? record.places;
+  let record = raw as Record<string, unknown>;
+  for (const key of ['map', 'result', 'data', 'output']) {
+    const nested = record[key];
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      const candidate = nested as Record<string, unknown>;
+      if (candidate.nodes || candidate.newNodes || candidate.locations || candidate.places || candidate.new_locations) { record = candidate; break; }
+    }
+  }
+  const nodes = record.nodes ?? record.newNodes ?? record.locations ?? record.places ?? record.new_locations ?? record.newPlaces;
   const regions = record.regions ?? record.areas;
-  let edges = record.edges ?? record.newEdges ?? record.connections;
+  let edges = record.edges ?? record.newEdges ?? record.connections ?? record.new_edges;
   if (!edges && Array.isArray(nodes)) {
     edges = nodes.map((node, index) => {
       const parentNodeId = node && typeof node === 'object' && typeof (node as Record<string, unknown>).parentNodeId === 'string'

@@ -71,4 +71,10 @@ describe('map generation parser', () => {
     expect(expanded.edges.some((edge) => edge.from === 'start' && edge.to === 'hill')).toBe(true);
     expect(expanded.edges.some((edge) => edge.from === 'hill' && edge.to === 'shrine')).toBe(true);
   });
+
+  it('unwraps nested provider envelopes for expansion responses', () => {
+    const existing = parseGeneratedMap(JSON.stringify(generatedPayload()), 'start');
+    const expanded = parseGeneratedMapExpansion(JSON.stringify({ result: { new_locations: [{ id: 'tower', name: '瞭望塔', regionId: 'town', pos: { x: 900, y: 300 } }], new_edges: [{ from: 'start', to: 'tower', travelSlots: 1 }] } }), existing, 'start', 1);
+    expect(expanded.nodes.tower.name).toBe('瞭望塔');
+  });
 });
