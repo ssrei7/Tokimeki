@@ -3,6 +3,7 @@ import { PromptAssembler } from './core/prompt/assembler';
 import type { AssembledPrompt } from './core/prompt/assembler';
 import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
 import { EventBus } from './core/events/bus';
+import { movePlayer } from './core/map';
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
@@ -254,6 +255,18 @@ export function App() {
     commitSave(next);
     setTab('day');
     setFeedback({ tone: 'success', text: `第 ${settlement.day} 天已提前结算，已进入下一天。` });
+  }
+
+  function moveToNode(nodeId: string): void {
+    const next = structuredClone(saveRef.current);
+    const result = movePlayer(next.world, next.config.calendar, nodeId, promptEvents);
+    if (!result.ok) {
+      setFeedback({ tone: 'error', text: result.warning ?? '无法前往该地点。' });
+      return;
+    }
+    commitSave(next);
+    const destination = next.world.map.nodes[nodeId];
+    setFeedback({ tone: 'success', text: result.cost > 0 ? `已抵达${destination?.name ?? nodeId}，消耗 ${result.cost} 个时段。` : `已抵达${destination?.name ?? nodeId}。` });
   }
 
   async function restoreSnapshot(id: string): Promise<void> {
@@ -688,7 +701,7 @@ export function App() {
     <header className="topbar"><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small><h1>Tokimeki</h1></div></header>
     <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
-      {tab === 'map' && <MapView onOpenChat={() => setTab('chat')} />}
+      {tab === 'map' && <MapView save={save} onMove={moveToNode} onOpenChat={() => setTab('chat')} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
       {tab === 'chat' && <ChatView characters={characters} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} presetBundleName={presetBundleName} setPresetBundleName={setPresetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} />}
@@ -698,8 +711,21 @@ export function App() {
   </div>;
 }
 
-function MapView({ onOpenChat }: { onOpenChat: () => void }) {
-  return <section className="map-screen"><div className="map-canvas"><span className="map-pin active">你</span><span className="map-pin pin-a">旧市场</span><span className="map-pin pin-b">西码头</span><div className="map-road road-a" /><div className="map-road road-b" /></div><div className="place-card"><span className="eyebrow">当前位置</span><h2>起点街区</h2><p>从地图出发，去遇见今天的世界。</p><button onClick={onOpenChat}>打开聊天</button></div></section>;
+function MapView({ save, onMove, onOpenChat }: { save: SaveFile; onMove: (nodeId: string) => void; onOpenChat: () => void }) {
+  const map = save.world.map;
+  const currentNode = map.nodes[save.world.player.nodeId];
+  const nodes = Object.values(map.nodes);
+  const edgeKey = (edge: SaveFile['world']['map']['edges'][number]) => `${edge.from}-${edge.to}`;
+  return <section className="map-screen">
+    <div className="map-toolbar"><div><span className="eyebrow">世界地图</span><h2>{currentNode?.name ?? save.world.player.nodeId}</h2></div><span className="io-scope">{map.view.mode === 'graph' ? 'Graph' : 'Hotspot'}</span></div>
+    <div className="map-canvas">
+      {map.view.mode === 'graph' ? <svg className="map-svg" viewBox={`0 0 ${map.view.size.w} ${map.view.size.h}`} role="img" aria-label="世界地图">
+        <g className="map-edges">{map.edges.map((edge) => { const from = map.nodes[edge.from]; const to = map.nodes[edge.to]; if (!from || !to) return null; const visible = from.discovered || to.discovered; return <line key={edgeKey(edge)} className={visible ? '' : 'fog'} x1={from.pos.x} y1={from.pos.y} x2={to.pos.x} y2={to.pos.y} />; })}</g>
+        <g className="map-nodes">{nodes.map((node) => { const isCurrent = node.id === save.world.player.nodeId; const canSelect = node.discovered && !isCurrent; return <g key={node.id} className={`map-node ${node.discovered ? 'discovered' : 'undiscovered'} ${isCurrent ? 'current' : ''}`} role={canSelect ? 'button' : undefined} tabIndex={canSelect ? 0 : undefined} onClick={() => canSelect && onMove(node.id)} onKeyDown={(event) => { if (canSelect && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onMove(node.id); } }}><circle cx={node.pos.x} cy={node.pos.y} r={isCurrent ? 22 : 18} /><text x={node.pos.x} y={node.pos.y + 42} textAnchor="middle">{node.discovered ? node.name : '未发现地点'}</text>{isCurrent && <text className="map-node-marker" x={node.pos.x} y={node.pos.y + 5} textAnchor="middle">你</text>}</g>; })}</g>
+      </svg> : <div className="map-hotspot-placeholder">Hotspot 底图模式将在地图编辑器提交中启用。</div>}
+    </div>
+    <div className="place-card"><span className="eyebrow">当前位置</span><h2>{currentNode?.name ?? save.world.player.nodeId}</h2><p>{currentNode?.description ?? '从地图出发，去遇见今天的世界。'}</p><div className="button-row"><button onClick={onOpenChat}>打开聊天</button>{currentNode && <span className="map-meta">访问 {currentNode.visitCount} 次</span>}</div></div>
+  </section>;
 }
 
 function DayView(props: { save: SaveFile; snapshots: SaveSnapshot[]; summarizingDay: number | null; onAction: (kind: string) => void; onSleep: () => void; onRestoreSnapshot: (id: string) => Promise<void>; onSaveDiary: (day: number, text: string) => void; onPresetChange: (preset: SaveFile['config']['calendar']['preset']) => void }) {
