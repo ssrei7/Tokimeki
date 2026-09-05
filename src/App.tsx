@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type WheelEvent } from 'react';
 import { PromptAssembler } from './core/prompt/assembler';
 import type { AssembledPrompt } from './core/prompt/assembler';
 import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
@@ -288,7 +288,7 @@ export function App() {
     if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '无法记录相遇结果。' }); return; }
     commitSave(next);
     setActiveEncounter(null);
-    setFeedback({ tone: 'info', text: outcome === 'continued' ? '你决定留下继续这次相遇。' : '你以有急事为由离开了。' });
+    setFeedback({ tone: 'info', text: outcome === 'continued' ? '你决定留下继续这次相遇。' : '你选择离开了。' });
   }
 
   async function importMapBackground(file?: File): Promise<void> {
@@ -894,7 +894,7 @@ export function App() {
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
-      {tab === 'chat' && <ChatView characters={characters} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
+      {tab === 'chat' && <ChatView characters={characters} worldCharacter={activeCharacter ? save.world.characters[activeCharacter.id] : undefined} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} presetBundleName={presetBundleName} setPresetBundleName={setPresetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} />}
       {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} />}
     </main>
@@ -1051,7 +1051,7 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
 
 function EncounterDialog({ encounter, onOutcome, onContinue }: { encounter: ActiveEncounter; onOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinue: () => void }) {
   const names = encounter.candidates.map((candidate) => candidate.name).join('、');
-  return <div className="encounter-dialog" role="dialog" aria-label="相遇事件"><div className="encounter-dialog-copy"><span className="eyebrow">有人可遇</span><strong>你在这里遇见了{names}</strong><p>{encounter.scope === 'formal' ? '地点正在开放，可以正式进入范围。' : '地点尚未开放，你们只能在附近外围短暂相遇。'}</p></div><div className="encounter-options"><button onClick={onContinue}>留下并对话</button><button className="secondary" onClick={() => onOutcome('urgent_leave')}>有急事离开</button></div></div>;
+  return <div className="encounter-dialog" role="dialog" aria-label="相遇事件"><div className="encounter-dialog-copy"><span className="eyebrow">有人可遇</span><strong>你在这里遇见了{names}</strong><p>{encounter.scope === 'formal' ? '地点正在开放，可以正式进入范围。' : '地点尚未开放，你们只能在附近外围短暂相遇。'}</p></div><div className="encounter-options"><button onClick={onContinue}>留下并对话</button><button className="secondary" onClick={() => onOutcome('urgent_leave')}>离开</button></div></div>;
 }
 
 function PresenceList({ people, scope }: { people: ReturnType<typeof whoIsHere>; scope: string }) {
@@ -1089,6 +1089,7 @@ function DiaryEditor(props: { entry: SaveFile['world']['diary'][number]; onSave:
 
 function ChatView(props: {
   characters: CharacterCard[];
+  worldCharacter?: SaveFile['world']['characters'][string];
   selectedCharacterId: string;
   setSelectedCharacterId: (id: string) => void;
   messages: ChatMessage[];
@@ -1113,6 +1114,28 @@ function ChatView(props: {
   const latestMessage = props.messages.at(-1)?.content;
   const olderMessageCount = Math.max(0, props.messages.length - 40);
   const visibleMessages = showOlderMessages ? props.messages : props.messages.slice(olderMessageCount);
+  const [portraitUrl, setPortraitUrl] = useState<string>();
+  const activePortrait = props.worldCharacter?.visuals.portraits.find((portrait) => portrait.id === props.worldCharacter?.visuals.activePortraitId) ?? props.worldCharacter?.visuals.portraits[0];
+  const accentColor = props.worldCharacter?.visuals.accentColor ?? '#315efb';
+  const characterName = props.characters.find((item) => item.id === props.selectedCharacterId)?.name ?? '选择角色聊天';
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | undefined;
+    setPortraitUrl(undefined);
+    const image = activePortrait?.image;
+    if (!image) return () => { cancelled = true; };
+    if (image.kind === 'url') {
+      setPortraitUrl(image.url);
+      return () => { cancelled = true; };
+    }
+    void loadAsset(image.assetId).then((asset) => {
+      if (!asset || cancelled) return;
+      objectUrl = URL.createObjectURL(asset.blob);
+      setPortraitUrl(objectUrl);
+    });
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [activePortrait?.image]);
 
   useEffect(() => {
     const scroller = messagesRef.current;
@@ -1139,10 +1162,18 @@ function ChatView(props: {
     }
   }, [latestMessage, props.busy, props.messages.length, props.requestStatus, props.selectedCharacterId]);
 
-  return <section className="chat-screen">
-    <div className="section-heading"><div><span className="eyebrow">日常相遇</span><h2>{props.characters.find((item) => item.id === props.selectedCharacterId)?.name ?? '选择角色聊天'}</h2></div>{statusText && <span className={`request-status ${props.requestStatus}`}>{statusText}</span>}</div>
+  return <section className="chat-screen vn-chat-screen">
+    <div className="section-heading"><div><span className="eyebrow">面对面</span><h2>{characterName}</h2></div>{statusText && <span className={`request-status ${props.requestStatus}`}>{statusText}</span>}</div>
     <div className="character-picker"><label>聊天角色<select value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">未选择</option>{props.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
-    <div className="messages" ref={messagesRef}>{olderMessageCount > 0 && !showOlderMessages && <button className="history-toggle" onClick={() => setShowOlderMessages(true)}>查看更早的 {olderMessageCount} 条消息</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.map((message, index) => <div className={`message ${message.role}`} key={`${message.role}-${olderMessageCount + index}`}>{message.content}</div>)}{props.busy && props.requestStatus === 'requesting' && <div className="message assistant pending">等待回复…</div>}</div>
+    <div className="vn-stage" style={{ '--vn-accent': accentColor } as CSSProperties}>
+      <div className="vn-portrait-area" aria-label={`${characterName}的立绘`}>
+        {portraitUrl ? <img className="vn-portrait" src={portraitUrl} alt={`${characterName}的立绘`} /> : <div className="vn-portrait-fallback" aria-label={`${characterName}的默认头像`}>{characterName.slice(0, 1)}</div>}
+      </div>
+      <div className="vn-choices" aria-label="快速回应"><button className="secondary" onClick={() => props.setInput('我点了点头。')}>点头回应</button><button className="secondary" onClick={() => props.setInput('我先听你说。')}>先听你说</button></div>
+      <div className="vn-dialogue-box">
+        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && !showOlderMessages && <button className="history-toggle" onClick={() => setShowOlderMessages(true)}>查看更早的 {olderMessageCount} 条消息</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.map((message, index) => <div className={`vn-line ${message.role}`} key={`${message.role}-${olderMessageCount + index}`}><span className="vn-speaker">{message.role === 'assistant' ? characterName : message.role === 'user' ? '你' : ''}</span><span className="vn-line-text">{message.content}</span></div>)}{props.busy && props.requestStatus === 'requesting' && <div className="vn-line assistant pending"><span className="vn-speaker">{characterName}</span><span className="vn-line-text">等待回复…</span></div>}</div>
+      </div>
+    </div>
     {props.pendingOps && <div className="ops-recovery" role="alert">
       <strong>本回合未产生状态变更</strong>
       <p>{props.pendingOps.streamError ? '回复流中断，已保留收到的正文。你可以重试提取或手动补录。' : '正文已保留，但 ops 无法解析。你可以重试提取或手动补录。'}</p>
