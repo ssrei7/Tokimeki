@@ -66,6 +66,17 @@ describe('deterministic time kernel', () => {
     expect(simulateDays(save.world, save.config.calendar, 3, 42).settledDays).toEqual([1, 2, 3]);
   });
 
+  it('runs a fixed-seed 30-day simulation through every daily settlement', () => {
+    const save = setup();
+    const report = simulateDays(save.world, save.config.calendar, 30, 20260905);
+    expect(report.settledDays).toEqual(Array.from({ length: 30 }, (_, index) => index + 1));
+    expect(report.timeAdvanceCount).toBeGreaterThanOrEqual(120);
+    expect(report.dayStartCount).toBe(30);
+    expect(report.finalDay).toBe(31);
+    expect(DEFAULT_SLOT_DEFS.map((slot) => slot.id)).toContain(report.finalSlotId);
+    expect(report).toEqual(simulateDays(save.world, save.config.calendar, 30, 20260905));
+  });
+
   it('builds a local facts-only diary and keeps user edits authoritative', () => {
     const save = setup();
     advanceTime(save.world, save.config.calendar, 4);
