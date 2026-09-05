@@ -52,6 +52,7 @@ export function createCurrentSaveScenario(options: CurrentSaveScenarioOptions): 
         hiddenTopicStyle: 'hide',
         realTimeAwareness: false,
         opsLimitPerTurn: 12,
+        encounter: { enabled: true, triggerOnLeave: true, leaveProbability: 0.35, guaranteeAfterDays: 3, maxParticipants: 3, weights: {} },
       },
       world: {
           clock: { day: options.day ?? 1, slotId: options.slotId ?? 'morning' },
@@ -70,6 +71,10 @@ export function createCurrentSaveScenario(options: CurrentSaveScenarioOptions): 
           map: createDefaultMap(),
           diary: [],
           settlements: [],
+          characters: {},
+          npcs: {},
+          npcTemplates: {},
+          encounterLog: [],
       },
     }),
   };

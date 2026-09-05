@@ -19,7 +19,7 @@ type Condition = string;   // expr-eval 表达式,禁止 eval
 - 时间坐标统一为 `(day, slotId)`，地点坐标统一为 `nodeId`。
 - 派生值（阶段标签、可达节点、当前在场者）可缓存但必须能重算，且不作为事实来源。
 
-`CURRENT_SCHEMA_VERSION = 4`
+`CURRENT_SCHEMA_VERSION = 5`
 
 ---
 
@@ -270,6 +270,19 @@ interface ScheduleCell {
 interface Schedule {
   grid: Record<string, ScheduleCell | null>;   // key = `${weekdayIndex}:${slotId}`
   overrides: Record<string, ScheduleCell>;     // key = `${day}:${slotId}`,move_npc 写入,仅当日有效
+}
+```
+
+```ts
+interface EncounterLogEntry {
+  id: Id;
+  day: number;
+  slotId: SlotId;
+  nodeId: NodeId;
+  charIds: CharId[];                         // 最多 3 位
+  trigger: 'enter' | 'leave' | 'character_move';
+  scope: 'formal' | 'peripheral';
+  outcome: 'continued' | 'urgent_leave';
 }
 ```
 
@@ -560,6 +573,8 @@ interface WorldState {
   npcs: Record<CharId, NpcLite>;
   relations: Record<CharId, RelationState>;
 
+  encounterLog: EncounterLogEntry[];
+
   map: {
     regions: Record<Id, Region>;
     nodes: Record<NodeId, MapNode>;
@@ -597,6 +612,17 @@ interface WorldState {
 ## 16. 存档根类型
 
 ```ts
+interface EncounterConfig {
+  enabled: boolean;
+  triggerOnLeave: boolean;
+  leaveProbability: number;      // 0–1
+  guaranteeAfterDays: number;
+  maxParticipants: number;       // 1–3
+  weights: Record<CharId, number>;
+}
+```
+
+```ts
 interface SaveFile {
   schemaVersion: number;
 
@@ -617,6 +643,7 @@ interface SaveFile {
     hiddenTopicStyle: 'hide' | 'question_marks';
     realTimeAwareness: boolean;                    // 默认 false,见 D2
     opsLimitPerTurn: number;                       // 默认 12
+    encounter: EncounterConfig;
   };
 
   world: WorldState;

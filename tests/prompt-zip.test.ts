@@ -47,7 +47,7 @@ describe('prompt assembler', () => {
     const result = assembler.assemble({ input: '', worldbooks: [], history: [], world: {
       clock: { day: 3, slotId: 'morning' }, slotsUsedToday: 0,
       player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] },
-      stats: {}, flags: {}, items: {}, relations: {}, settlements: [],
+      stats: {}, flags: {}, items: {}, relations: {}, settlements: [], characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [],
       map: createDefaultMap(),
       diary: [{ day: 1, text: '原文' }, { day: 2, text: '用户编辑后的日记', editedAt: '2026-09-05T00:00:00.000Z' }],
     } }, { budget: 4096, task: 'narrate_main' });
@@ -62,7 +62,7 @@ describe('prompt assembler', () => {
     const result = assembler.assemble({ input: '港口', worldbooks: [
       { id: 'docks-lore', name: '码头设定', content: '潮湿的木栈桥。', keys: ['港口'], enabled: true, priority: 50 },
       { id: 'keyword-lore', name: '关键词设定', content: '关键词条目。', keys: ['港口'], enabled: true, priority: 50 },
-    ], history: [], world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map, diary: [], settlements: [] } }, { budget: 4096, task: 'narrate_main' });
+    ], history: [], world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map, diary: [], settlements: [], characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [] } }, { budget: 4096, task: 'narrate_main' });
     const node = result.blocks.find((block) => block.id === 'node_worldbook');
     const keyword = result.blocks.find((block) => block.id === 'worldbook_keyword');
     expect(node?.text).toContain('潮湿的木栈桥');
@@ -73,7 +73,7 @@ describe('prompt assembler', () => {
 });
 
 describe('save zip IO', () => {
-  const save = { schemaVersion: 4, meta: { id: 'save', title: 'Test', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', appVersion: '0.0.1' }, config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12 }, world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map: createDefaultMap(), diary: [], settlements: [] } } satisfies SaveFile;
+  const save = { schemaVersion: 5, meta: { id: 'save', title: 'Test', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', appVersion: '0.0.1' }, config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12, encounter: { enabled: true, triggerOnLeave: true, leaveProbability: 0.35, guaranteeAfterDays: 3, maxParticipants: 3, weights: {} } }, world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map: createDefaultMap(), diary: [], settlements: [], characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [] } } satisfies SaveFile;
 
   it('round trips save, assets, and all character chats without provider secrets', async () => {
     const chats = [
@@ -92,7 +92,7 @@ describe('save zip IO', () => {
     zip.file('manifest.json', JSON.stringify({ type: 'save', appVersion: '0.0.0', schemaVersion: 0 }));
     zip.file('save.json', JSON.stringify({ schemaVersion: 0, meta: { id: 'old', title: 'Old' }, player: { name: 'Old Player', nodeId: 'start' } }));
     const imported = await importSaveZip(await zip.generateAsync({ type: 'uint8array' }));
-    expect(imported.save.schemaVersion).toBe(4);
+    expect(imported.save.schemaVersion).toBe(5);
     expect(imported.save.world.player.name).toBe('Old Player');
   });
 

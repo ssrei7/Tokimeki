@@ -249,7 +249,7 @@
 10. 玩家离开地点时可以选择以“有急事”为借口离开，或继续对方事件；两条路径的状态结果可追踪
 11. 同一地点在开放时段可触发正式进入范围的相遇，未开放时段只能触发附近外围相遇；判定纯本地完成
 
-**schema**：v5 —— `characters[].schedule` / `characters[].visuals` / `world.npcs` / `world.npcTemplates` / `nodes[].memories`
+**schema**：v5 —— `config.encounter` / `characters[].schedule` / `characters[].visuals` / `world.npcs` / `world.npcTemplates` / `world.encounterLog` / `nodes[].memories`
 
 **这是项目的灵魂，也是第一个值得给别人看的版本。** 此后可以开始做界面美化。
 

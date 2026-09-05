@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 const IdSchema = z.string().min(1);
 
@@ -65,6 +65,91 @@ export const AssetRefSchema = z.union([
   z.object({ kind: z.literal('stored'), assetId: IdSchema }),
   z.object({ kind: z.literal('url'), url: z.string().url() }),
 ]);
+
+export const ScheduleCellSchema = z.object({
+  nodeId: IdSchema,
+  activity: z.string().min(1),
+});
+
+export const ScheduleSchema = z.object({
+  grid: z.record(z.string(), ScheduleCellSchema.nullable()),
+  overrides: z.record(z.string(), ScheduleCellSchema),
+});
+
+export const PortraitSetSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1),
+  image: AssetRefSchema,
+  transform: z.object({
+    scale: z.number().finite().positive(),
+    offsetX: z.number().finite(),
+    offsetY: z.number().finite(),
+  }).optional(),
+});
+
+export const CharacterVisualsSchema = z.object({
+  avatar: AssetRefSchema.optional(),
+  portraits: z.array(PortraitSetSchema),
+  activePortraitId: IdSchema.optional(),
+  accentColor: z.string().min(1).optional(),
+});
+
+export const FormalCharacterSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1),
+  tier: z.literal('formal'),
+  card: z.object({
+    description: z.string(),
+    personality: z.string(),
+    scenario: z.string().optional(),
+    firstMes: z.string().optional(),
+    exampleDialogue: z.string().optional(),
+  }),
+  visuals: CharacterVisualsSchema,
+  homeNodeId: IdSchema.optional(),
+  schedule: ScheduleSchema.optional(),
+  initialAxes: z.record(z.string(), z.number()).optional(),
+  giftPrefs: z.object({
+    likeTags: z.array(z.string()),
+    dislikeTags: z.array(z.string()),
+    specialItems: z.record(z.string(), z.number()),
+  }).optional(),
+  worldbookIds: z.array(IdSchema).optional(),
+  source: z.enum(['user', 'imported_st', 'promoted']).optional(),
+});
+
+export const NpcLiteSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1),
+  tier: z.literal('semi'),
+  facts: z.array(z.string()).max(8),
+  tags: z.array(z.string()),
+  homeNodeId: IdSchema.optional(),
+  lightMemory: z.array(z.string()).max(5),
+  seed: z.number().int().optional(),
+  templateId: IdSchema.optional(),
+  visuals: z.object({ avatar: AssetRefSchema.optional() }).optional(),
+});
+
+export const NpcTemplateSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1),
+  nameParts: z.object({ given: z.array(z.string()), family: z.array(z.string()) }).optional(),
+  traitPool: z.array(z.string()),
+  occupationPool: z.array(z.string()),
+  tagPool: z.array(z.string()),
+});
+
+export const EncounterLogEntrySchema = z.object({
+  id: IdSchema,
+  day: z.number().int().positive(),
+  slotId: IdSchema,
+  nodeId: IdSchema,
+  characterIds: z.array(IdSchema).max(3),
+  trigger: z.enum(['enter', 'leave', 'character_move']),
+  scope: z.enum(['formal', 'peripheral']),
+  outcome: z.enum(['continued', 'urgent_leave']),
+});
 
 export const InventoryEntrySchema = z.object({
   itemId: IdSchema,
@@ -220,6 +305,22 @@ export const WorldV3Schema = z.object({
 
 export const WorldV4Schema = WorldV3Schema.extend({ map: MapSchema });
 
+export const WorldV5Schema = WorldV4Schema.extend({
+  characters: z.record(z.string(), FormalCharacterSchema),
+  npcs: z.record(z.string(), NpcLiteSchema),
+  npcTemplates: z.record(z.string(), NpcTemplateSchema),
+  encounterLog: z.array(EncounterLogEntrySchema),
+});
+
+export const EncounterConfigSchema = z.object({
+  enabled: z.boolean(),
+  triggerOnLeave: z.boolean(),
+  leaveProbability: z.number().min(0).max(1),
+  guaranteeAfterDays: z.number().int().nonnegative(),
+  maxParticipants: z.number().int().min(1).max(3),
+  weights: z.record(z.string(), z.number().nonnegative()),
+});
+
 export const ConfigV1Schema = z.object({
   calendar: CalendarConfigSchema,
   actionCosts: ActionCostTableSchema,
@@ -231,6 +332,10 @@ export const ConfigV1Schema = z.object({
   opsLimitPerTurn: z.number().int().positive(),
 });
 
+export const ConfigV5Schema = ConfigV1Schema.extend({
+  encounter: EncounterConfigSchema,
+});
+
 export const SaveFileSchema = z.object({
   schemaVersion: z.literal(CURRENT_SCHEMA_VERSION),
   meta: z.object({
@@ -240,13 +345,21 @@ export const SaveFileSchema = z.object({
     updatedAt: z.string().datetime(),
     appVersion: z.string().min(1),
   }),
-  config: ConfigV1Schema,
-  world: WorldV4Schema,
+  config: ConfigV5Schema,
+  world: WorldV5Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV4Schema>;
+export type WorldState = z.infer<typeof WorldV5Schema>;
+export type WorldV5State = z.infer<typeof WorldV5Schema>;
+export type ScheduleCell = z.infer<typeof ScheduleCellSchema>;
+export type Schedule = z.infer<typeof ScheduleSchema>;
+export type FormalCharacter = z.infer<typeof FormalCharacterSchema>;
+export type NpcLite = z.infer<typeof NpcLiteSchema>;
+export type NpcTemplate = z.infer<typeof NpcTemplateSchema>;
+export type EncounterLogEntry = z.infer<typeof EncounterLogEntrySchema>;
+export type EncounterConfig = z.infer<typeof EncounterConfigSchema>;
 export type MapState = z.infer<typeof MapSchema>;
 export type Region = z.infer<typeof RegionSchema>;
 export type MapNode = z.infer<typeof MapNodeSchema>;
