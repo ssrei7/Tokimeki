@@ -188,8 +188,9 @@ button.danger { background: #fee4e2; color: #b42318; }
 .request-status.requesting, .request-status.generating { color: #b54708; }
 .request-status.success { color: #027a48; }
 .request-status.error { color: #b42318; }
-.character-picker { margin: 4px 0 8px; }
+.character-picker { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin: 4px 0 8px; }
 .character-picker select { min-height: 40px; padding: 7px 10px; font-size: 12px; }
+.character-picker .player-label-select { width: auto; min-width: 72px; }
 .ops-recovery { display: grid; gap: 8px; margin: 12px 0; padding: 12px; border: 1px solid #fecdca; border-radius: 8px; background: #fff8f7; color: #7a271a; }
 .ops-recovery p { color: #9b2c1f; font-size: 13px; line-height: 1.5; }
 .ops-recovery textarea { min-height: 88px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }

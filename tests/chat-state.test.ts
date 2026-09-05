@@ -21,7 +21,8 @@ describe('dialogue line markers', () => {
     expect(splitDialogueMessage({ role: 'assistant', content: '[说话人:凛] 你好。\n[旁白] 海风吹过。\n普通台词。' }, '塞伊尔')).toEqual([
       { kind: 'dialogue', speaker: '凛', text: '你好。' },
       { kind: 'narration', text: '海风吹过。' },
-      { kind: 'dialogue', speaker: '塞伊尔', text: '普通台词。' },
+      { kind: 'narration', text: '普通台词。' },
     ]);
+    expect(splitDialogueMessage({ role: 'user', content: '我点了点头。' }, '塞伊尔', '旅人')).toEqual([{ kind: 'dialogue', speaker: '旅人', text: '我点了点头。' }]);
   });
 });

@@ -7,7 +7,7 @@ export type DialogueLine = {
 };
 
 /** Parse optional, human-readable speaker markers while keeping legacy plain text compatible. */
-export function splitDialogueMessage(message: ChatMessage, fallbackSpeaker: string): DialogueLine[] {
+export function splitDialogueMessage(message: ChatMessage, fallbackSpeaker: string, userSpeaker = '你'): DialogueLine[] {
   const lines = message.content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (message.role === 'system') return lines.map<DialogueLine>((text) => ({ kind: 'narration', text }));
   return lines.map<DialogueLine>((line) => {
@@ -15,6 +15,8 @@ export function splitDialogueMessage(message: ChatMessage, fallbackSpeaker: stri
     if (narration) return { kind: 'narration', text: narration[1].trim() };
     const speaker = line.match(/^\[(?:说话人|speaker)[:：]\s*([^\]]+)\]\s*(.*)$/i);
     if (speaker) return { kind: 'dialogue', speaker: speaker[1].trim() || fallbackSpeaker, text: speaker[2].trim() };
-    return { kind: 'dialogue', speaker: message.role === 'assistant' ? fallbackSpeaker : '你', text: line };
+    return message.role === 'assistant'
+      ? { kind: 'narration', text: line }
+      : { kind: 'dialogue', speaker: userSpeaker, text: line };
   }).filter((line) => line.text);
 }

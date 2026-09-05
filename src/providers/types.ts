@@ -26,7 +26,7 @@ export const ProviderModelListConfigSchema = ProviderConfigSchema.extend({
 export const ProviderBindingSchema = z.object({ taskId: TaskIdSchema, providerId: z.string().min(1) });
 export type ProviderBinding = z.infer<typeof ProviderBindingSchema>;
 
-export const ProviderSettingSchema = z.object({ key: z.literal('defaultProviderId'), value: z.string().min(1) });
+export const ProviderSettingSchema = z.object({ key: z.enum(['defaultProviderId', 'chatPlayerLabel']), value: z.string().min(1) });
 export type ProviderSetting = z.infer<typeof ProviderSettingSchema>;
 
 export interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string }
