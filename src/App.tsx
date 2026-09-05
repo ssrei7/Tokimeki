@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { PromptAssembler } from './core/prompt/assembler';
 import type { AssembledPrompt } from './core/prompt/assembler';
 import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
@@ -9,7 +9,9 @@ import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
 import { PresetBundleSchema, type CharacterCard, type ChatMessage, type ChatRecord, type Preset, type PresetBundle, type WorldbookEntry } from './data/content';
 import { clearChats, contentDb, deleteCharacter, deletePreset, deletePresetBundle, deleteWorldbook, loadChat, saveCharacter, saveChat, savePreset, savePresetBundle, saveWorldbook } from './data/db/content';
+import { loadAsset, saveAsset } from './data/db/assets';
 import { listSnapshots, loadCurrentSave, loadSnapshot, saveCurrentSave, saveDailySnapshot, type SaveSnapshot } from './data/db/save';
+import { downsampleImage } from './data/assets/image';
 import { exportPresetBundle, exportSaveZip, importPresetBundle, importSaveZip } from './data/io/zip';
 import { createDefaultMap, DEFAULT_ACTION_COSTS, DEFAULT_SLOT_DEFS, SaveFileSchema, type SaveFile } from './data/schema/save';
 import { testProviderConnection } from './providers/connection-test';
@@ -267,6 +269,35 @@ export function App() {
     commitSave(next);
     const destination = next.world.map.nodes[nodeId];
     setFeedback({ tone: 'success', text: result.cost > 0 ? `已抵达${destination?.name ?? nodeId}，消耗 ${result.cost} 个时段。` : `已抵达${destination?.name ?? nodeId}。` });
+  }
+
+  async function importMapBackground(file?: File): Promise<void> {
+    if (!file) return;
+    try {
+      const image = await downsampleImage(file);
+      const assetId = `map-background-${Date.now()}`;
+      await saveAsset({ id: assetId, blob: image.blob, mimeType: image.mimeType, width: image.width, height: image.height, createdAt: now() });
+      const next = structuredClone(saveRef.current);
+      next.world.map.view = { mode: 'hotspot', background: { kind: 'stored', assetId }, size: { w: image.width, h: image.height } };
+      commitSave(next);
+      setFeedback({ tone: 'success', text: `底图已保存（${image.width}×${image.height}，WebP）。` });
+    } catch (error) {
+      setFeedback({ tone: 'error', text: errorMessage(error, '底图导入失败。') });
+    }
+  }
+
+  function toggleMapMode(): void {
+    const next = structuredClone(saveRef.current);
+    next.world.map.view.mode = next.world.map.view.mode === 'graph' ? 'hotspot' : 'graph';
+    commitSave(next);
+  }
+
+  function updateNodePosition(nodeId: string, pos: { x: number; y: number }): void {
+    const next = structuredClone(saveRef.current);
+    const node = next.world.map.nodes[nodeId];
+    if (!node) return;
+    node.pos = { x: Math.max(0, Math.min(next.world.map.view.size.w, pos.x)), y: Math.max(0, Math.min(next.world.map.view.size.h, pos.y)) };
+    commitSave(next);
   }
 
   async function restoreSnapshot(id: string): Promise<void> {
@@ -641,8 +672,16 @@ export function App() {
   async function downloadSave() {
     if (selectedCharacterId) await saveChat({ characterId: selectedCharacterId, messages, updatedAt: now() });
     const extras: Record<string, unknown> = { characters, worldbooks, presets, presetBundles };
+    const assetMeta: Record<string, { mimeType: string; width?: number; height?: number }> = {};
     if (includeChatsOnExport) extras.chats = await contentDb.chats.toArray();
-    const blob = await exportSaveZip(saveRef.current, {}, extras);
+    const assets: Record<string, Uint8Array> = {};
+    const background = saveRef.current.world.map.view.background;
+    if (background?.kind === 'stored') {
+      const asset = await loadAsset(background.assetId);
+      if (asset) { assets[asset.id] = new Uint8Array(await asset.blob.arrayBuffer()); assetMeta[asset.id] = { mimeType: asset.mimeType, width: asset.width, height: asset.height }; }
+    }
+    if (Object.keys(assetMeta).length) extras.assetMeta = assetMeta;
+    const blob = await exportSaveZip(saveRef.current, assets, extras);
     const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
     anchor.href = url; anchor.download = 'tokimeki-save.zip'; anchor.click(); URL.revokeObjectURL(url);
     setFeedback({ tone: 'success', text: `存档已导出${includeChatsOnExport ? '，包含聊天记录' : '，未包含聊天记录'}；Provider 配置与 API key 未包含在内。` });
@@ -659,6 +698,13 @@ export function App() {
     if (!file) return;
     try {
       const imported = await importSaveZip(file); const extra = imported.extras;
+      const importedMeta = extra.assetMeta as Record<string, { mimeType?: unknown; width?: unknown; height?: unknown }> | undefined;
+      for (const [id, bytes] of imported.assets) {
+        const metadata = importedMeta?.[id];
+        const mimeType = typeof metadata?.mimeType === 'string' ? metadata.mimeType : mimeTypeForAsset(id);
+        const copy = new ArrayBuffer(bytes.byteLength); new Uint8Array(copy).set(bytes);
+        await saveAsset({ id, blob: new Blob([copy], { type: mimeType }), mimeType, width: typeof metadata?.width === 'number' ? metadata.width : undefined, height: typeof metadata?.height === 'number' ? metadata.height : undefined, createdAt: now() });
+      }
       if (Array.isArray(extra.characters)) { const items = await Promise.all((extra.characters as CharacterCard[]).map(saveCharacter)); setCharacters(items); if (items[0]) setSelectedCharacterId(items[0].id); }
       if (Array.isArray(extra.worldbooks)) { const items = await Promise.all((extra.worldbooks as WorldbookEntry[]).map(saveWorldbook)); setWorldbooks(items); }
       if (Array.isArray(extra.presets)) { const items = await Promise.all((extra.presets as Preset[]).map(savePreset)); setPresets(items); }
@@ -684,6 +730,11 @@ export function App() {
     } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '导入失败') }); }
   }
 
+  function mimeTypeForAsset(id: string): string {
+    const extension = id.split('.').pop()?.toLowerCase();
+    return extension === 'webp' ? 'image/webp' : extension === 'png' ? 'image/png' : extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : extension === 'gif' ? 'image/gif' : 'application/octet-stream';
+  }
+
   const onDelete = async (kind: ContentKind, id: string) => {
     if (kind === 'character') { await deleteCharacter(id); setCharacters((items) => items.filter((item) => item.id !== id)); if (selectedCharacterId === id) setSelectedCharacterId(''); }
     if (kind === 'worldbook') { await deleteWorldbook(id); setWorldbooks((items) => items.filter((item) => item.id !== id)); }
@@ -701,7 +752,7 @@ export function App() {
     <header className="topbar"><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small><h1>Tokimeki</h1></div></header>
     <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
-      {tab === 'map' && <MapView save={save} onMove={moveToNode} onOpenChat={() => setTab('chat')} />}
+      {tab === 'map' && <MapView save={save} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onToggleMode={toggleMapMode} onUpdateNodePosition={updateNodePosition} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
       {tab === 'chat' && <ChatView characters={characters} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} presetBundleName={presetBundleName} setPresetBundleName={setPresetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} />}
@@ -711,18 +762,40 @@ export function App() {
   </div>;
 }
 
-function MapView({ save, onMove, onOpenChat }: { save: SaveFile; onMove: (nodeId: string) => void; onOpenChat: () => void }) {
+function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, onUpdateNodePosition }: { save: SaveFile; onMove: (nodeId: string) => void; onOpenChat: () => void; onImportBackground: (file?: File) => Promise<void>; onToggleMode: () => void; onUpdateNodePosition: (nodeId: string, pos: { x: number; y: number }) => void }) {
   const map = save.world.map;
   const currentNode = map.nodes[save.world.player.nodeId];
   const nodes = Object.values(map.nodes);
+  const [backgroundUrl, setBackgroundUrl] = useState<string>();
+  const [pinNodeId, setPinNodeId] = useState(currentNode?.id ?? nodes[0]?.id ?? '');
+  useEffect(() => {
+    let objectUrl: string | undefined;
+    let cancelled = false;
+    const background = map.view.background;
+    if (!background) { setBackgroundUrl(undefined); return () => undefined; }
+    if (background.kind === 'url') { setBackgroundUrl(background.url); return () => undefined; }
+    void loadAsset(background.assetId).then((asset) => {
+      if (!asset || cancelled) return;
+      objectUrl = URL.createObjectURL(asset.blob);
+      setBackgroundUrl(objectUrl);
+    }).catch(() => { if (!cancelled) setBackgroundUrl(undefined); });
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [map.view.background]);
+  useEffect(() => { if (!map.nodes[pinNodeId]) setPinNodeId(currentNode?.id ?? nodes[0]?.id ?? ''); }, [currentNode?.id, map.nodes, nodes, pinNodeId]);
   const edgeKey = (edge: SaveFile['world']['map']['edges'][number]) => `${edge.from}-${edge.to}`;
+  const handleHotspotClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (!pinNodeId) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    onUpdateNodePosition(pinNodeId, { x: ((event.clientX - rect.left) / rect.width) * map.view.size.w, y: ((event.clientY - rect.top) / rect.height) * map.view.size.h });
+  };
   return <section className="map-screen">
     <div className="map-toolbar"><div><span className="eyebrow">世界地图</span><h2>{currentNode?.name ?? save.world.player.nodeId}</h2></div><span className="io-scope">{map.view.mode === 'graph' ? 'Graph' : 'Hotspot'}</span></div>
+    <div className="map-controls"><button className="secondary" onClick={onToggleMode}>切换到 {map.view.mode === 'graph' ? 'Hotspot' : 'Graph'}</button><label className="file-button">上传底图<input type="file" accept="image/*" onChange={(event) => void onImportBackground(event.target.files?.[0])} /></label></div>
     <div className="map-canvas">
       {map.view.mode === 'graph' ? <svg className="map-svg" viewBox={`0 0 ${map.view.size.w} ${map.view.size.h}`} role="img" aria-label="世界地图">
         <g className="map-edges">{map.edges.map((edge) => { const from = map.nodes[edge.from]; const to = map.nodes[edge.to]; if (!from || !to) return null; const visible = from.discovered || to.discovered; return <line key={edgeKey(edge)} className={visible ? '' : 'fog'} x1={from.pos.x} y1={from.pos.y} x2={to.pos.x} y2={to.pos.y} />; })}</g>
         <g className="map-nodes">{nodes.map((node) => { const isCurrent = node.id === save.world.player.nodeId; const canSelect = node.discovered && !isCurrent; return <g key={node.id} className={`map-node ${node.discovered ? 'discovered' : 'undiscovered'} ${isCurrent ? 'current' : ''}`} role={canSelect ? 'button' : undefined} tabIndex={canSelect ? 0 : undefined} onClick={() => canSelect && onMove(node.id)} onKeyDown={(event) => { if (canSelect && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onMove(node.id); } }}><circle cx={node.pos.x} cy={node.pos.y} r={isCurrent ? 22 : 18} /><text x={node.pos.x} y={node.pos.y + 42} textAnchor="middle">{node.discovered ? node.name : '未发现地点'}</text>{isCurrent && <text className="map-node-marker" x={node.pos.x} y={node.pos.y + 5} textAnchor="middle">你</text>}</g>; })}</g>
-      </svg> : <div className="map-hotspot-placeholder">Hotspot 底图模式将在地图编辑器提交中启用。</div>}
+      </svg> : <div className="hotspot-editor"><div className="hotspot-canvas" onClick={handleHotspotClick} style={{ aspectRatio: `${map.view.size.w} / ${map.view.size.h}`, backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined }} role="application" aria-label="Hotspot 坐标编辑器">{nodes.map((node) => <button key={node.id} className={`hotspot-pin ${node.id === save.world.player.nodeId ? 'current' : ''}`} style={{ left: `${(node.pos.x / map.view.size.w) * 100}%`, top: `${(node.pos.y / map.view.size.h) * 100}%` }} onClick={(event) => { event.stopPropagation(); setPinNodeId(node.id); }} title={node.name}>{node.discovered ? node.name : '未发现'}</button>)}{!backgroundUrl && <span className="hotspot-empty">上传底图后，在此点击为所选地点钉坐标。</span>}</div><label className="hotspot-select">选择要定位的地点<select value={pinNodeId} onChange={(event) => setPinNodeId(event.target.value)}>{nodes.map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label><p className="io-scope">当前选中地点：{map.nodes[pinNodeId]?.name ?? '未选择'}。点击底图即可更新坐标；graph 与 hotspot 共用同一份 pos。</p></div>}
     </div>
     <div className="place-card"><span className="eyebrow">当前位置</span><h2>{currentNode?.name ?? save.world.player.nodeId}</h2><p>{currentNode?.description ?? '从地图出发，去遇见今天的世界。'}</p><div className="button-row"><button onClick={onOpenChat}>打开聊天</button>{currentNode && <span className="map-meta">访问 {currentNode.visitCount} 次</span>}</div></div>
   </section>;
