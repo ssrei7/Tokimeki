@@ -3,6 +3,7 @@ import type { WorldState } from '../../data/schema/save';
 import { OpRegistry } from './registry';
 import type { OpContext, OpResult } from './types';
 import { advanceTime } from '../time';
+import { movePlayer, revealNode } from '../map';
 
 const StatTargetSchema = z.enum(['player', 'world']);
 const AddStatSchema = z.object({ op: z.literal('add_stat'), target: StatTargetSchema, key: z.string().min(1), delta: z.number().finite() });
@@ -12,6 +13,8 @@ const GiveItemSchema = z.object({ op: z.literal('give_item'), id: z.string().min
 const TakeItemSchema = z.object({ op: z.literal('take_item'), id: z.string().min(1), count: z.number().int().positive().default(1) });
 const AddMemorySchema = z.object({ op: z.literal('add_memory'), target: z.string().min(1), text: z.string().min(1).max(1000) });
 const AdvanceTimeSchema = z.object({ op: z.literal('advance_time'), kind: z.string().min(1).optional(), slots: z.number().int().positive().default(1) });
+const MovePlayerSchema = z.object({ op: z.literal('move_player'), nodeId: z.string().min(1) });
+const RevealNodeSchema = z.object({ op: z.literal('reveal_node'), nodeId: z.string().min(1) });
 
 export function createDefaultOpRegistry(): OpRegistry {
   const registry = new OpRegistry();
@@ -72,6 +75,25 @@ export function registerBuiltInOps(registry: OpRegistry): void {
         : advanceTime(context.world, context.calendar, payload.slots, context.events);
       if (result.advanced === 0) return { ok: true, changes: [], warning: context.calendar.unlimitedSlots ? 'Sandbox time does not consume slots.' : 'No time slots were advanced.' };
       return { ok: true, changes: result.changes };
+    },
+  });
+  registry.register({
+    op: 'move_player', schema: MovePlayerSchema, clamp: {},
+    promptDoc: 'move_player: {"op":"move_player","nodeId":"reachable-node-id"}; moves the player after deterministic route, fog, opening, and time checks.',
+    describe: (payload) => `move player to ${payload.nodeId}`,
+    apply: (payload, context) => {
+      if (!context.calendar) return { ok: false, changes: [], warning: 'Calendar is unavailable.' };
+      const result = movePlayer(context.world, context.calendar, payload.nodeId, context.events);
+      return { ok: result.ok, changes: result.changes, warning: result.warning };
+    },
+  });
+  registry.register({
+    op: 'reveal_node', schema: RevealNodeSchema, clamp: {},
+    promptDoc: 'reveal_node: {"op":"reveal_node","nodeId":"node-id"}; reveals a known map node without consuming time.',
+    describe: (payload) => `reveal node ${payload.nodeId}`,
+    apply: (payload, context) => {
+      const result = revealNode(context.world, payload.nodeId);
+      return { ok: result.ok, changes: result.changes, warning: result.warning };
     },
   });
 }

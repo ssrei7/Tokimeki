@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 const IdSchema = z.string().min(1);
 
@@ -142,6 +142,70 @@ export const RelationMemoryStateSchema = z.object({
   memories: z.array(MemoryEntrySchema),
 });
 
+export const RegionSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1),
+  description: z.string().optional(),
+});
+
+export const NodeMemorySchema = z.object({
+  id: IdSchema,
+  text: z.string().min(1),
+  day: z.number().int().positive(),
+  charIds: z.array(IdSchema),
+  pinned: z.boolean().optional(),
+});
+
+export const MapNodeSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1),
+  regionId: IdSchema,
+  kind: z.array(z.string()),
+  description: z.string().optional(),
+  worldbookIds: z.array(IdSchema),
+  openSlots: z.array(IdSchema).optional(),
+  discovered: z.boolean(),
+  visitCount: z.number().int().nonnegative(),
+  memories: z.array(NodeMemorySchema),
+  pos: z.object({ x: z.number().finite(), y: z.number().finite() }),
+  parentNodeId: IdSchema.optional(),
+});
+
+export const MapEdgeSchema = z.object({
+  from: IdSchema,
+  to: IdSchema,
+  travelSlots: z.number().int().nonnegative(),
+  condition: z.string().min(1).optional(),
+  oneWay: z.boolean().optional(),
+});
+
+export const MapViewSchema = z.object({
+  mode: z.enum(['graph', 'hotspot']),
+  background: AssetRefSchema.optional(),
+  size: z.object({ w: z.number().finite().positive(), h: z.number().finite().positive() }),
+});
+
+export const MapSchema = z.object({
+  regions: z.record(z.string(), RegionSchema),
+  nodes: z.record(z.string(), MapNodeSchema),
+  edges: z.array(MapEdgeSchema),
+  view: MapViewSchema,
+});
+
+export function createDefaultMap(): z.infer<typeof MapSchema> {
+  return {
+    regions: { 'start-region': { id: 'start-region', name: '起点街区' } },
+    nodes: {
+      start: {
+        id: 'start', name: '起点街区', regionId: 'start-region', kind: ['outdoor'], worldbookIds: [],
+        discovered: true, visitCount: 0, memories: [], pos: { x: 500, y: 350 },
+      },
+    },
+    edges: [],
+    view: { mode: 'graph', size: { w: 1000, h: 700 } },
+  };
+}
+
 export const WorldV3Schema = z.object({
   clock: ClockSchema,
   slotsUsedToday: z.number().int().nonnegative(),
@@ -153,6 +217,8 @@ export const WorldV3Schema = z.object({
   diary: z.array(DiaryEntrySchema),
   settlements: z.array(DailySettlementSchema),
 });
+
+export const WorldV4Schema = WorldV3Schema.extend({ map: MapSchema });
 
 export const ConfigV1Schema = z.object({
   calendar: CalendarConfigSchema,
@@ -175,12 +241,17 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV1Schema,
-  world: WorldV3Schema,
+  world: WorldV4Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV3Schema>;
+export type WorldState = z.infer<typeof WorldV4Schema>;
+export type MapState = z.infer<typeof MapSchema>;
+export type Region = z.infer<typeof RegionSchema>;
+export type MapNode = z.infer<typeof MapNodeSchema>;
+export type MapEdge = z.infer<typeof MapEdgeSchema>;
+export type MapView = z.infer<typeof MapViewSchema>;
 export type ItemDef = z.infer<typeof ItemDefSchema>;
 export type CalendarConfig = z.infer<typeof CalendarConfigSchema>;
 export type ActionCostTable = z.infer<typeof ActionCostTableSchema>;

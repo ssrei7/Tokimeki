@@ -10,7 +10,7 @@ import { PresetBundleSchema, type CharacterCard, type ChatMessage, type ChatReco
 import { clearChats, contentDb, deleteCharacter, deletePreset, deletePresetBundle, deleteWorldbook, loadChat, saveCharacter, saveChat, savePreset, savePresetBundle, saveWorldbook } from './data/db/content';
 import { listSnapshots, loadCurrentSave, loadSnapshot, saveCurrentSave, saveDailySnapshot, type SaveSnapshot } from './data/db/save';
 import { exportPresetBundle, exportSaveZip, importPresetBundle, importSaveZip } from './data/io/zip';
-import { DEFAULT_ACTION_COSTS, DEFAULT_SLOT_DEFS, SaveFileSchema, type SaveFile } from './data/schema/save';
+import { createDefaultMap, DEFAULT_ACTION_COSTS, DEFAULT_SLOT_DEFS, SaveFileSchema, type SaveFile } from './data/schema/save';
 import { testProviderConnection } from './providers/connection-test';
 import { providerDb } from './providers/db';
 import { listProviderModels } from './providers/models';
@@ -72,7 +72,7 @@ function formatOpsDebug(reply: ParsedReply, applied: ApplyOpsResult, logs: strin
 }
 
 const defaultSave: SaveFile = SaveFileSchema.parse({
-  schemaVersion: 3,
+  schemaVersion: 4,
   meta: { id: 'local-save', title: '我的世界', createdAt: now(), updatedAt: now(), appVersion: '0.0.1' },
   config: { calendar: { slots: [...DEFAULT_SLOT_DEFS], daysPerWeek: 7, weekdayNames: ['一', '二', '三', '四', '五', '六', '日'], preset: 'standard', unlimitedSlots: false }, actionCosts: { ...DEFAULT_ACTION_COSTS }, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12 },
   world: {
@@ -82,6 +82,7 @@ const defaultSave: SaveFile = SaveFileSchema.parse({
     stats: {}, flags: {},
     items: { 'white-flower': { id: 'white-flower', name: '白色小花', tags: ['flower'], description: '一朵可用于 Mock 验收的白色小花。', stackable: true, giftable: true } },
     relations: {},
+    map: createDefaultMap(),
     diary: [], settlements: [],
   },
 });

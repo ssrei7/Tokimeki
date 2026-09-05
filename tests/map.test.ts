@@ -1,0 +1,52 @@
+import { describe, expect, it } from 'vitest';
+import { EventBus } from '../src/core/events/bus';
+import { movePlayer, revealNode } from '../src/core/map';
+import { createDefaultMap, SaveFileSchema, type WorldState } from '../src/data/schema/save';
+
+function worldWithMap(): WorldState {
+  const map = createDefaultMap();
+  map.regions['harbor-region'] = { id: 'harbor-region', name: '港区' };
+  map.nodes.market = { id: 'market', name: '旧市场', regionId: 'start-region', kind: ['commercial'], worldbookIds: [], discovered: true, visitCount: 0, memories: [], pos: { x: 250, y: 300 } };
+  map.nodes.docks = { id: 'docks', name: '西码头', regionId: 'harbor-region', kind: ['outdoor'], worldbookIds: [], discovered: false, visitCount: 0, memories: [], pos: { x: 800, y: 300 } };
+  map.edges.push({ from: 'start', to: 'market', travelSlots: 1 }, { from: 'market', to: 'docks', travelSlots: 2 });
+  return SaveFileSchema.parse({
+    schemaVersion: 4,
+    meta: { id: 'map-test', title: '地图测试', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', appVersion: '0.0.1' },
+    config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }, { id: 'noon', name: '中午', order: 1 }, { id: 'evening', name: '晚上', order: 2 }, { id: 'night', name: '深夜', order: 3 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12 },
+    world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map, diary: [], settlements: [] },
+  }).world;
+}
+
+describe('deterministic map movement', () => {
+  it('moves within a region without consuming time and emits enter hook', () => {
+    const world = worldWithMap(); const events = new EventBus(); const entered: unknown[] = [];
+    events.subscribe('onEnterNode', (payload) => entered.push(payload));
+    const result = movePlayer(world, { slots: [{ id: 'morning', name: '早晨', order: 0 }, { id: 'noon', name: '中午', order: 1 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard', unlimitedSlots: false }, 'market', events);
+    expect(result.ok).toBe(true); expect(result.cost).toBe(0); expect(world.player.nodeId).toBe('market'); expect(world.slotsUsedToday).toBe(0); expect(entered).toEqual([{ fromNodeId: 'start', toNodeId: 'market' }]);
+  });
+
+  it('rejects hidden, unreachable, closed, and time-expensive moves', () => {
+    const world = worldWithMap();
+    const calendar = { slots: [{ id: 'morning', name: '早晨', order: 0 }, { id: 'noon', name: '中午', order: 1 }, { id: 'evening', name: '晚上', order: 2 }, { id: 'night', name: '深夜', order: 3 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard' as const, unlimitedSlots: false };
+    expect(movePlayer(world, calendar, 'docks').warning).toContain('hidden');
+    expect(movePlayer(world, calendar, 'unknown').warning).toContain('Unknown destination');
+    expect(movePlayer(world, calendar, 'market').ok).toBe(true);
+    world.map.nodes.docks.discovered = true; world.slotsUsedToday = 3;
+    expect(movePlayer(world, calendar, 'docks').warning).toContain('Not enough time slots');
+  });
+
+  it('applies cross-region travel cost and open-slot checks', () => {
+    const world = worldWithMap(); const calendar = { slots: [{ id: 'morning', name: '早晨', order: 0 }, { id: 'noon', name: '中午', order: 1 }, { id: 'evening', name: '晚上', order: 2 }, { id: 'night', name: '深夜', order: 3 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'leisure' as const, unlimitedSlots: false };
+    movePlayer(world, calendar, 'market');
+    world.map.nodes.docks.discovered = true; world.map.nodes.docks.openSlots = ['evening'];
+    expect(movePlayer(world, calendar, 'docks').warning).toContain('closed');
+    world.map.nodes.docks.openSlots = ['morning'];
+    const result = movePlayer(world, calendar, 'docks');
+    expect(result.ok).toBe(true); expect(result.cost).toBe(2); expect(world.slotsUsedToday).toBe(2); expect(world.clock.slotId).toBe('evening');
+  });
+
+  it('reveals a node without consuming time', () => {
+    const world = worldWithMap(); const result = revealNode(world, 'docks');
+    expect(result.ok).toBe(true); expect(world.map.nodes.docks.discovered).toBe(true); expect(world.slotsUsedToday).toBe(0);
+  });
+});

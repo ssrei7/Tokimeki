@@ -25,9 +25,9 @@ describe('save migrations', () => {
     expect(migrated.world.player.name).toBe('无版本');
   });
 
-  it('migrates a v1 save through v3 without changing existing player state', () => {
+  it('migrates a v1 save through v4 without changing existing player state', () => {
     const migrated = migrateSave(fixtureV1);
-    expect(migrated.schemaVersion).toBe(3);
+    expect(migrated.schemaVersion).toBe(4);
     expect(migrated.world.player.stats.money).toBe(10);
     expect(migrated.world.stats).toEqual({});
     expect(migrated.world.flags).toEqual({});
@@ -36,6 +36,7 @@ describe('save migrations', () => {
     expect(migrated.world.slotsUsedToday).toBe(0);
     expect(migrated.world.diary).toEqual([]);
     expect(migrated.world.settlements).toEqual([]);
+    expect(migrated.world.map.nodes.start.discovered).toBe(true);
   });
 
   it('rejects saves from a newer schema', () => {

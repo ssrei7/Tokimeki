@@ -21,7 +21,7 @@ function setup() {
 describe('op registry and built-ins', () => {
   it('registers complete prompt documentation for all stage 1 ops', () => {
     const docs = createDefaultOpRegistry().promptDocs();
-    for (const op of ['add_stat', 'set_stat', 'set_flag', 'give_item', 'take_item', 'add_memory']) expect(docs).toContain(op);
+    for (const op of ['add_stat', 'set_stat', 'set_flag', 'give_item', 'take_item', 'add_memory', 'move_player', 'reveal_node']) expect(docs).toContain(op);
   });
 
   it('clamps stat deltas and records a diff without hard-coded stat keys', () => {
@@ -102,5 +102,22 @@ describe('op registry and built-ins', () => {
     expect(result.applied).toBe(1);
     expect(state.world.clock).toEqual({ day: 1, slotId: 'noon' });
     expect(state.world.slotsUsedToday).toBe(1);
+  });
+
+  it('moves and reveals nodes through the registered ops', () => {
+    const state = setup();
+    state.world.map.nodes.market = { id: 'market', name: '旧市场', regionId: 'start-region', kind: ['commercial'], worldbookIds: [], discovered: false, visitCount: 0, memories: [], pos: { x: 100, y: 100 } };
+    state.world.map.edges.push({ from: 'start', to: 'market', travelSlots: 1 });
+    state.context.calendar = {
+      slots: [{ id: 'morning', name: '早晨', order: 0 }, { id: 'noon', name: '中午', order: 1 }],
+      daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard', unlimitedSlots: false,
+    };
+    const hidden = state.registry.applyAll([{ op: 'move_player', nodeId: 'market' }], state.context, 12);
+    expect(hidden.applied).toBe(0);
+    expect(state.registry.applyAll([{ op: 'reveal_node', nodeId: 'market' }], state.context, 12).applied).toBe(1);
+    const moved = state.registry.applyAll([{ op: 'move_player', nodeId: 'market' }], state.context, 12);
+    expect(moved.applied).toBe(1);
+    expect(state.world.player.nodeId).toBe('market');
+    expect(state.world.slotsUsedToday).toBe(0);
   });
 });

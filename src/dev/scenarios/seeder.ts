@@ -1,6 +1,6 @@
 import { exportSaveZip } from '../../data/io/zip';
 import { migrateSave } from '../../data/migrations';
-import { CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_SLOT_DEFS, type SaveFile } from '../../data/schema/save';
+import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_SLOT_DEFS, type SaveFile } from '../../data/schema/save';
 
 export interface ScenarioDefinition {
   id: string;
@@ -67,6 +67,7 @@ export function createCurrentSaveScenario(options: CurrentSaveScenarioOptions): 
         flags: {},
         items: {},
           relations: {},
+          map: createDefaultMap(),
           diary: [],
           settlements: [],
       },

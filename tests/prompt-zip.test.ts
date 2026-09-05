@@ -5,6 +5,7 @@ import { createDefaultPromptBlocks, DEFAULT_PROMPT_BLOCK_IDS } from '../src/core
 import { exportPresetBundle, exportSaveZip, importPresetBundle, importSaveZip } from '../src/data/io/zip';
 import { UnsupportedSchemaVersionError } from '../src/data/migrations/types';
 import type { SaveFile } from '../src/data/schema/save';
+import { createDefaultMap } from '../src/data/schema/save';
 
 describe('prompt assembler', () => {
   it('orders blocks and reports truncation', () => { const assembler = new PromptAssembler(); assembler.register({ id: 'low', role: 'system', priority: 10, order: 2, build: () => 'low '.repeat(20) }); assembler.register({ id: 'high', role: 'system', priority: 100, order: 1, build: () => 'high' }); const result = assembler.assemble({}, { budget: 4 }); expect(result.blocks.find((b) => b.id === 'high')?.dropped).toBe(false); expect(result.estimatedTokens).toBeLessThanOrEqual(4); });
@@ -47,14 +48,32 @@ describe('prompt assembler', () => {
       clock: { day: 3, slotId: 'morning' }, slotsUsedToday: 0,
       player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] },
       stats: {}, flags: {}, items: {}, relations: {}, settlements: [],
+      map: createDefaultMap(),
       diary: [{ day: 1, text: '原文' }, { day: 2, text: '用户编辑后的日记', editedAt: '2026-09-05T00:00:00.000Z' }],
     } }, { budget: 4096, task: 'narrate_main' });
     expect(result.blocks.find((block) => block.id === 'recent_diary')?.text).toContain('用户编辑后的日记');
   });
+
+  it('injects node-bound worldbook before keyword matches without duplicating it', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks()) assembler.register(block);
+    const map = createDefaultMap();
+    map.nodes.start.worldbookIds = ['docks-lore'];
+    const result = assembler.assemble({ input: '港口', worldbooks: [
+      { id: 'docks-lore', name: '码头设定', content: '潮湿的木栈桥。', keys: ['港口'], enabled: true, priority: 50 },
+      { id: 'keyword-lore', name: '关键词设定', content: '关键词条目。', keys: ['港口'], enabled: true, priority: 50 },
+    ], history: [], world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map, diary: [], settlements: [] } }, { budget: 4096, task: 'narrate_main' });
+    const node = result.blocks.find((block) => block.id === 'node_worldbook');
+    const keyword = result.blocks.find((block) => block.id === 'worldbook_keyword');
+    expect(node?.text).toContain('潮湿的木栈桥');
+    expect(keyword?.text).toContain('关键词条目');
+    expect(keyword?.text).not.toContain('潮湿的木栈桥');
+    expect(result.blocks.findIndex((block) => block.id === 'node_worldbook')).toBeLessThan(result.blocks.findIndex((block) => block.id === 'worldbook_keyword'));
+  });
 });
 
 describe('save zip IO', () => {
-  const save = { schemaVersion: 3, meta: { id: 'save', title: 'Test', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', appVersion: '0.0.1' }, config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12 }, world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, diary: [], settlements: [] } } satisfies SaveFile;
+  const save = { schemaVersion: 4, meta: { id: 'save', title: 'Test', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', appVersion: '0.0.1' }, config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12 }, world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map: createDefaultMap(), diary: [], settlements: [] } } satisfies SaveFile;
 
   it('round trips save, assets, and all character chats without provider secrets', async () => {
     const chats = [
@@ -73,7 +92,7 @@ describe('save zip IO', () => {
     zip.file('manifest.json', JSON.stringify({ type: 'save', appVersion: '0.0.0', schemaVersion: 0 }));
     zip.file('save.json', JSON.stringify({ schemaVersion: 0, meta: { id: 'old', title: 'Old' }, player: { name: 'Old Player', nodeId: 'start' } }));
     const imported = await importSaveZip(await zip.generateAsync({ type: 'uint8array' }));
-    expect(imported.save.schemaVersion).toBe(3);
+    expect(imported.save.schemaVersion).toBe(4);
     expect(imported.save.world.player.name).toBe('Old Player');
   });
 

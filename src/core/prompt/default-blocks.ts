@@ -38,9 +38,19 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
     { id: 'scene_now', role: 'system', priority: 88, order: 3, build: (facts) => {
       const world = factsOf(facts).world;
       if (!world) return null;
-      return `当前场景：第 ${world.clock.day} 天，时段 ${world.clock.slotId}，地点 ${world.player.nodeId}。玩家名为 ${world.player.name}。`;
+      const node = world.map?.nodes?.[world.player.nodeId];
+      const location = node ? `${node.name}（${node.id}）` : world.player.nodeId;
+      return `当前场景：第 ${world.clock.day} 天，时段 ${world.clock.slotId}，地点 ${location}。玩家名为 ${world.player.name}。`;
     } },
-    { id: 'node_worldbook', role: 'system', priority: 80, order: 4, build: missing },
+    { id: 'node_worldbook', role: 'system', priority: 80, order: 4, build: (facts) => {
+      const { world, worldbooks } = factsOf(facts);
+      const node = world?.map?.nodes?.[world.player.nodeId];
+      if (!node) return null;
+      const matched = node.worldbookIds
+        .map((id) => worldbooks.find((entry) => entry.id === id))
+        .filter((entry): entry is WorldbookEntry => Boolean(entry?.enabled));
+      return matched.map((entry) => `[${entry.name}]\n${entry.content}`).join('\n\n') || null;
+    } },
     { id: 'node_memory', role: 'system', priority: 70, order: 5, build: missing },
     { id: 'char_memory', role: 'system', priority: 65, order: 6, build: missing },
     { id: 'recent_diary', role: 'system', priority: 60, order: 7, build: (facts) => {
@@ -51,8 +61,10 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
     { id: 'worldbook_keyword', role: 'system', priority: 50, order: 9, build: (facts) => {
       const { input, worldbooks } = factsOf(facts);
       const lowerInput = input.toLocaleLowerCase();
+      const node = factsOf(facts).world?.map?.nodes?.[factsOf(facts).world.player.nodeId];
+      const boundIds = new Set(node?.worldbookIds ?? []);
       const matched = worldbooks
-        .filter((entry) => entry.enabled && (entry.keys.length === 0 || entry.keys.some((key) => key.trim() && lowerInput.includes(key.toLocaleLowerCase()))))
+        .filter((entry) => !boundIds.has(entry.id) && entry.enabled && (entry.keys.length === 0 || entry.keys.some((key) => key.trim() && lowerInput.includes(key.toLocaleLowerCase()))))
         .sort((a, b) => b.priority - a.priority);
       return matched.map((entry) => `[${entry.name}]\n${entry.content}`).join('\n\n') || null;
     } },
