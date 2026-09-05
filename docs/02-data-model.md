@@ -543,9 +543,18 @@ Provider 配置单独保存在本地 Provider 数据库，不属于 `SaveFile`�
 ## 14. 玩家
 
 ```ts
+interface PlayerPersona {
+  id: string;
+  name: string;              // 面具管理名称
+  displayName: string;      // 对话框显示称呼
+  description: string;      // 注入提示词的自我描述
+  updatedAt: string;
+}
+
 interface PlayerState {
   name: string;
   persona?: string;
+  personaId?: string;              // 当前世界绑定的面具身份 ID
   nodeId: NodeId;
   homeNodeId?: NodeId;           // 邻近度加权偶遇
   stats: Record<string, number>; // money / energy / reputation ...
@@ -556,6 +565,8 @@ interface PlayerState {
   visuals?: { avatar?: AssetRef };
 }
 ```
+
+`PlayerPersona` 保存在本地资料库；一个 `SaveFile` 通过 `player.personaId` 绑定一个当前身份。旧存档的 `persona` 文本必须保留，不能静默丢弃；当前版本提供设置页补创建/绑定面具身份的入口，后续可再增加旧文本自动转为默认身份。`displayName` 只影响面对面/事件对话框的玩家名牌，`name` 仍是世界事实中的玩家姓名。
 
 `job` / `shop` 绑定节点并占用时段——玩家因此成为地图上的一个点，角色会路过来找。
 

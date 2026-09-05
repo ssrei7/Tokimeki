@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 const IdSchema = z.string().min(1);
 
@@ -162,6 +162,7 @@ export const InventoryEntrySchema = z.object({
 export const PlayerStateSchema = z.object({
   name: z.string().min(1),
   persona: z.string().optional(),
+  personaId: IdSchema.optional(),
   nodeId: IdSchema,
   homeNodeId: IdSchema.optional(),
   stats: z.record(z.string(), z.number()),

@@ -11,8 +11,8 @@
 | 1 | 能改变世界 | 3.5 | v2 |
 | 2 | 有一天 | 2.5 | v3 |
 | 3 | 有地方去 | 2.5 | v4 |
-| 4 | 有人可遇 | 2.5 | v5 |
-| 5 | 有事可做 | 3 | v6 |
+| 4 | 有人可遇 | 2.5 | v6 |
+| 5 | 有事可做 | 3 | v7 |
 | 6 | 有方向 | 3 | v7 |
 | 7 | 有故事 | 3.5 | v8 |
 | 8 | 有生活 | 2.5 | v9 |
@@ -253,11 +253,11 @@
 11. 同一地点在开放时段可触发正式进入范围的相遇，未开放时段只能触发附近外围相遇；判定纯本地完成
 12. 进入相遇后的面对面聊天页符合竖屏视觉小说壳：立绘区域独立、对话框固定在底部、选项位于中间；台词显示说话人，旁白不显示说话人
 
-**schema**：v5 —— `config.encounter` / `characters[].schedule` / `characters[].visuals` / `world.npcs` / `world.npcTemplates` / `world.encounterLog` / `nodes[].memories`
+**schema**：v6 —— `config.encounter` / `characters[].schedule` / `characters[].visuals` / `world.npcs` / `world.npcTemplates` / `world.encounterLog` / `nodes[].memories` / `player.personaId`
 
 **边界**：地图底部相遇栏只负责触发进入事件，不等同于进入后的聊天场景。手机终端中的短气泡消息回复，以及联系人列表的“所在地点”字段，归入阶段 9「有终端」；阶段 4 只实现地图图钉头像、面对面场景立绘/头像回退和本地“谁在这里”地点事实。
 
-**后续切片**：地点场景背景图上传与相遇场景加载仍属于阶段 4 的后续工作。由于背景引用需要进入 `MapNode` 并随存档/导出包迁移，实施时应升级 schema（预计 v6）、附 migration 与测试后再接入编辑器和聊天场景；不能用临时 UI 状态替代持久化事实。
+**后续切片**：地点场景背景图上传与相遇场景加载仍属于阶段 4 的后续工作。由于背景引用需要进入 `MapNode` 并随存档/导出包迁移，实施时应升级 schema（预计 v7）、附 migration 与测试后再接入编辑器和聊天场景；不能用临时 UI 状态替代持久化事实。
 
 **玩家身份后续切片**：玩家可维护多个面具身份，但每个世界存档只绑定一个当前身份；该身份会作为确定性事实进入提示词。此功能应在阶段 5 话题树之前完成，届时一并设计身份库、存档绑定字段和旧存档迁移，不能只在聊天输入框里临时拼接。
 
@@ -300,7 +300,7 @@
 10. 结算页只有散文，开 `showNumbers` 才出现数字
 11. 角色提出要离开时，玩家可以用自由输入尝试挽留，也可以无视并放任离开；两条结果可追踪且不消耗行动点
 
-**schema**：v6 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `relations` 全字段 / `characters[].giftPrefs`
+**schema**：v7 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `relations` 全字段 / `characters[].giftPrefs`
 
 **做完**相遇从一次性对话变成可经营的关系。
 

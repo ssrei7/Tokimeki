@@ -8,8 +8,8 @@ import { addCharacterToWorld, deriveNodeScope, nodeScopeLabel, triggerEncounter,
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
-import { PresetBundleSchema, type CharacterCard, type ChatMessage, type ChatRecord, type Preset, type PresetBundle, type WorldbookEntry } from './data/content';
-import { clearChats, contentDb, deleteCharacter, deletePreset, deletePresetBundle, deleteWorldbook, loadChat, saveCharacter, saveChat, savePreset, savePresetBundle, saveWorldbook } from './data/db/content';
+import { PresetBundleSchema, type CharacterCard, type ChatMessage, type ChatRecord, type Persona, type Preset, type PresetBundle, type WorldbookEntry } from './data/content';
+import { clearChats, contentDb, deleteCharacter, deletePersona, deletePreset, deletePresetBundle, deleteWorldbook, loadChat, saveCharacter, saveChat, savePersona, savePreset, savePresetBundle, saveWorldbook } from './data/db/content';
 import { loadAsset, saveAsset } from './data/db/assets';
 import { listSnapshots, loadCurrentSave, loadSnapshot, saveCurrentSave, saveDailySnapshot, type SaveSnapshot } from './data/db/save';
 import { downsampleImage } from './data/assets/image';
@@ -80,7 +80,7 @@ function formatOpsDebug(reply: ParsedReply, applied: ApplyOpsResult, logs: strin
 }
 
 const defaultSave: SaveFile = SaveFileSchema.parse({
-  schemaVersion: 5,
+  schemaVersion: 6,
   meta: { id: 'local-save', title: '我的世界', createdAt: now(), updatedAt: now(), appVersion: '0.0.1' },
   config: { calendar: { slots: [...DEFAULT_SLOT_DEFS], daysPerWeek: 7, weekdayNames: ['一', '二', '三', '四', '五', '六', '日'], preset: 'standard', unlimitedSlots: false }, actionCosts: { ...DEFAULT_ACTION_COSTS }, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12, encounter: { enabled: true, triggerOnLeave: true, leaveProbability: 0.35, guaranteeAfterDays: 3, maxParticipants: 3, weights: {} } },
   world: {
@@ -98,12 +98,16 @@ const defaultSave: SaveFile = SaveFileSchema.parse({
 export function App() {
   const [tab, setTab] = useState<Tab>('map');
   const [characters, setCharacters] = useState<CharacterCard[]>([]);
+  const [personas, setPersonas] = useState<Persona[]>([]);
   const [worldbooks, setWorldbooks] = useState<WorldbookEntry[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [presetBundles, setPresetBundles] = useState<PresetBundle[]>([]);
   const [selectedPresetBundleId, setSelectedPresetBundleId] = useState('');
   const [selectedCharacterId, setSelectedCharacterId] = useState('');
-  const [playerLabelMode, setPlayerLabelMode] = useState<'you' | 'name'>('you');
+  const [personaEditingId, setPersonaEditingId] = useState('');
+  const [personaName, setPersonaName] = useState('');
+  const [personaDisplayName, setPersonaDisplayName] = useState('');
+  const [personaDescription, setPersonaDescription] = useState('');
   const [loadedChatCharacterId, setLoadedChatCharacterId] = useState('');
   const [name, setName] = useState('');
   const [draftText, setDraftText] = useState('');
@@ -140,7 +144,7 @@ export function App() {
   const [debug, setDebug] = useState<DebugState>({ prompt: null, raw: '', ops: '尚未解析状态变化。', state: JSON.stringify(defaultSave, null, 2) });
 
   useEffect(() => {
-    void Promise.all([contentDb.characters.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), contentDb.presetBundles.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.settings.get('defaultProviderId'), providerDb.settings.get('chatPlayerLabel'), loadCurrentSave(), listSnapshots()]).then(([c, w, p, bundles, ps, bs, setting, chatLabelSetting, persistedSave, savedSnapshots]) => {
+    void Promise.all([contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), contentDb.presetBundles.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.settings.get('defaultProviderId'), loadCurrentSave(), listSnapshots()]).then(([c, masks, w, p, bundles, ps, bs, setting, persistedSave, savedSnapshots]) => {
       if (persistedSave) {
         const parsedSave = SaveFileSchema.parse(persistedSave);
         saveRef.current = parsedSave;
@@ -155,10 +159,9 @@ export function App() {
         return parsed.success ? [parsed.data] : [];
       });
       const fallback = validBundles.length || !p.length ? validBundles : [{ id: 'bundle-legacy', name: '默认预设包', entries: p, updatedAt: now() }];
-      setCharacters(c); setWorldbooks(w); setPresets(p); setPresetBundles(fallback); setSelectedPresetBundleId(fallback[0]?.id ?? ''); setProviders(ps);
+      setCharacters(c); setPersonas(masks); setWorldbooks(w); setPresets(p); setPresetBundles(fallback); setSelectedPresetBundleId(fallback[0]?.id ?? ''); setProviders(ps);
       if (!validBundles.length && fallback[0]) void savePresetBundle(fallback[0]);
       setBindings(bs);
-      if (chatLabelSetting?.value === 'name' || chatLabelSetting?.value === 'you') setPlayerLabelMode(chatLabelSetting.value);
       if (c[0]) setSelectedCharacterId(c[0].id);
       if (ps[0]) setProvider(ps[0]);
       const resolvedDefaultProviderId = ps.some((item) => item.id === setting?.value) ? setting?.value ?? '' : ps[0]?.id ?? '';
@@ -193,6 +196,7 @@ export function App() {
     const presentIds = new Set(whoIsHere(save.world, save.world.player.nodeId, save.world.clock.day, save.world.clock.slotId, save.config.calendar.daysPerWeek).filter((person) => person.tier === 'formal').map((person) => person.id));
     return characters.filter((character) => presentIds.has(character.id));
   }, [characters, save.world, save.config.calendar.daysPerWeek]);
+  const activePersona = personas.find((persona) => persona.id === save.world.player.personaId);
   useEffect(() => {
     if (selectedCharacterId && !presentChatCharacters.some((character) => character.id === selectedCharacterId)) setSelectedCharacterId(presentChatCharacters[0]?.id ?? '');
   }, [presentChatCharacters, selectedCharacterId]);
@@ -224,9 +228,31 @@ export function App() {
     }
   }
 
-  async function updatePlayerLabelMode(mode: 'you' | 'name'): Promise<void> {
-    setPlayerLabelMode(mode);
-    await providerDb.settings.put(ProviderSettingSchema.parse({ key: 'chatPlayerLabel', value: mode }));
+  async function savePersonaDraft(): Promise<void> {
+    const nameValue = personaName.trim();
+    const displayValue = personaDisplayName.trim();
+    if (!nameValue || !displayValue) { setFeedback({ tone: 'error', text: '面具名称和对话框称呼不能为空。' }); return; }
+    const id = personaEditingId || slug(nameValue);
+    const saved = await savePersona({ id, name: nameValue, displayName: displayValue, description: personaDescription.trim(), updatedAt: now() });
+    setPersonas((items) => [...items.filter((item) => item.id !== id), saved]);
+    setPersonaEditingId(''); setPersonaName(''); setPersonaDisplayName(''); setPersonaDescription('');
+    setFeedback({ tone: 'success', text: '面具身份已保存。' });
+  }
+
+  function bindPersona(personaId: string): void {
+    if (!personas.some((persona) => persona.id === personaId)) return;
+    const next = structuredClone(saveRef.current);
+    next.world.player.personaId = personaId;
+    commitSave(next);
+    setFeedback({ tone: 'success', text: '当前世界已绑定这个面具身份。' });
+  }
+
+  async function removePersona(personaId: string): Promise<void> {
+    await deletePersona(personaId);
+    setPersonas((items) => items.filter((item) => item.id !== personaId));
+    if (saveRef.current.world.player.personaId === personaId) {
+      const next = structuredClone(saveRef.current); delete next.world.player.personaId; commitSave(next);
+    }
   }
 
   async function generateDayDiary(day: number): Promise<void> {
@@ -513,7 +539,7 @@ export function App() {
     const splitter = new OpsStreamSplitter();
     const latestInput = [...next].reverse().find((message) => message.role === 'user')?.content ?? '';
     const activePresetBundle = presetBundles.find((item) => item.id === selectedPresetBundleId);
-    const promptFacts = { input: latestInput, character: activeCharacter, presetBundle: activePresetBundle, worldbooks, history: next, world: saveRef.current.world };
+    const promptFacts = { input: latestInput, character: activeCharacter, presetBundle: activePresetBundle, playerPersona: activePersona, worldbooks, history: next, world: saveRef.current.world };
     promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
     const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
     setDebug((current) => ({ ...current, prompt: assembled }));
@@ -909,9 +935,9 @@ export function App() {
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacter={activeCharacter ? save.world.characters[activeCharacter.id] : undefined} playerName={save.world.player.name} playerLabelMode={playerLabelMode} onPlayerLabelModeChange={updatePlayerLabelMode} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
+      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacter={activeCharacter ? save.world.characters[activeCharacter.id] : undefined} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} presetBundleName={presetBundleName} setPresetBundleName={setPresetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} />}
-      {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} />}
+      {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} />}
     </main>
     <nav className="bottom-nav">{([['map', '地图'], ['day', '日程'], ['chat', '聊天'], ['library', '资料'], ['settings', '设置']] as const).map(([id, label]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
   </div>;
@@ -1105,9 +1131,7 @@ function DiaryEditor(props: { entry: SaveFile['world']['diary'][number]; onSave:
 function ChatView(props: {
   characters: CharacterCard[];
   worldCharacter?: SaveFile['world']['characters'][string];
-  playerName: string;
-  playerLabelMode: 'you' | 'name';
-  onPlayerLabelModeChange: (mode: 'you' | 'name') => Promise<void>;
+  playerLabel: string;
   selectedCharacterId: string;
   setSelectedCharacterId: (id: string) => void;
   messages: ChatMessage[];
@@ -1186,14 +1210,14 @@ function ChatView(props: {
   }, [latestRole, props.busy]);
 
   return <section className="chat-screen vn-chat-screen">
-    <div className="character-picker"><select aria-label="聊天角色" value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">当前地点无人</option>{props.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select className="player-label-select" aria-label="玩家称呼" value={props.playerLabelMode} onChange={(event) => void props.onPlayerLabelModeChange(event.target.value as 'you' | 'name')}><option value="you">你</option><option value="name">{props.playerName}</option></select></div>
+    <div className="character-picker"><select aria-label="聊天角色" value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">当前地点无人</option>{props.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
     <div className="vn-stage" style={{ '--vn-accent': accentColor } as CSSProperties}>
       <div className="vn-portrait-area" aria-label={`${characterName}的立绘`}>
         {portraitUrl ? <img className="vn-portrait" src={portraitUrl} alt={`${characterName}的立绘`} /> : <div className="vn-portrait-empty" aria-label="暂无立绘" />}
       </div>
       {!quickReplySelected && <div className="vn-choices" aria-label="快速回应"><button className="secondary" onClick={() => { props.setInput('我点了点头。'); setQuickReplySelected(true); }}>点头回应</button><button className="secondary" onClick={() => { props.setInput('我先听你说。'); setQuickReplySelected(true); }}>先听你说</button></div>}
       <div className="vn-dialogue-box">
-        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && !showOlderMessages && <button className="history-toggle" onClick={() => setShowOlderMessages(true)}>查看更早的 {olderMessageCount} 条消息</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.flatMap((message, index) => splitDialogueMessage(message, characterName, props.playerLabelMode === 'name' ? props.playerName : '你').map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${olderMessageCount + index}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>))}{props.busy && props.requestStatus === 'requesting' && <div className="vn-line dialogue assistant pending"><span className="vn-speaker">{characterName}</span><span className="vn-line-text">等待回复…</span></div>}</div>
+        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && !showOlderMessages && <button className="history-toggle" onClick={() => setShowOlderMessages(true)}>查看更早的 {olderMessageCount} 条消息</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.flatMap((message, index) => splitDialogueMessage(message, characterName, props.playerLabel).map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${olderMessageCount + index}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>))}{props.busy && props.requestStatus === 'requesting' && <div className="vn-line dialogue assistant pending"><span className="vn-speaker">{characterName}</span><span className="vn-line-text">等待回复…</span></div>}</div>
       </div>
     </div>
     {props.pendingOps && <div className="ops-recovery" role="alert">
@@ -1227,6 +1251,19 @@ function SettingsView(props: {
   debugTab: 'Prompt' | 'Raw' | 'Ops' | 'State';
   setDebugTab: (tab: 'Prompt' | 'Raw' | 'Ops' | 'State') => void;
   save: SaveFile;
+  personas: Persona[];
+  personaId: string;
+  personaEditingId: string;
+  setPersonaEditingId: (value: string) => void;
+  personaName: string;
+  setPersonaName: (value: string) => void;
+  personaDisplayName: string;
+  setPersonaDisplayName: (value: string) => void;
+  personaDescription: string;
+  setPersonaDescription: (value: string) => void;
+  onSavePersona: () => Promise<void>;
+  onBindPersona: (id: string) => void;
+  onDeletePersona: (id: string) => Promise<void>;
   statKey: string;
   setStatKey: (value: string) => void;
   statValue: string;
@@ -1238,6 +1275,7 @@ function SettingsView(props: {
 }) {
   const isSaved = props.providers.some((item) => item.id === props.provider.id);
   return <section>
+    <div className="provider-card persona-card"><div className="list-heading"><div><span className="eyebrow">玩家身份</span><h3>面具身份</h3></div><span className="io-scope">每个世界绑定一个</span></div><div className="persona-fields"><input placeholder="身份名称，例如：旅人" value={props.personaName} onChange={(event) => props.setPersonaName(event.target.value)} /><input placeholder="对话框称呼，例如：小明" value={props.personaDisplayName} onChange={(event) => props.setPersonaDisplayName(event.target.value)} /><textarea placeholder="自我描述（会注入面对面提示词）" value={props.personaDescription} onChange={(event) => props.setPersonaDescription(event.target.value)} /></div><div className="button-row"><button onClick={() => void props.onSavePersona()}>{props.personaEditingId ? '更新面具' : '保存面具'}</button><button className="secondary" onClick={() => { props.setPersonaEditingId(''); props.setPersonaName(''); props.setPersonaDisplayName(''); props.setPersonaDescription(''); }}>新建面具</button></div>{props.personas.length ? <div className="persona-list">{props.personas.map((persona) => <div className="list-row" key={persona.id}><span>{persona.name}<small>对话框：{persona.displayName}{persona.description ? ` · ${persona.description}` : ''}</small></span><span className="button-row"><button className={props.personaId === persona.id ? '' : 'secondary'} onClick={() => props.onBindPersona(persona.id)}>{props.personaId === persona.id ? '当前绑定' : '绑定'}</button><button className="secondary" onClick={() => { props.setPersonaEditingId(persona.id); props.setPersonaName(persona.name); props.setPersonaDisplayName(persona.displayName); props.setPersonaDescription(persona.description); }}>编辑</button><button className="danger" onClick={() => void props.onDeletePersona(persona.id)}>删除</button></span></div>)}</div> : <p className="empty">还没有面具身份，聊天名牌默认使用玩家名字。</p>}</div>
     <div className="section-heading"><div><span className="eyebrow">本地设置</span><h2>Provider</h2></div>{props.requestStatus === 'requesting' && <span className="request-status requesting">请求中…</span>}</div>
     <div className="provider-card">
       <div className="field-with-action"><select aria-label="Provider 配置" value={isSaved ? props.provider.id : ''} onChange={(event) => { const found = props.providers.find((item) => item.id === event.target.value); if (found) props.setProvider(found); }}><option value="">未保存的新配置</option>{props.providers.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.kind}</option>)}</select><button className="secondary" onClick={props.onNewProvider}>新建</button></div>

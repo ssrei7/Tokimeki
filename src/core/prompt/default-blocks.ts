@@ -1,4 +1,4 @@
-import type { CharacterCard, ChatMessage, PresetBundle, WorldbookEntry } from '../../data/content';
+import type { CharacterCard, ChatMessage, Persona, PresetBundle, WorldbookEntry } from '../../data/content';
 import type { SaveFile } from '../../data/schema/save';
 import type { PromptBlock, PromptFacts } from './assembler';
 
@@ -13,6 +13,7 @@ export interface DefaultPromptFacts extends PromptFacts {
   worldbooks: WorldbookEntry[];
   history: ChatMessage[];
   presetBundle?: PresetBundle;
+  playerPersona?: Persona;
   world: SaveFile['world'];
 }
 
@@ -40,7 +41,9 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
       if (!world) return null;
       const node = world.map?.nodes?.[world.player.nodeId];
       const location = node ? `${node.name}（${node.id}）` : world.player.nodeId;
-      return `当前场景：第 ${world.clock.day} 天，时段 ${world.clock.slotId}，地点 ${location}。玩家名为 ${world.player.name}。`;
+      const persona = factsOf(facts).playerPersona;
+      const identity = persona ? `当前面具身份：${persona.displayName}。${persona.description ? ` ${persona.description}` : ''}` : `玩家名为 ${world.player.name}。`;
+      return `当前场景：第 ${world.clock.day} 天，时段 ${world.clock.slotId}，地点 ${location}。${identity}`;
     } },
     { id: 'node_worldbook', role: 'system', priority: 80, order: 4, build: (facts) => {
       const { world, worldbooks } = factsOf(facts);

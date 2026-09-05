@@ -1,8 +1,9 @@
 import Dexie, { type Table } from 'dexie';
-import { CharacterCardSchema, ChatRecordSchema, PresetBundleSchema, PresetSchema, WorldbookEntrySchema, type CharacterCard, type ChatRecord, type Preset, type PresetBundle, type WorldbookEntry } from '../content';
+import { CharacterCardSchema, ChatRecordSchema, PersonaSchema, PresetBundleSchema, PresetSchema, WorldbookEntrySchema, type CharacterCard, type ChatRecord, type Persona, type Preset, type PresetBundle, type WorldbookEntry } from '../content';
 
 export class ContentDatabase extends Dexie {
   characters!: Table<CharacterCard, string>;
+  personas!: Table<Persona, string>;
   worldbooks!: Table<WorldbookEntry, string>;
   presets!: Table<Preset, string>;
   presetBundles!: Table<PresetBundle, string>;
@@ -12,6 +13,7 @@ export class ContentDatabase extends Dexie {
     this.version(1).stores({ characters: 'id', worldbooks: 'id', presets: 'id' });
     this.version(2).stores({ characters: 'id', worldbooks: 'id', presets: 'id', chats: 'characterId' });
     this.version(3).stores({ characters: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', chats: 'characterId' });
+    this.version(4).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', chats: 'characterId' });
   }
 }
 
@@ -19,6 +21,8 @@ export const contentDb = new ContentDatabase();
 
 export async function saveCharacter(card: CharacterCard): Promise<CharacterCard> { const parsed = CharacterCardSchema.parse(card); await contentDb.characters.put(parsed); return parsed; }
 export async function deleteCharacter(id: string): Promise<void> { await contentDb.characters.delete(id); }
+export async function savePersona(persona: Persona): Promise<Persona> { const parsed = PersonaSchema.parse(persona); await contentDb.personas.put(parsed); return parsed; }
+export async function deletePersona(id: string): Promise<void> { await contentDb.personas.delete(id); }
 export async function saveWorldbook(entry: WorldbookEntry): Promise<WorldbookEntry> { const parsed = WorldbookEntrySchema.parse(entry); await contentDb.worldbooks.put(parsed); return parsed; }
 export async function deleteWorldbook(id: string): Promise<void> { await contentDb.worldbooks.delete(id); }
 export async function savePreset(preset: Preset): Promise<Preset> { const parsed = PresetSchema.parse(preset); await contentDb.presets.put(parsed); return parsed; }

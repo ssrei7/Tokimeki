@@ -9,6 +9,15 @@ export const CharacterCardSchema = z.object({
 });
 export type CharacterCard = z.infer<typeof CharacterCardSchema>;
 
+export const PersonaSchema = z.object({
+  id: Id,
+  name: z.string().min(1),
+  displayName: z.string().min(1),
+  description: z.string().default(''),
+  updatedAt: z.string().datetime(),
+});
+export type Persona = z.infer<typeof PersonaSchema>;
+
 export const WorldbookEntrySchema = z.object({
   id: Id, name: z.string().min(1), content: z.string(), keys: z.array(z.string()).default([]), enabled: z.boolean().default(true), priority: z.number().int().default(50),
 });
