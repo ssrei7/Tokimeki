@@ -58,4 +58,17 @@ describe('map generation parser', () => {
     expect(() => parseGeneratedMapExpansion(JSON.stringify({ nodes: [{ id: 'node-1', name: '重复', regionId: 'town', pos: { x: 1, y: 1 } }], edges: [] }), existing, 'start', 1)).toThrow('已存在');
     expect(() => parseGeneratedMapExpansion(JSON.stringify({ nodes: [{ id: 'far', name: '孤岛', regionId: 'town', pos: { x: 1, y: 1 } }], edges: [] }), existing, 'start', 1)).toThrow('没有连到指定锚点');
   });
+
+  it('accepts common expansion aliases and derives a safe chain when edges are omitted', () => {
+    const existing = parseGeneratedMap(JSON.stringify(generatedPayload()), 'start');
+    const expanded = parseGeneratedMapExpansion(JSON.stringify({
+      locations: [
+        { id: 'hill', name: '山丘', regionId: 'town', pos: { x: 700, y: 100 } },
+        { id: 'shrine', name: '神社', regionId: 'town', pos: { x: 820, y: 100 } },
+      ],
+    }), existing, 'start', 2);
+    expect(expanded.nodes.shrine.name).toBe('神社');
+    expect(expanded.edges.some((edge) => edge.from === 'start' && edge.to === 'hill')).toBe(true);
+    expect(expanded.edges.some((edge) => edge.from === 'hill' && edge.to === 'shrine')).toBe(true);
+  });
 });

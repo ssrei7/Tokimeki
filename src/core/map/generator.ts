@@ -52,7 +52,7 @@ export function parseGeneratedMap(text: string, currentNodeId: string): MapState
 
 export function parseGeneratedMapExpansion(text: string, existing: MapState, anchorNodeId: string, count: number): MapState {
   if (!existing.nodes[anchorNodeId]) throw new Error(`扩展锚点不存在：${anchorNodeId}。`);
-  const parsed = GeneratedMapSchema.parse(extractJson(text));
+  const parsed = GeneratedMapSchema.parse(normalizeExpansionPayload(extractJson(text), anchorNodeId));
   const nodes = Array.isArray(parsed.nodes) ? parsed.nodes : Object.values(parsed.nodes);
   const requested = Math.max(1, Math.min(8, Math.floor(count)));
   if (nodes.length !== requested) throw new Error(`本次扩展应生成 ${requested} 个地点，当前为 ${nodes.length}。`);
@@ -68,6 +68,24 @@ export function parseGeneratedMapExpansion(text: string, existing: MapState, anc
   const nodeRecord: MapState['nodes'] = { ...existing.nodes };
   for (const node of nodes) nodeRecord[node.id] = { ...node, discovered: node.discovered ?? false, visitCount: node.visitCount ?? 0, memories: node.memories };
   return { ...existing, regions: { ...existing.regions, ...regions }, nodes: nodeRecord, edges: mergedEdges };
+}
+
+function normalizeExpansionPayload(raw: unknown, anchorNodeId: string): unknown {
+  if (Array.isArray(raw)) raw = { nodes: raw };
+  if (!raw || typeof raw !== 'object') return raw;
+  const record = raw as Record<string, unknown>;
+  const nodes = record.nodes ?? record.newNodes ?? record.locations ?? record.places;
+  const regions = record.regions ?? record.areas;
+  let edges = record.edges ?? record.newEdges ?? record.connections;
+  if (!edges && Array.isArray(nodes)) {
+    edges = nodes.map((node, index) => {
+      const parentNodeId = node && typeof node === 'object' && typeof (node as Record<string, unknown>).parentNodeId === 'string'
+        ? (node as Record<string, unknown>).parentNodeId as string
+        : index === 0 ? anchorNodeId : (nodes[index - 1] as Record<string, unknown>)?.id;
+      return { from: parentNodeId, to: node && typeof node === 'object' ? (node as Record<string, unknown>).id : undefined, travelSlots: 1 };
+    });
+  }
+  return { ...record, nodes, regions, edges };
 }
 
 function extractJson(text: string): unknown {

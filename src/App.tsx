@@ -302,6 +302,8 @@ export function App() {
   }
 
   async function generateMap(requirements = ''): Promise<void> {
+    const existingNodeCount = Object.keys(saveRef.current.world.map.nodes).length;
+    if (existingNodeCount > 1 && !window.confirm(`当前地图已有 ${existingNodeCount} 个地点。AI 生成会完整替换当前地图，建议先导出存档。确定继续吗？`)) return;
     const mapProvider = resolveProviderForTask(providers, bindings, 'map_gen', defaultProviderId);
     if (!mapProvider) { setFeedback({ tone: 'error', text: '请先在设置中配置 map_gen Provider。' }); return; }
     setMapGenerating(true);
@@ -813,6 +815,8 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const dragRef = useRef({ pointerId: -1, startX: 0, startY: 0, originX: 0, originY: 0, moved: false });
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef({ distance: 0, zoom: 1 });
   useEffect(() => {
     let objectUrl: string | undefined;
     let cancelled = false;
@@ -834,9 +838,24 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
     const rect = event.currentTarget.getBoundingClientRect();
     onUpdateNodePosition(pinNodeId, { x: ((event.clientX - rect.left) / rect.width) * map.view.size.w, y: ((event.clientY - rect.top) / rect.height) * map.view.size.h });
   };
-  const beginPan = (event: PointerEvent<HTMLDivElement>) => { if (event.button !== 0) return; dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: offset.x, originY: offset.y, moved: false }; event.currentTarget.setPointerCapture(event.pointerId); };
-  const movePan = (event: PointerEvent<HTMLDivElement>) => { if (dragRef.current.pointerId !== event.pointerId) return; const dx = event.clientX - dragRef.current.startX; const dy = event.clientY - dragRef.current.startY; if (Math.abs(dx) + Math.abs(dy) > 4) dragRef.current.moved = true; setOffset({ x: dragRef.current.originX + dx, y: dragRef.current.originY + dy }); };
-  const endPan = (event: PointerEvent<HTMLDivElement>) => { if (dragRef.current.pointerId === event.pointerId) dragRef.current.pointerId = -1; };
+  const beginPan = (event: PointerEvent<HTMLDivElement>) => {
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointersRef.current.size >= 2) {
+      const points = [...pointersRef.current.values()]; const dx = points[0].x - points[1].x; const dy = points[0].y - points[1].y;
+      pinchRef.current = { distance: Math.max(1, Math.hypot(dx, dy)), zoom }; dragRef.current.pointerId = -1; return;
+    }
+    if (event.button !== 0) return;
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: offset.x, originY: offset.y, moved: false }; event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const movePan = (event: PointerEvent<HTMLDivElement>) => {
+    if (pointersRef.current.has(event.pointerId)) pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointersRef.current.size >= 2 && pinchRef.current.distance > 0) {
+      const points = [...pointersRef.current.values()]; const dx = points[0].x - points[1].x; const dy = points[0].y - points[1].y;
+      setZoom(Math.max(0.65, Math.min(2.5, Number((pinchRef.current.zoom * Math.hypot(dx, dy) / pinchRef.current.distance).toFixed(2))))); return;
+    }
+    if (dragRef.current.pointerId !== event.pointerId) return; const dx = event.clientX - dragRef.current.startX; const dy = event.clientY - dragRef.current.startY; if (Math.abs(dx) + Math.abs(dy) > 4) dragRef.current.moved = true; setOffset({ x: dragRef.current.originX + dx, y: dragRef.current.originY + dy });
+  };
+  const endPan = (event: PointerEvent<HTMLDivElement>) => { pointersRef.current.delete(event.pointerId); if (pointersRef.current.size < 2) pinchRef.current.distance = 0; if (dragRef.current.pointerId === event.pointerId) dragRef.current.pointerId = -1; };
   const changeZoom = (delta: number) => setZoom((value) => Math.max(0.65, Math.min(2.5, Number((value + delta).toFixed(2)))));
   const resetViewport = () => { setZoom(1); setOffset({ x: 0, y: 0 }); };
   const mapWheel = (event: WheelEvent<HTMLDivElement>) => { event.preventDefault(); changeZoom(event.deltaY < 0 ? 0.1 : -0.1); };
