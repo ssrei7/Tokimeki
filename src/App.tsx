@@ -3,7 +3,7 @@ import { PromptAssembler } from './core/prompt/assembler';
 import type { AssembledPrompt } from './core/prompt/assembler';
 import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
 import { EventBus } from './core/events/bus';
-import { movePlayer } from './core/map';
+import { movePlayer, parseGeneratedMap } from './core/map';
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
@@ -128,6 +128,7 @@ export function App() {
   const [statValue, setStatValue] = useState('0');
   const [includeChatsOnExport, setIncludeChatsOnExport] = useState(true);
   const [summarizingDay, setSummarizingDay] = useState<number | null>(null);
+  const [mapGenerating, setMapGenerating] = useState(false);
   const [debugTab, setDebugTab] = useState<'Prompt' | 'Raw' | 'Ops' | 'State'>('Prompt');
   const [debug, setDebug] = useState<DebugState>({ prompt: null, raw: '', ops: '尚未解析状态变化。', state: JSON.stringify(defaultSave, null, 2) });
 
@@ -298,6 +299,25 @@ export function App() {
     if (!node) return;
     node.pos = { x: Math.max(0, Math.min(next.world.map.view.size.w, pos.x)), y: Math.max(0, Math.min(next.world.map.view.size.h, pos.y)) };
     commitSave(next);
+  }
+
+  async function generateMap(): Promise<void> {
+    const mapProvider = resolveProviderForTask(providers, bindings, 'map_gen', defaultProviderId);
+    if (!mapProvider) { setFeedback({ tone: 'error', text: '请先在设置中配置 map_gen Provider。' }); return; }
+    setMapGenerating(true);
+    let generated = '';
+    try {
+      const parsedProvider = ProviderConfigSchema.parse(mapProvider);
+      await streamChat(parsedProvider, [
+        { role: 'system', content: '生成一张开放世界图结构地图。只返回 JSON，不要 Markdown。必须包含 8–15 个 nodes、至少一条连通路径的 edges；每个 node 需要 id、name、regionId、kind、pos，edges 需要 from、to、travelSlots。' },
+        { role: 'user', content: JSON.stringify({ currentNodeId: saveRef.current.world.player.nodeId, slots: saveRef.current.config.calendar.slots.map((slot) => slot.id), currentMap: saveRef.current.world.map }) },
+      ], (delta) => { generated += delta; }, { taskId: 'map_gen' });
+      const map = parseGeneratedMap(generated, saveRef.current.world.player.nodeId);
+      const next = structuredClone(saveRef.current); next.world.map = map; commitSave(next);
+      setFeedback({ tone: 'success', text: `地图生成成功：${Object.keys(map.nodes).length} 个地点。` });
+    } catch (error) {
+      setFeedback({ tone: 'error', text: errorMessage(error, '地图生成失败。') });
+    } finally { setMapGenerating(false); }
   }
 
   async function restoreSnapshot(id: string): Promise<void> {
@@ -752,7 +772,7 @@ export function App() {
     <header className="topbar"><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small><h1>Tokimeki</h1></div></header>
     <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
-      {tab === 'map' && <MapView save={save} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onToggleMode={toggleMapMode} onUpdateNodePosition={updateNodePosition} />}
+      {tab === 'map' && <MapView save={save} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onToggleMode={toggleMapMode} onUpdateNodePosition={updateNodePosition} onGenerateMap={generateMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
       {tab === 'chat' && <ChatView characters={characters} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} presetBundleName={presetBundleName} setPresetBundleName={setPresetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} />}
@@ -762,7 +782,7 @@ export function App() {
   </div>;
 }
 
-function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, onUpdateNodePosition }: { save: SaveFile; onMove: (nodeId: string) => void; onOpenChat: () => void; onImportBackground: (file?: File) => Promise<void>; onToggleMode: () => void; onUpdateNodePosition: (nodeId: string, pos: { x: number; y: number }) => void }) {
+function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, onUpdateNodePosition, onGenerateMap, mapGenerating }: { save: SaveFile; onMove: (nodeId: string) => void; onOpenChat: () => void; onImportBackground: (file?: File) => Promise<void>; onToggleMode: () => void; onUpdateNodePosition: (nodeId: string, pos: { x: number; y: number }) => void; onGenerateMap: () => Promise<void>; mapGenerating: boolean }) {
   const map = save.world.map;
   const currentNode = map.nodes[save.world.player.nodeId];
   const nodes = Object.values(map.nodes);
@@ -790,7 +810,7 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
   };
   return <section className="map-screen">
     <div className="map-toolbar"><div><span className="eyebrow">世界地图</span><h2>{currentNode?.name ?? save.world.player.nodeId}</h2></div><span className="io-scope">{map.view.mode === 'graph' ? 'Graph' : 'Hotspot'}</span></div>
-    <div className="map-controls"><button className="secondary" onClick={onToggleMode}>切换到 {map.view.mode === 'graph' ? 'Hotspot' : 'Graph'}</button><label className="file-button">上传底图<input type="file" accept="image/*" onChange={(event) => void onImportBackground(event.target.files?.[0])} /></label></div>
+    <div className="map-controls"><button className="secondary" onClick={onToggleMode}>切换到 {map.view.mode === 'graph' ? 'Hotspot' : 'Graph'}</button><label className="file-button">上传底图<input type="file" accept="image/*" onChange={(event) => void onImportBackground(event.target.files?.[0])} /></label><button className="secondary" onClick={() => void onGenerateMap()} disabled={mapGenerating}>{mapGenerating ? '正在生成地图…' : 'AI 生成地图'}</button></div>
     <div className="map-canvas">
       {map.view.mode === 'graph' ? <svg className="map-svg" viewBox={`0 0 ${map.view.size.w} ${map.view.size.h}`} role="img" aria-label="世界地图">
         <g className="map-edges">{map.edges.map((edge) => { const from = map.nodes[edge.from]; const to = map.nodes[edge.to]; if (!from || !to) return null; const visible = from.discovered || to.discovered; return <line key={edgeKey(edge)} className={visible ? '' : 'fog'} x1={from.pos.x} y1={from.pos.y} x2={to.pos.x} y2={to.pos.y} />; })}</g>

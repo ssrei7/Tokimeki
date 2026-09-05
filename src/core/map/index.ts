@@ -73,3 +73,5 @@ function findEdge(edges: MapEdge[], from: string, to: string): MapEdge | undefin
 function rejected(warning: string): MapOperationResult {
   return { ok: false, changes: [], warning, cost: 0 };
 }
+
+export { parseGeneratedMap } from './generator';
