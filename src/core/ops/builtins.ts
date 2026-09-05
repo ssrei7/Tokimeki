@@ -4,7 +4,7 @@ import { OpRegistry } from './registry';
 import type { OpContext, OpResult } from './types';
 import { advanceTime } from '../time';
 import { movePlayer, revealNode } from '../map';
-import { moveNpc } from '../encounter';
+import { moveNpc, triggerEncounter } from '../encounter';
 
 const StatTargetSchema = z.enum(['player', 'world']);
 const AddStatSchema = z.object({ op: z.literal('add_stat'), target: StatTargetSchema, key: z.string().min(1), delta: z.number().finite() });
@@ -86,7 +86,11 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     apply: (payload, context) => {
       if (!context.calendar) return { ok: false, changes: [], warning: 'Calendar is unavailable.' };
       const result = movePlayer(context.world, context.calendar, payload.nodeId, context.events);
-      return { ok: result.ok, changes: result.changes, warning: result.warning };
+      if (!result.ok) return { ok: false, changes: result.changes, warning: result.warning };
+      const encounter = context.encounterConfig && context.world.map.nodes[payload.nodeId]
+        ? triggerEncounter(context.world, context.encounterConfig, { nodeId: payload.nodeId, trigger: 'enter', daysPerWeek: context.calendar.daysPerWeek, events: context.events })
+        : undefined;
+      return { ok: true, changes: [...result.changes, ...(encounter?.changes ?? [])], warning: result.warning };
     },
   });
   registry.register({
@@ -104,7 +108,11 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     describe: (payload) => `move ${payload.target} to ${payload.nodeId}`,
     apply: (payload, context) => {
       const result = moveNpc(context.world, payload.target, payload.nodeId, context.day, payload.slotId ?? context.slotId, payload.activity);
-      return { ok: result.ok, changes: result.changes, warning: result.warning };
+      if (!result.ok) return { ok: false, changes: result.changes, warning: result.warning };
+      const encounter = context.encounterConfig
+        ? triggerEncounter(context.world, context.encounterConfig, { nodeId: payload.nodeId, trigger: 'character_move', day: context.day, slotId: payload.slotId ?? context.slotId, daysPerWeek: context.calendar?.daysPerWeek, events: context.events })
+        : undefined;
+      return { ok: true, changes: [...result.changes, ...(encounter?.changes ?? [])], warning: result.warning };
     },
   });
 }

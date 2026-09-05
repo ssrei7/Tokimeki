@@ -106,6 +106,10 @@ function hashSeed(seed: number, day: number, slotId: string, nodeId: string): nu
   return hash >>> 0;
 }
 
+export function encounterRoll(seed: number, day: number, slotId: string, nodeId: string, salt = ''): number {
+  return createRng(hashSeed(seed, day, slotId, `${nodeId}:${salt}`))();
+}
+
 function createRng(seed: number): () => number {
   let state = seed || 0x9e3779b9;
   return () => {

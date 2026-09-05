@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import type { WorldState } from '../../data/schema/save';
-import type { CalendarConfig, ActionCostTable } from '../../data/schema/save';
+import type { CalendarConfig, ActionCostTable, EncounterConfig } from '../../data/schema/save';
 import type { EventBus } from '../events/bus';
 
 export interface OpContext {
@@ -12,6 +12,7 @@ export interface OpContext {
   log(message: string): void;
   calendar?: CalendarConfig;
   actionCosts?: ActionCostTable;
+  encounterConfig?: EncounterConfig;
   events?: EventBus;
 }
 

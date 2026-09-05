@@ -4,7 +4,7 @@ import type { AssembledPrompt } from './core/prompt/assembler';
 import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
 import { EventBus } from './core/events/bus';
 import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGeneratedMapExpansion, parseGeneratedNodeSuggestion, updateMapNode, type CreateMapNodeInput, type UpdateMapNodeInput } from './core/map';
-import { deriveNodeScope, nodeScopeLabel, whoIsHere } from './core/encounter';
+import { deriveNodeScope, nodeScopeLabel, triggerEncounter, whoIsHere } from './core/encounter';
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
@@ -268,9 +268,12 @@ export function App() {
       setFeedback({ tone: 'error', text: result.warning ?? '无法前往该地点。' });
       return;
     }
-    commitSave(next);
     const destination = next.world.map.nodes[nodeId];
-    setFeedback({ tone: 'success', text: result.cost > 0 ? `已抵达${destination?.name ?? nodeId}，消耗 ${result.cost} 个时段。` : `已抵达${destination?.name ?? nodeId}。` });
+    const encounter = triggerEncounter(next.world, next.config.encounter, { nodeId, trigger: 'enter', daysPerWeek: next.config.calendar.daysPerWeek, events: promptEvents });
+    commitSave(next);
+    const arrival = result.cost > 0 ? `已抵达${destination?.name ?? nodeId}，消耗 ${result.cost} 个时段。` : `已抵达${destination?.name ?? nodeId}。`;
+    const names = encounter.candidates.map((candidate) => candidate.name).join('、');
+    setFeedback({ tone: 'success', text: encounter.triggered ? `${arrival} 遇见了${names}。` : arrival });
   }
 
   async function importMapBackground(file?: File): Promise<void> {
@@ -514,6 +517,7 @@ export function App() {
       nodeId: world.player.nodeId,
       calendar: nextSave.config.calendar,
       actionCosts: nextSave.config.actionCosts,
+      encounterConfig: nextSave.config.encounter,
       events: promptEvents,
       log: (message) => logs.push(message),
     }, nextSave.config.opsLimitPerTurn);
