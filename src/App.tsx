@@ -4,7 +4,7 @@ import type { AssembledPrompt } from './core/prompt/assembler';
 import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
 import { EventBus } from './core/events/bus';
 import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGeneratedMapExpansion, parseGeneratedNodeSuggestion, updateMapNode, type CreateMapNodeInput, type UpdateMapNodeInput } from './core/map';
-import { whoIsHere } from './core/encounter';
+import { deriveNodeScope, nodeScopeLabel, whoIsHere } from './core/encounter';
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
@@ -959,6 +959,7 @@ function MapView({ save, worldbooks, onMove, onOpenChat, onImportBackground, onT
     setOffset((current) => ({ x: focalX - ((focalX - current.x) / zoom) * nextZoom, y: focalY - ((focalY - current.y) / zoom) * nextZoom })); setZoom(nextZoom);
   };
   const currentSlotName = save.config.calendar.slots.find((slot) => slot.id === save.world.clock.slotId)?.name ?? save.world.clock.slotId;
+  const currentScope = nodeScopeLabel(deriveNodeScope(currentNode, save.world.clock.slotId));
   return <section className="map-screen">
     <div className="map-top-panel">
       <div className="map-toolbar"><div className="map-title"><h1>Tokimeki</h1><strong>{currentNode?.name ?? save.world.player.nodeId}</strong></div><div className="map-toolbar-meta"><span>第 {save.world.clock.day} 天 · {currentSlotName}</span><span>{map.view.mode === 'graph' ? 'Graph' : 'Hotspot'} · {Math.round(zoom * 100)}%</span></div></div>
@@ -987,12 +988,12 @@ function MapView({ save, worldbooks, onMove, onOpenChat, onImportBackground, onT
         <div className="button-row"><button onClick={saveEditorNode} disabled={!editorName.trim() || !editorRegionId || (!editorNodeId && !editorAnchorId)}>保存地点</button><button className="secondary" onClick={() => setEditorPos(null)}>重新选位置</button>{editorNodeId && <button className="danger" onClick={deleteEditorNode} disabled={editorNodeId === save.world.player.nodeId}>删除地点</button>}<button className="secondary" onClick={closeEditor}>取消</button></div>
       </div>}
     </div>
-    <div className="place-card"><span className="eyebrow">当前位置</span><h2>{currentNode?.name ?? save.world.player.nodeId}</h2><p>{currentNode?.description ?? '从地图出发，去遇见今天的世界。'}</p>{currentNode && <div className="place-details"><span>区域<strong>{map.regions[currentNode.regionId]?.name ?? currentNode.regionId}</strong></span><span>类型<strong>{currentNode.kind.length ? currentNode.kind.join('、') : '未分类'}</strong></span><span>开放<strong>{currentNode.openSlots?.length ? currentNode.openSlots.map((id) => save.config.calendar.slots.find((slot) => slot.id === id)?.name ?? id).join('、') : '始终开放'}</strong></span></div>}<div className="button-row"><button onClick={onOpenChat}>打开聊天</button>{currentNode && <span className="map-meta">访问 {currentNode.visitCount} 次</span>}</div>{currentNode && <PresenceList people={whoIsHere(save.world, currentNode.id, save.world.clock.day, save.world.clock.slotId, save.config.calendar.daysPerWeek)} />}</div>
+    <div className="place-card"><span className="eyebrow">当前位置</span><h2>{currentNode?.name ?? save.world.player.nodeId}</h2><p>{currentNode?.description ?? '从地图出发，去遇见今天的世界。'}</p>{currentNode && <div className="place-details"><span>区域<strong>{map.regions[currentNode.regionId]?.name ?? currentNode.regionId}</strong></span><span>类型<strong>{currentNode.kind.length ? currentNode.kind.join('、') : '未分类'}</strong></span><span>开放<strong>{currentNode.openSlots?.length ? currentNode.openSlots.map((id) => save.config.calendar.slots.find((slot) => slot.id === id)?.name ?? id).join('、') : '始终开放'}</strong></span><span>范围<strong>{currentScope}</strong></span></div>}<div className="button-row"><button onClick={onOpenChat}>打开聊天</button>{currentNode && <span className="map-meta">访问 {currentNode.visitCount} 次</span>}</div>{currentNode && <PresenceList people={whoIsHere(save.world, currentNode.id, save.world.clock.day, save.world.clock.slotId, save.config.calendar.daysPerWeek)} scope={currentScope} />}</div>
   </section>;
 }
 
-function PresenceList({ people }: { people: ReturnType<typeof whoIsHere> }) {
-  return <div className="presence-list"><div className="list-heading"><strong>现在这里</strong><span className="io-scope">纯本地查询</span></div>{people.length ? people.map((person) => <div className="presence-row" key={person.id}><span>{person.name}<small>{person.tier === 'formal' ? '正式角色' : '半正式 NPC'} · {person.activity}</small></span></div>) : <p className="empty">当前没有已知角色在这里。</p>}</div>;
+function PresenceList({ people, scope }: { people: ReturnType<typeof whoIsHere>; scope: string }) {
+  return <div className="presence-list"><div className="list-heading"><strong>现在这里</strong><span className="io-scope">{scope} · 纯本地查询</span></div>{people.length ? people.map((person) => <div className="presence-row" key={person.id}><span>{person.name}<small>{person.tier === 'formal' ? '正式角色' : '半正式 NPC'} · {person.activity}</small></span></div>) : <p className="empty">当前没有已知角色在这里。</p>}</div>;
 }
 
 function DayView(props: { save: SaveFile; snapshots: SaveSnapshot[]; summarizingDay: number | null; onAction: (kind: string) => void; onSleep: () => void; onRestoreSnapshot: (id: string) => Promise<void>; onSaveDiary: (day: number, text: string) => void; onPresetChange: (preset: SaveFile['config']['calendar']['preset']) => void }) {

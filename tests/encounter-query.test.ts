@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveScheduledCell, whoIsHere } from '../src/core/encounter';
+import { deriveNodeScope, resolveScheduledCell, whoIsHere } from '../src/core/encounter';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import type { FormalCharacter, WorldState } from '../src/data/schema/save';
 
@@ -31,6 +31,14 @@ function setup(): WorldState {
 }
 
 describe('deterministic schedule presence query', () => {
+  it('derives formal or peripheral scope from node opening slots', () => {
+    const world = setup();
+    expect(deriveNodeScope(world.map.nodes.start, 'evening')).toBe('formal');
+    world.map.nodes.start.openSlots = ['morning'];
+    expect(deriveNodeScope(world.map.nodes.start, 'morning')).toBe('formal');
+    expect(deriveNodeScope(world.map.nodes.start, 'evening')).toBe('peripheral');
+  });
+
   it('prefers a day override over the weekly grid', () => {
     const world = setup();
     expect(resolveScheduledCell(world.characters.seir, 3, 'morning', 7)).toEqual({ nodeId: 'docks', activity: '等待朋友' });

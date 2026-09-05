@@ -4,6 +4,7 @@ import { OpRegistry } from './registry';
 import type { OpContext, OpResult } from './types';
 import { advanceTime } from '../time';
 import { movePlayer, revealNode } from '../map';
+import { moveNpc } from '../encounter';
 
 const StatTargetSchema = z.enum(['player', 'world']);
 const AddStatSchema = z.object({ op: z.literal('add_stat'), target: StatTargetSchema, key: z.string().min(1), delta: z.number().finite() });
@@ -15,6 +16,7 @@ const AddMemorySchema = z.object({ op: z.literal('add_memory'), target: z.string
 const AdvanceTimeSchema = z.object({ op: z.literal('advance_time'), kind: z.string().min(1).optional(), slots: z.number().int().positive().default(1) });
 const MovePlayerSchema = z.object({ op: z.literal('move_player'), nodeId: z.string().min(1) });
 const RevealNodeSchema = z.object({ op: z.literal('reveal_node'), nodeId: z.string().min(1) });
+const MoveNpcSchema = z.object({ op: z.literal('move_npc'), target: z.string().min(1), nodeId: z.string().min(1), slotId: z.string().min(1).optional(), activity: z.string().min(1).max(200).optional() });
 
 export function createDefaultOpRegistry(): OpRegistry {
   const registry = new OpRegistry();
@@ -93,6 +95,15 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     describe: (payload) => `reveal node ${payload.nodeId}`,
     apply: (payload, context) => {
       const result = revealNode(context.world, payload.nodeId);
+      return { ok: result.ok, changes: result.changes, warning: result.warning };
+    },
+  });
+  registry.register({
+    op: 'move_npc', schema: MoveNpcSchema, clamp: {},
+    promptDoc: 'move_npc: {"op":"move_npc","target":"formal-character-id","nodeId":"node-id","slotId":"slot-id","activity":"what they are doing"}; writes a same-day schedule override for the current game day.',
+    describe: (payload) => `move ${payload.target} to ${payload.nodeId}`,
+    apply: (payload, context) => {
+      const result = moveNpc(context.world, payload.target, payload.nodeId, context.day, payload.slotId ?? context.slotId, payload.activity);
       return { ok: result.ok, changes: result.changes, warning: result.warning };
     },
   });

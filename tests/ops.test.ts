@@ -21,7 +21,7 @@ function setup() {
 describe('op registry and built-ins', () => {
   it('registers complete prompt documentation for all stage 1 ops', () => {
     const docs = createDefaultOpRegistry().promptDocs();
-    for (const op of ['add_stat', 'set_stat', 'set_flag', 'give_item', 'take_item', 'add_memory', 'move_player', 'reveal_node']) expect(docs).toContain(op);
+    for (const op of ['add_stat', 'set_stat', 'set_flag', 'give_item', 'take_item', 'add_memory', 'move_player', 'reveal_node', 'move_npc']) expect(docs).toContain(op);
   });
 
   it('clamps stat deltas and records a diff without hard-coded stat keys', () => {
@@ -119,5 +119,19 @@ describe('op registry and built-ins', () => {
     expect(moved.applied).toBe(1);
     expect(state.world.player.nodeId).toBe('market');
     expect(state.world.slotsUsedToday).toBe(0);
+  });
+
+  it('writes a same-day schedule override through move_npc', () => {
+    const state = setup();
+    state.world.characters.seir = {
+      id: 'seir', name: '塞伊尔', tier: 'formal',
+      card: { description: '测试角色', personality: '安静' },
+      visuals: { portraits: [] },
+      schedule: { grid: {}, overrides: {} },
+    };
+    state.world.map.nodes.docks = { id: 'docks', name: '西码头', regionId: 'start-region', kind: ['outdoor'], worldbookIds: [], discovered: true, visitCount: 0, memories: [], pos: { x: 100, y: 100 } };
+    const result = state.registry.applyAll([{ op: 'move_npc', target: 'seir', nodeId: 'docks', slotId: 'night', activity: '收拾渔网' }], state.context, 12);
+    expect(result.applied).toBe(1);
+    expect(state.world.characters.seir.schedule?.overrides['3:night']).toEqual({ nodeId: 'docks', activity: '收拾渔网' });
   });
 });
