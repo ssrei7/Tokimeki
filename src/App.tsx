@@ -151,6 +151,7 @@ export function App() {
     let cancelled = false;
     setLoadedChatCharacterId('');
     if (!selectedCharacterId) { setMessages([]); return () => { cancelled = true; }; }
+    setMessages([]);
     void loadChat(selectedCharacterId).then((record) => {
       if (!cancelled) { setMessages(record?.messages ?? []); setLoadedChatCharacterId(selectedCharacterId); }
     });
@@ -657,7 +658,7 @@ export function App() {
 
   return <div className="app-shell">
     <header className="topbar"><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small><h1>Tokimeki</h1></div></header>
-    <main className="screen">
+    <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView onOpenChat={() => setTab('chat')} />}
       {tab === 'day' && <DayView save={save} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
@@ -718,20 +719,21 @@ function ChatView(props: {
   onRetryOps: () => Promise<void>;
   onApplyManualOps: () => Promise<void>;
 }) {
-  const latestRef = useRef<HTMLDivElement>(null);
-  const composerRef = useRef<HTMLDivElement>(null);
-  const composerBottomInset = 76;
+  const messagesRef = useRef<HTMLDivElement>(null);
   const followLatestRef = useRef(true);
   const previousCharacterIdRef = useRef(props.selectedCharacterId);
+  const [showOlderMessages, setShowOlderMessages] = useState(false);
   const statusText = props.requestStatus === 'requesting' ? '等待回复…' : props.requestStatus === 'generating' ? '正在生成…' : props.requestStatus === 'error' ? '请求失败' : '';
   const canGenerate = canGenerateReply(props.messages, props.input);
   const latestMessage = props.messages.at(-1)?.content;
+  const olderMessageCount = Math.max(0, props.messages.length - 40);
+  const visibleMessages = showOlderMessages ? props.messages : props.messages.slice(olderMessageCount);
 
   useEffect(() => {
-    const scroller = latestRef.current?.closest('.screen');
+    const scroller = messagesRef.current;
     if (!(scroller instanceof HTMLElement)) return;
     const updateFollowState = () => {
-      followLatestRef.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= composerBottomInset + 48;
+      followLatestRef.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 48;
     };
     scroller.addEventListener('scroll', updateFollowState, { passive: true });
     return () => scroller.removeEventListener('scroll', updateFollowState);
@@ -741,33 +743,22 @@ function ChatView(props: {
     if (previousCharacterIdRef.current !== props.selectedCharacterId) {
       previousCharacterIdRef.current = props.selectedCharacterId;
       followLatestRef.current = true;
+      setShowOlderMessages(false);
     }
-    if (!followLatestRef.current) return;
-    const composer = composerRef.current;
-    const scroller = composer?.closest('.screen');
-    if (!(composer instanceof HTMLElement) || !(scroller instanceof HTMLElement)) return;
-    const scrollerRect = scroller.getBoundingClientRect();
-    const composerRect = composer.getBoundingClientRect();
-    const visibleTop = scrollerRect.top;
-    const visibleBottom = scrollerRect.bottom - composerBottomInset;
-    if (composerRect.bottom > visibleBottom) {
-      scroller.scrollTop += composerRect.bottom - visibleBottom;
-    } else if (composerRect.top < visibleTop) {
-      scroller.scrollTop -= visibleTop - composerRect.top;
-    }
+    if (followLatestRef.current) messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'auto' });
   }, [latestMessage, props.busy, props.messages.length, props.requestStatus, props.selectedCharacterId]);
 
   return <section className="chat-screen">
     <div className="section-heading"><div><span className="eyebrow">日常相遇</span><h2>{props.characters.find((item) => item.id === props.selectedCharacterId)?.name ?? '选择角色聊天'}</h2></div>{statusText && <span className={`request-status ${props.requestStatus}`}>{statusText}</span>}</div>
     <div className="character-picker"><label>聊天角色<select value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">未选择</option>{props.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
-    <div className="messages">{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{props.messages.map((message, index) => <div className={`message ${message.role}`} key={`${message.role}-${index}`}>{message.content}</div>)}{props.busy && props.requestStatus === 'requesting' && <div className="message assistant pending">等待回复…</div>}</div>
+    <div className="messages" ref={messagesRef}>{olderMessageCount > 0 && !showOlderMessages && <button className="history-toggle" onClick={() => setShowOlderMessages(true)}>查看更早的 {olderMessageCount} 条消息</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.map((message, index) => <div className={`message ${message.role}`} key={`${message.role}-${olderMessageCount + index}`}>{message.content}</div>)}{props.busy && props.requestStatus === 'requesting' && <div className="message assistant pending">等待回复…</div>}</div>
     {props.pendingOps && <div className="ops-recovery" role="alert">
       <strong>本回合未产生状态变更</strong>
       <p>{props.pendingOps.streamError ? '回复流中断，已保留收到的正文。你可以重试提取或手动补录。' : '正文已保留，但 ops 无法解析。你可以重试提取或手动补录。'}</p>
       <textarea aria-label="手动补录 ops JSON" spellCheck={false} value={props.manualOps} onChange={(event) => props.setManualOps(event.target.value)} />
       <div className="button-row"><button className="secondary" disabled={props.busy} onClick={() => void props.onRetryOps()}>重试提取</button><button disabled={props.busy} onClick={() => void props.onApplyManualOps()}>应用手动 ops</button></div>
     </div>}
-    <div className="composer" ref={composerRef}><textarea value={props.input} onChange={(event) => props.setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void props.onAppend(); } }} placeholder="说点什么……" /><div className="composer-actions"><button className="secondary" onClick={() => void props.onAppend()} disabled={props.busy || !props.input.trim()}>发送消息</button><button onClick={() => void props.onGenerate()} disabled={props.busy || !canGenerate}>生成回复</button></div></div><div ref={latestRef} aria-hidden="true" />
+    <div className="composer"><textarea value={props.input} onChange={(event) => props.setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void props.onAppend(); } }} placeholder="说点什么……" /><div className="composer-actions"><button className="secondary" onClick={() => void props.onAppend()} disabled={props.busy || !props.input.trim()}>发送消息</button><button onClick={() => void props.onGenerate()} disabled={props.busy || !canGenerate}>生成回复</button></div></div>
   </section>;
 }
 
