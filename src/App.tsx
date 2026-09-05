@@ -860,6 +860,7 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
   const pinchRef = useRef({ distance: 0, zoom: 1, contentX: 0, contentY: 0 });
   const graphSurfaceRef = useRef<SVGSVGElement>(null);
   const hotspotSurfaceRef = useRef<HTMLDivElement>(null);
+  const mapCanvasRef = useRef<HTMLDivElement>(null);
   const [editorMode, setEditorMode] = useState(false);
   const [editorPos, setEditorPos] = useState<{ x: number; y: number } | null>(null);
   const [editorNodeId, setEditorNodeId] = useState<string | null>(null);
@@ -937,6 +938,19 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
   const endPan = (event: PointerEvent<HTMLDivElement>) => { pointersRef.current.delete(event.pointerId); if (pointersRef.current.size < 2) pinchRef.current.distance = 0; if (dragRef.current.pointerId === event.pointerId) dragRef.current.pointerId = -1; };
   const changeZoom = (delta: number) => setZoom((value) => Math.max(0.65, Math.min(2.5, Number((value + delta).toFixed(2)))));
   const resetViewport = () => { setZoom(1); setOffset({ x: 0, y: 0 }); };
+  const centerCurrentNode = () => {
+    if (!currentNode || !mapCanvasRef.current) return;
+    const canvasRect = mapCanvasRef.current.getBoundingClientRect();
+    let screenX: number | undefined; let screenY: number | undefined;
+    if (map.view.mode === 'graph' && graphSurfaceRef.current) {
+      const matrix = graphSurfaceRef.current.getScreenCTM();
+      if (matrix) { const point = graphSurfaceRef.current.createSVGPoint(); point.x = currentNode.pos.x; point.y = currentNode.pos.y; const screenPoint = point.matrixTransform(matrix); screenX = screenPoint.x; screenY = screenPoint.y; }
+    } else if (map.view.mode === 'hotspot' && hotspotSurfaceRef.current) {
+      const surfaceRect = hotspotSurfaceRef.current.getBoundingClientRect(); screenX = surfaceRect.left + (currentNode.pos.x / map.view.size.w) * surfaceRect.width; screenY = surfaceRect.top + (currentNode.pos.y / map.view.size.h) * surfaceRect.height;
+    }
+    if (screenX === undefined || screenY === undefined) return;
+    setOffset((current) => ({ x: current.x + canvasRect.left + canvasRect.width / 2 - screenX!, y: current.y + canvasRect.top + canvasRect.height / 2 - screenY! }));
+  };
   const mapWheel = (event: WheelEvent<HTMLDivElement>) => {
     event.preventDefault(); const nextZoom = Math.max(0.65, Math.min(2.5, Number((zoom + (event.deltaY < 0 ? 0.1 : -0.1)).toFixed(2))));
     const rect = event.currentTarget.getBoundingClientRect(); const focalX = event.clientX - rect.left; const focalY = event.clientY - rect.top;
@@ -947,11 +961,11 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
     <div className="map-top-panel">
       <div className="map-toolbar"><div className="map-title"><h1>Tokimeki</h1><strong>{currentNode?.name ?? save.world.player.nodeId}</strong></div><div className="map-toolbar-meta"><span>第 {save.world.clock.day} 天 · {currentSlotName}</span><span>{map.view.mode === 'graph' ? 'Graph' : 'Hotspot'} · {Math.round(zoom * 100)}%</span></div></div>
       <details className="map-menu"><summary><span>地图工具{editorMode ? ' · 编辑中' : ''}</span><span>点击展开</span></summary><div className="map-menu-content">
-        <div className="map-controls"><button className={editorMode ? '' : 'secondary'} onClick={() => { setEditorMode((value) => !value); closeEditor(); }}>{editorMode ? '退出编辑地图' : '编辑地图'}</button><button className="secondary" onClick={onToggleMode}>切换到 {map.view.mode === 'graph' ? 'Hotspot' : 'Graph'}</button><label className="file-button">上传底图<input type="file" accept="image/*" onChange={(event) => void onImportBackground(event.target.files?.[0])} /></label><button className="secondary" onClick={() => void onGenerateMap(requirements)} disabled={mapGenerating}>{mapGenerating ? '正在生成地图…' : 'AI 生成地图'}</button><button className="secondary" onClick={() => setZoom((value) => Math.min(2.5, Number((value + 0.1).toFixed(2))))}>放大</button><button className="secondary" onClick={() => setZoom((value) => Math.max(0.65, Number((value - 0.1).toFixed(2))))}>缩小</button><button className="secondary" onClick={resetViewport}>重置视野</button></div>
+        <div className="map-controls"><button className={editorMode ? '' : 'secondary'} onClick={() => { setEditorMode((value) => !value); closeEditor(); }}>{editorMode ? '退出编辑地图' : '编辑地图'}</button><button className="secondary" onClick={onToggleMode}>切换到 {map.view.mode === 'graph' ? 'Hotspot' : 'Graph'}</button><label className="file-button">上传底图<input type="file" accept="image/*" onChange={(event) => void onImportBackground(event.target.files?.[0])} /></label><button className="secondary" onClick={() => void onGenerateMap(requirements)} disabled={mapGenerating}>{mapGenerating ? '正在生成地图…' : 'AI 生成地图'}</button><button className="secondary" onClick={() => setZoom((value) => Math.min(2.5, Number((value + 0.1).toFixed(2))))}>放大</button><button className="secondary" onClick={() => setZoom((value) => Math.max(0.65, Number((value - 0.1).toFixed(2))))}>缩小</button><button className="secondary" onClick={centerCurrentNode}>回到当前位置</button><button className="secondary" onClick={resetViewport}>重置视野</button></div>
         <div className="map-generation-panel"><label>地图生成要求<textarea value={requirements} onChange={(event) => setRequirements(event.target.value)} placeholder="例如：沿海小镇，包含车站、海边和一处适合夜晚散步的地点。" /></label><div className="map-expand-row"><label>从地点扩展<select value={anchorNodeId} onChange={(event) => setAnchorNodeId(event.target.value)}>{nodes.map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label><label>新增数量<input type="number" min="1" max="8" value={expandCount} onChange={(event) => setExpandCount(event.target.value)} /></label><button className="secondary" onClick={() => void onExpandMap(anchorNodeId, Math.max(1, Math.min(8, Number(expandCount) || 1)), requirements)} disabled={mapGenerating || !anchorNodeId}>扩展地点</button></div></div>
       </div></details>
     </div>
-    <div className="map-canvas" onClick={handleMapCanvasClick} onWheel={mapWheel} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
+    <div ref={mapCanvasRef} className="map-canvas" onClick={handleMapCanvasClick} onWheel={mapWheel} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
       {map.view.mode === 'graph' ? <svg ref={graphSurfaceRef} className={`map-svg ${editorMode ? 'editing' : ''}`} style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: '0 0' }} viewBox={`0 0 ${map.view.size.w} ${map.view.size.h}`} role="img" aria-label="世界地图">
         <g className="map-edges">{map.edges.map((edge) => { const from = map.nodes[edge.from]; const to = map.nodes[edge.to]; if (!from || !to) return null; const visible = from.discovered || to.discovered; return <line key={edgeKey(edge)} className={visible ? '' : 'fog'} x1={from.pos.x} y1={from.pos.y} x2={to.pos.x} y2={to.pos.y} />; })}</g>
         <g className="map-nodes">{nodes.map((node) => { const isCurrent = node.id === save.world.player.nodeId; const canSelect = node.discovered && !isCurrent; return <g key={node.id} className={`map-node ${node.discovered ? 'discovered' : 'undiscovered'} ${isCurrent ? 'current' : ''}`} role={editorMode || canSelect ? 'button' : undefined} tabIndex={editorMode || canSelect ? 0 : undefined} onClick={(event) => { event.stopPropagation(); if (editorMode) beginEditNode(node.id); else if (canSelect && !dragRef.current.moved) onMove(node.id); }} onKeyDown={(event) => { if ((editorMode || canSelect) && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); if (editorMode) beginEditNode(node.id); else onMove(node.id); } }}><circle cx={node.pos.x} cy={node.pos.y} r={isCurrent ? 22 : 18} /><text x={node.pos.x} y={node.pos.y + 42} textAnchor="middle">{node.discovered ? node.name : '未发现地点'}</text>{isCurrent && <text className="map-node-marker" x={node.pos.x} y={node.pos.y + 5} textAnchor="middle">你</text>}</g>; })}</g>
@@ -970,7 +984,7 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
         <div className="button-row"><button onClick={saveEditorNode} disabled={!editorName.trim() || !editorRegionId || (!editorNodeId && !editorAnchorId)}>保存地点</button><button className="secondary" onClick={() => setEditorPos(null)}>重新选位置</button>{editorNodeId && <button className="danger" onClick={deleteEditorNode} disabled={editorNodeId === save.world.player.nodeId}>删除地点</button>}<button className="secondary" onClick={closeEditor}>取消</button></div>
       </div>}
     </div>
-    <div className="place-card"><span className="eyebrow">当前位置</span><h2>{currentNode?.name ?? save.world.player.nodeId}</h2><p>{currentNode?.description ?? '从地图出发，去遇见今天的世界。'}</p><div className="button-row"><button onClick={onOpenChat}>打开聊天</button>{currentNode && <span className="map-meta">访问 {currentNode.visitCount} 次</span>}</div></div>
+    <div className="place-card"><span className="eyebrow">当前位置</span><h2>{currentNode?.name ?? save.world.player.nodeId}</h2><p>{currentNode?.description ?? '从地图出发，去遇见今天的世界。'}</p>{currentNode && <div className="place-details"><span>区域<strong>{map.regions[currentNode.regionId]?.name ?? currentNode.regionId}</strong></span><span>类型<strong>{currentNode.kind.length ? currentNode.kind.join('、') : '未分类'}</strong></span><span>开放<strong>{currentNode.openSlots?.length ? currentNode.openSlots.map((id) => save.config.calendar.slots.find((slot) => slot.id === id)?.name ?? id).join('、') : '始终开放'}</strong></span></div>}<div className="button-row"><button onClick={onOpenChat}>打开聊天</button>{currentNode && <span className="map-meta">访问 {currentNode.visitCount} 次</span>}</div></div>
   </section>;
 }
 
