@@ -835,7 +835,7 @@ export function App() {
     {tab !== 'map' && <header className="topbar"><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small><h1>Tokimeki</h1></div></header>}
     <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''} ${tab === 'map' ? 'map-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
-      {tab === 'map' && <MapView save={save} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
+      {tab === 'map' && <MapView save={save} worldbooks={worldbooks} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
       {tab === 'chat' && <ChatView characters={characters} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} presetBundleName={presetBundleName} setPresetBundleName={setPresetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} />}
@@ -845,7 +845,7 @@ export function App() {
   </div>;
 }
 
-function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, onCreateNode, onEditNode, onDeleteNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating }: { save: SaveFile; onMove: (nodeId: string) => void; onOpenChat: () => void; onImportBackground: (file?: File) => Promise<void>; onToggleMode: () => void; onCreateNode: (input: CreateMapNodeInput) => boolean; onEditNode: (nodeId: string, input: UpdateMapNodeInput) => boolean; onDeleteNode: (nodeId: string) => boolean; onSuggestNode: (input: { requirements: string; regionName: string; anchorName: string }) => Promise<{ name: string; description: string } | null>; onGenerateMap: (requirements?: string) => Promise<void>; onExpandMap: (anchorNodeId: string, count: number, requirements?: string) => Promise<void>; mapGenerating: boolean }) {
+function MapView({ save, worldbooks, onMove, onOpenChat, onImportBackground, onToggleMode, onCreateNode, onEditNode, onDeleteNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating }: { save: SaveFile; worldbooks: WorldbookEntry[]; onMove: (nodeId: string) => void; onOpenChat: () => void; onImportBackground: (file?: File) => Promise<void>; onToggleMode: () => void; onCreateNode: (input: CreateMapNodeInput) => boolean; onEditNode: (nodeId: string, input: UpdateMapNodeInput) => boolean; onDeleteNode: (nodeId: string) => boolean; onSuggestNode: (input: { requirements: string; regionName: string; anchorName: string }) => Promise<{ name: string; description: string } | null>; onGenerateMap: (requirements?: string) => Promise<void>; onExpandMap: (anchorNodeId: string, count: number, requirements?: string) => Promise<void>; mapGenerating: boolean }) {
   const map = save.world.map;
   const currentNode = map.nodes[save.world.player.nodeId];
   const nodes = Object.values(map.nodes);
@@ -873,6 +873,7 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
   const [editorDiscovered, setEditorDiscovered] = useState(true);
   const [editorTravelSlots, setEditorTravelSlots] = useState('1');
   const [editorRequirements, setEditorRequirements] = useState('');
+  const [editorWorldbookIds, setEditorWorldbookIds] = useState<string[]>([]);
   useEffect(() => {
     let objectUrl: string | undefined;
     let cancelled = false;
@@ -899,10 +900,10 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
     const surface = map.view.mode === 'graph' ? graphSurfaceRef.current : hotspotSurfaceRef.current;
     if (surface) setEditorPos(pointOnMap(event.clientX, event.clientY, surface));
   };
-  const closeEditor = () => { setEditorPos(null); setEditorNodeId(null); setEditorName(''); setEditorDescription(''); setEditorKind(''); setEditorOpenSlots([]); setEditorRequirements(''); };
+  const closeEditor = () => { setEditorPos(null); setEditorNodeId(null); setEditorName(''); setEditorDescription(''); setEditorKind(''); setEditorOpenSlots([]); setEditorRequirements(''); setEditorWorldbookIds([]); };
   const beginEditNode = (nodeId: string) => {
     const node = map.nodes[nodeId]; if (!node) return;
-    setEditorNodeId(nodeId); setEditorPos(node.pos); setEditorName(node.name); setEditorDescription(node.description ?? ''); setEditorRegionId(node.regionId); setEditorAnchorId(currentNode?.id ?? nodes[0]?.id ?? ''); setEditorKind(node.kind.join(', ')); setEditorOpenSlots(node.openSlots ?? []); setEditorDiscovered(node.discovered); setEditorRequirements('');
+    setEditorNodeId(nodeId); setEditorPos(node.pos); setEditorName(node.name); setEditorDescription(node.description ?? ''); setEditorRegionId(node.regionId); setEditorAnchorId(currentNode?.id ?? nodes[0]?.id ?? ''); setEditorKind(node.kind.join(', ')); setEditorOpenSlots(node.openSlots ?? []); setEditorWorldbookIds(node.worldbookIds.filter((id) => worldbooks.some((entry) => entry.id === id))); setEditorDiscovered(node.discovered); setEditorRequirements('');
   };
   const generateEditorText = async () => {
     const suggestion = await onSuggestNode({ requirements: editorRequirements.trim(), regionName: map.regions[editorRegionId]?.name ?? editorRegionId, anchorName: map.nodes[editorAnchorId]?.name ?? editorAnchorId });
@@ -910,7 +911,7 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
   };
   const saveEditorNode = () => {
     if (!editorPos) return;
-    const common = { name: editorName, description: editorDescription, regionId: editorRegionId, kind: editorKind.split(/[,，]/), openSlots: editorOpenSlots, discovered: editorDiscovered, pos: editorPos };
+    const common = { name: editorName, description: editorDescription, regionId: editorRegionId, kind: editorKind.split(/[,，]/), openSlots: editorOpenSlots, worldbookIds: editorWorldbookIds, discovered: editorDiscovered, pos: editorPos };
     const saved = editorNodeId ? onEditNode(editorNodeId, common) : onCreateNode({ ...common, anchorNodeId: editorAnchorId, travelSlots: Math.max(0, Math.floor(Number(editorTravelSlots) || 0)) });
     if (saved) { closeEditor(); setEditorMode(false); }
   };
@@ -980,6 +981,7 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
         <div className="map-editor-grid"><label>区域<select value={editorRegionId} onChange={(event) => setEditorRegionId(event.target.value)}>{Object.values(map.regions).map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}</select></label>{!editorNodeId && <label>连接到<select value={editorAnchorId} onChange={(event) => setEditorAnchorId(event.target.value)}>{nodes.map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label>}</div>
         <div className="map-editor-grid"><label>类型<input value={editorKind} onChange={(event) => setEditorKind(event.target.value)} placeholder="室内, 商业" /></label>{!editorNodeId && <label>跨区域移动成本<input type="number" min="0" step="1" value={editorTravelSlots} onChange={(event) => setEditorTravelSlots(event.target.value)} /></label>}</div>
         <fieldset><legend>开放时段（不选表示始终开放）</legend><div className="map-slot-options">{save.config.calendar.slots.map((slot) => <label key={slot.id}><input type="checkbox" checked={editorOpenSlots.includes(slot.id)} onChange={(event) => setEditorOpenSlots((items) => event.target.checked ? [...items, slot.id] : items.filter((id) => id !== slot.id))} />{slot.name}</label>)}</div></fieldset>
+        <fieldset><legend>进入地点时注入的世界书</legend>{worldbooks.length ? <div className="map-worldbook-options">{worldbooks.map((entry) => <label key={entry.id}><input type="checkbox" checked={editorWorldbookIds.includes(entry.id)} onChange={(event) => setEditorWorldbookIds((items) => event.target.checked ? [...items, entry.id] : items.filter((id) => id !== entry.id))} />{entry.name}</label>)}</div> : <p className="io-scope">暂无世界书，请先在资料页创建或导入。</p>}</fieldset>
         <label className="map-editor-check"><input type="checkbox" checked={editorDiscovered} onChange={(event) => setEditorDiscovered(event.target.checked)} />创建后立即显示</label>
         <div className="button-row"><button onClick={saveEditorNode} disabled={!editorName.trim() || !editorRegionId || (!editorNodeId && !editorAnchorId)}>保存地点</button><button className="secondary" onClick={() => setEditorPos(null)}>重新选位置</button>{editorNodeId && <button className="danger" onClick={deleteEditorNode} disabled={editorNodeId === save.world.player.nodeId}>删除地点</button>}<button className="secondary" onClick={closeEditor}>取消</button></div>
       </div>}

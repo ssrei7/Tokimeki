@@ -21,6 +21,7 @@ export interface CreateMapNodeInput {
   pos: { x: number; y: number };
   anchorNodeId: string;
   travelSlots: number;
+  worldbookIds?: string[];
 }
 
 export interface MapEditResult {
@@ -37,6 +38,7 @@ export interface UpdateMapNodeInput {
   openSlots?: string[];
   discovered: boolean;
   pos: { x: number; y: number };
+  worldbookIds?: string[];
 }
 
 export function createMapNode(map: MapState, input: CreateMapNodeInput): MapEditResult {
@@ -55,7 +57,7 @@ export function createMapNode(map: MapState, input: CreateMapNodeInput): MapEdit
     regionId: input.regionId,
     kind: [...new Set(input.kind.map((value) => value.trim()).filter(Boolean))],
     description: input.description?.trim() || undefined,
-    worldbookIds: [],
+    worldbookIds: [...new Set((input.worldbookIds ?? []).map((value) => value.trim()).filter(Boolean))],
     openSlots: input.openSlots?.length ? [...new Set(input.openSlots)] : undefined,
     discovered: input.discovered,
     visitCount: 0,
@@ -82,6 +84,7 @@ export function updateMapNode(map: MapState, nodeId: string, input: UpdateMapNod
     regionId: input.regionId,
     kind: [...new Set(input.kind.map((value) => value.trim()).filter(Boolean))],
     openSlots: input.openSlots?.length ? [...new Set(input.openSlots)] : undefined,
+    worldbookIds: input.worldbookIds ? [...new Set(input.worldbookIds.map((value) => value.trim()).filter(Boolean))] : existing.worldbookIds,
     discovered: input.discovered,
     pos: { x: Math.max(0, Math.min(map.view.size.w, input.pos.x)), y: Math.max(0, Math.min(map.view.size.h, input.pos.y)) },
   });

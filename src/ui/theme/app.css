@@ -52,8 +52,9 @@ button.danger { background: #fee4e2; color: #b42318; }
 .map-editor-card fieldset { margin: 0; padding: 8px; border: 1px solid #e4e8ef; border-radius: 7px; }
 .map-editor-card legend { padding: 0 4px; color: #667085; font-size: 11px; }
 .map-slot-options { display: flex; flex-wrap: wrap; gap: 8px 12px; }
-.map-slot-options label, .map-editor-check { display: inline-flex; grid-template-columns: auto 1fr; align-items: center; gap: 5px; }
-.map-slot-options input, .map-editor-check input { width: auto; }
+.map-worldbook-options { display: grid; gap: 7px; max-height: 120px; overflow-y: auto; }
+.map-slot-options label, .map-worldbook-options label, .map-editor-check { display: inline-flex; grid-template-columns: auto 1fr; align-items: center; gap: 5px; }
+.map-slot-options input, .map-worldbook-options input, .map-editor-check input { width: auto; }
 .map-svg { display: block; width: 100%; height: 100%; min-height: 430px; }
 .map-screen-host .map-svg { min-height: 0; }
 .map-edges line { stroke: #ffffff; stroke-width: 12; stroke-linecap: round; opacity: .9; }

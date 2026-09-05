@@ -50,12 +50,13 @@ describe('deterministic map movement', () => {
 
   it('creates a validated map node and connecting edge with a unique id', () => {
     const world = worldWithMap();
-    const first = createMapNode(world.map, { name: '海边咖啡馆', description: '可以看海。', regionId: 'start-region', kind: ['indoor', 'cafe'], openSlots: ['morning'], discovered: true, pos: { x: 1200, y: -20 }, anchorNodeId: 'start', travelSlots: 1 });
+    const first = createMapNode(world.map, { name: '海边咖啡馆', description: '可以看海。', regionId: 'start-region', kind: ['indoor', 'cafe'], openSlots: ['morning'], worldbookIds: ['coast-lore', 'coast-lore'], discovered: true, pos: { x: 1200, y: -20 }, anchorNodeId: 'start', travelSlots: 1 });
     const second = createMapNode(world.map, { name: '海边咖啡馆', regionId: 'start-region', kind: [], discovered: false, pos: { x: 400, y: 200 }, anchorNodeId: 'start', travelSlots: 0 });
     expect(first).toEqual({ ok: true, nodeId: '海边咖啡馆' });
     expect(second).toEqual({ ok: true, nodeId: '海边咖啡馆-2' });
     expect(world.map.nodes['海边咖啡馆'].pos).toEqual({ x: 1000, y: 0 });
     expect(world.map.nodes['海边咖啡馆'].openSlots).toEqual(['morning']);
+    expect(world.map.nodes['海边咖啡馆'].worldbookIds).toEqual(['coast-lore']);
     expect(world.map.edges.at(-2)).toEqual({ from: 'start', to: '海边咖啡馆', travelSlots: 1 });
   });
 
@@ -75,6 +76,8 @@ describe('deterministic map movement', () => {
     expect(world.map.nodes.market.name).toBe('中央市场');
     expect(world.map.nodes.market.worldbookIds).toEqual(['market-lore']);
     expect(world.map.nodes.market.openSlots).toEqual(['noon']);
+    expect(updateMapNode(world.map, 'market', { name: '中央市场', regionId: 'start-region', kind: [], worldbookIds: ['new-lore'], discovered: true, pos: { x: 320, y: 280 } }).ok).toBe(true);
+    expect(world.map.nodes.market.worldbookIds).toEqual(['new-lore']);
   });
 
   it('deletes only safe non-current nodes and their connected edges', () => {
