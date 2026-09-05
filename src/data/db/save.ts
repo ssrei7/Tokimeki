@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import { migrateSave } from '../migrations';
 import { SaveFileSchema, type SaveFile } from '../schema/save';
 
 export const DEFAULT_SNAPSHOT_LIMIT = 7;
@@ -30,7 +31,7 @@ export const saveDb = new SaveDatabase();
 
 export async function loadCurrentSave(): Promise<SaveFile | undefined> {
   const record = await saveDb.current.get('current');
-  return record ? SaveFileSchema.parse(record.save) : undefined;
+  return record ? migrateSave(record.save) : undefined;
 }
 
 export async function saveCurrentSave(save: SaveFile): Promise<void> {

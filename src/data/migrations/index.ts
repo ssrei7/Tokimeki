@@ -3,7 +3,7 @@ import { migrateV0ToV1 } from './v0-to-v1';
 import { migrateV1ToV2 } from './v1-to-v2';
 import { migrateV2ToV3 } from './v2-to-v3';
 import { migrateV3ToV4 } from './v3-to-v4';
-import { migrateV4ToV5 } from './v4-to-v5';
+import { migrateV4ToV5, repairLegacyV5Save } from './v4-to-v5';
 import { MigrationError, UnsupportedSchemaVersionError, type Migration } from './types';
 
 export const migrations: Record<number, Migration> = {
@@ -37,5 +37,5 @@ export function migrateSave(input: unknown): SaveFile {
     version = targetVersion;
   }
 
-  return SaveFileSchema.parse(current);
+  return SaveFileSchema.parse(version === CURRENT_SCHEMA_VERSION ? repairLegacyV5Save(current) : current);
 }

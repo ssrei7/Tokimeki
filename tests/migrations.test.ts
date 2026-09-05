@@ -50,4 +50,27 @@ describe('save migrations', () => {
   it('rejects malformed migrated data with field-level validation errors', () => {
     expect(() => migrateSave({ schemaVersion: CURRENT_SCHEMA_VERSION, world: {} })).toThrow();
   });
+
+  it('expands the legacy one-slot calendar when migrating to v5', () => {
+    const migrated = migrateSave({
+      schemaVersion: 4,
+      meta: { id: 'legacy-calendar', title: 'Legacy calendar', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', appVersion: '0.0.1' },
+      config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }], daysPerWeek: 7, weekdayNames: ['一', '二', '三', '四', '五', '六', '日'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12 },
+      world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: '旧玩家', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map: { regions: { 'start-region': { id: 'start-region', name: '起点街区' } }, nodes: { start: { id: 'start', name: '起点街区', regionId: 'start-region', kind: ['outdoor'], worldbookIds: [], discovered: true, visitCount: 0, memories: [], pos: { x: 500, y: 350 } } }, edges: [], view: { mode: 'graph', size: { w: 1000, h: 700 } } }, diary: [], settlements: [] },
+    });
+    expect(migrated.config.calendar.slots.map((slot) => slot.id)).toHaveLength(6);
+    expect(migrated.config.calendar.slots.map((slot) => slot.id)).toContain('evening');
+  });
+
+  it('repairs an already-v5 legacy save without changing its schema version', () => {
+    const source = migrateSave({
+      schemaVersion: 4,
+      meta: { id: 'legacy-v5-calendar', title: 'Legacy v5 calendar', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', appVersion: '0.0.1' },
+      config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }], daysPerWeek: 7, weekdayNames: ['一', '二', '三', '四', '五', '六', '日'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12 },
+      world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: '旧玩家', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map: { regions: { 'start-region': { id: 'start-region', name: '起点街区' } }, nodes: { start: { id: 'start', name: '起点街区', regionId: 'start-region', kind: ['outdoor'], worldbookIds: [], discovered: true, visitCount: 0, memories: [], pos: { x: 500, y: 350 } } }, edges: [], view: { mode: 'graph', size: { w: 1000, h: 700 } } }, diary: [], settlements: [] },
+    });
+    const repaired = migrateSave({ ...source, config: { ...source.config, calendar: { ...source.config.calendar, slots: [source.config.calendar.slots[0]] } } });
+    expect(repaired.schemaVersion).toBe(5);
+    expect(repaired.config.calendar.slots).toHaveLength(6);
+  });
 });
