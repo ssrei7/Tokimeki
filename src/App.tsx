@@ -816,7 +816,7 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const dragRef = useRef({ pointerId: -1, startX: 0, startY: 0, originX: 0, originY: 0, moved: false });
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
-  const pinchRef = useRef({ distance: 0, zoom: 1 });
+  const pinchRef = useRef({ distance: 0, zoom: 1, contentX: 0, contentY: 0 });
   useEffect(() => {
     let objectUrl: string | undefined;
     let cancelled = false;
@@ -842,7 +842,8 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pointersRef.current.size >= 2) {
       const points = [...pointersRef.current.values()]; const dx = points[0].x - points[1].x; const dy = points[0].y - points[1].y;
-      pinchRef.current = { distance: Math.max(1, Math.hypot(dx, dy)), zoom }; dragRef.current.pointerId = -1; return;
+      const rect = event.currentTarget.getBoundingClientRect(); const centerX = (points[0].x + points[1].x) / 2 - rect.left; const centerY = (points[0].y + points[1].y) / 2 - rect.top;
+      pinchRef.current = { distance: Math.max(1, Math.hypot(dx, dy)), zoom, contentX: (centerX - offset.x) / zoom, contentY: (centerY - offset.y) / zoom }; dragRef.current.pointerId = -1; return;
     }
     if (event.button !== 0) return;
     dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: offset.x, originY: offset.y, moved: false }; event.currentTarget.setPointerCapture(event.pointerId);
@@ -851,14 +852,20 @@ function MapView({ save, onMove, onOpenChat, onImportBackground, onToggleMode, o
     if (pointersRef.current.has(event.pointerId)) pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pointersRef.current.size >= 2 && pinchRef.current.distance > 0) {
       const points = [...pointersRef.current.values()]; const dx = points[0].x - points[1].x; const dy = points[0].y - points[1].y;
-      setZoom(Math.max(0.65, Math.min(2.5, Number((pinchRef.current.zoom * Math.hypot(dx, dy) / pinchRef.current.distance).toFixed(2))))); return;
+      const rect = event.currentTarget.getBoundingClientRect(); const centerX = (points[0].x + points[1].x) / 2 - rect.left; const centerY = (points[0].y + points[1].y) / 2 - rect.top;
+      const nextZoom = Math.max(0.65, Math.min(2.5, Number((pinchRef.current.zoom * Math.hypot(dx, dy) / pinchRef.current.distance).toFixed(2))));
+      setZoom(nextZoom); setOffset({ x: centerX - pinchRef.current.contentX * nextZoom, y: centerY - pinchRef.current.contentY * nextZoom }); return;
     }
     if (dragRef.current.pointerId !== event.pointerId) return; const dx = event.clientX - dragRef.current.startX; const dy = event.clientY - dragRef.current.startY; if (Math.abs(dx) + Math.abs(dy) > 4) dragRef.current.moved = true; setOffset({ x: dragRef.current.originX + dx, y: dragRef.current.originY + dy });
   };
   const endPan = (event: PointerEvent<HTMLDivElement>) => { pointersRef.current.delete(event.pointerId); if (pointersRef.current.size < 2) pinchRef.current.distance = 0; if (dragRef.current.pointerId === event.pointerId) dragRef.current.pointerId = -1; };
   const changeZoom = (delta: number) => setZoom((value) => Math.max(0.65, Math.min(2.5, Number((value + delta).toFixed(2)))));
   const resetViewport = () => { setZoom(1); setOffset({ x: 0, y: 0 }); };
-  const mapWheel = (event: WheelEvent<HTMLDivElement>) => { event.preventDefault(); changeZoom(event.deltaY < 0 ? 0.1 : -0.1); };
+  const mapWheel = (event: WheelEvent<HTMLDivElement>) => {
+    event.preventDefault(); const nextZoom = Math.max(0.65, Math.min(2.5, Number((zoom + (event.deltaY < 0 ? 0.1 : -0.1)).toFixed(2))));
+    const rect = event.currentTarget.getBoundingClientRect(); const focalX = event.clientX - rect.left; const focalY = event.clientY - rect.top;
+    setOffset((current) => ({ x: focalX - ((focalX - current.x) / zoom) * nextZoom, y: focalY - ((focalY - current.y) / zoom) * nextZoom })); setZoom(nextZoom);
+  };
   return <section className="map-screen">
     <div className="map-toolbar"><div><span className="eyebrow">世界地图</span><h2>{currentNode?.name ?? save.world.player.nodeId}</h2></div><span className="io-scope">{map.view.mode === 'graph' ? 'Graph' : 'Hotspot'}</span></div>
     <div className="map-controls"><button className="secondary" onClick={onToggleMode}>切换到 {map.view.mode === 'graph' ? 'Hotspot' : 'Graph'}</button><label className="file-button">上传底图<input type="file" accept="image/*" onChange={(event) => void onImportBackground(event.target.files?.[0])} /></label><button className="secondary" onClick={() => void onGenerateMap(requirements)} disabled={mapGenerating}>{mapGenerating ? '正在生成地图…' : 'AI 生成地图'}</button><button className="secondary" onClick={() => setZoom((value) => Math.min(2.5, Number((value + 0.1).toFixed(2))))}>放大</button><button className="secondary" onClick={() => setZoom((value) => Math.max(0.65, Number((value - 0.1).toFixed(2))))}>缩小</button><button className="secondary" onClick={resetViewport}>重置视野</button></div>

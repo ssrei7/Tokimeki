@@ -53,10 +53,25 @@ describe('map generation parser', () => {
     expect(expanded.regions.suburb.name).toBe('郊外');
   });
 
-  it('rejects duplicate ids and disconnected expansions', () => {
+  it('rejects responses without the requested new ids and disconnected expansions', () => {
     const existing = parseGeneratedMap(JSON.stringify(generatedPayload()), 'start');
-    expect(() => parseGeneratedMapExpansion(JSON.stringify({ nodes: [{ id: 'node-1', name: '重复', regionId: 'town', pos: { x: 1, y: 1 } }], edges: [] }), existing, 'start', 1)).toThrow('已存在');
+    expect(() => parseGeneratedMapExpansion(JSON.stringify({ nodes: [{ id: 'node-1', name: '重复', regionId: 'town', pos: { x: 1, y: 1 } }], edges: [] }), existing, 'start', 1)).toThrow('新地点为 0 个');
     expect(() => parseGeneratedMapExpansion(JSON.stringify({ nodes: [{ id: 'far', name: '孤岛', regionId: 'town', pos: { x: 1, y: 1 } }], edges: [] }), existing, 'start', 1)).toThrow('没有连到指定锚点');
+  });
+
+  it('extracts only new locations when the model returns the full existing map', () => {
+    const existingPayload = generatedPayload();
+    const existing = parseGeneratedMap(JSON.stringify(existingPayload), 'start');
+    const returnedNodes = [...existingPayload.nodes, { id: 'market', name: '市场', regionId: 'town', kind: ['outdoor'], pos: { x: 950, y: 260 } }];
+    const expanded = parseGeneratedMapExpansion(JSON.stringify({
+      regions: existingPayload.regions,
+      nodes: returnedNodes,
+      edges: [...existingPayload.edges, { from: 'start', to: 'market', travelSlots: 1 }],
+    }), existing, 'start', 1);
+    expect(Object.keys(expanded.nodes)).toHaveLength(Object.keys(existing.nodes).length + 1);
+    expect(expanded.nodes.market.name).toBe('市场');
+    expect(expanded.nodes.start).toEqual(existing.nodes.start);
+    expect(expanded.edges).toHaveLength(existing.edges.length + 1);
   });
 
   it('accepts common expansion aliases and derives a safe chain when edges are omitted', () => {
