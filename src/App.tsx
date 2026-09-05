@@ -1116,7 +1116,6 @@ function ChatView(props: {
   const followLatestRef = useRef(true);
   const previousCharacterIdRef = useRef(props.selectedCharacterId);
   const [showOlderMessages, setShowOlderMessages] = useState(false);
-  const statusText = props.requestStatus === 'requesting' ? '等待回复…' : props.requestStatus === 'generating' ? '正在生成…' : props.requestStatus === 'error' ? '请求失败' : '';
   const canGenerate = canGenerateReply(props.messages, props.input);
   const latestMessage = props.messages.at(-1)?.content;
   const latestRole = props.messages.at(-1)?.role;
@@ -1176,7 +1175,6 @@ function ChatView(props: {
   }, [latestRole, props.busy]);
 
   return <section className="chat-screen vn-chat-screen">
-    <div className="section-heading"><div><h2>{characterName}</h2></div>{statusText && <span className={`request-status ${props.requestStatus}`}>{statusText}</span>}</div>
     <div className="character-picker"><select aria-label="聊天角色" value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">当前地点无人</option>{props.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
     <div className="vn-stage" style={{ '--vn-accent': accentColor } as CSSProperties}>
       <div className="vn-portrait-area" aria-label={`${characterName}的立绘`}>

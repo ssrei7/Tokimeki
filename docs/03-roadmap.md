@@ -272,6 +272,7 @@
 - 已用话题不置灰，返回 `usedResponse` 敷衍变体
 - daily 树跨天重生成，story 树永久保留
 - 自由输入与按钮并存，允许 AI 反向 `unlock_topic`
+- 告别与挽留：玩家可以主动告别；角色也可基于当前处境提出离开，玩家可在输入框自由编辑挽留、转移话题或无视并放任对方离开；结果由内核记录，不消耗行动点
 - 多轴关系 `AxisDef` + `StageRule` + 阶段标签派生
 - `mood`（词 + 衰减天数）+ `situation` + `lastSeenDay` → "已 N 天未见"
 - `Knot` 心结，不处理则持续存在
@@ -295,6 +296,7 @@
 8. 约好第 5 天傍晚在书店，到场为 kept，缺席为 missed 并有后果
 9. 隔 20 天再见，AI 自然处理久别情绪，且未引入任何新数值
 10. 结算页只有散文，开 `showNumbers` 才出现数字
+11. 角色提出要离开时，玩家可以用自由输入尝试挽留，也可以无视并放任离开；两条结果可追踪且不消耗行动点
 
 **schema**：v6 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `relations` 全字段 / `characters[].giftPrefs`
 
