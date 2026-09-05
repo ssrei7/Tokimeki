@@ -11,6 +11,7 @@ button.danger { background: #fee4e2; color: #b42318; }
 .topbar > div { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .topbar h1, h2, h3, p { margin: 0; }
 .topbar h1 { font-size: 16px; }
+.topbar-context { color: #667085; font-size: 14px; font-weight: 500; }
 .topbar small, .eyebrow { color: #738096; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
 .screen { flex: 1; min-height: 0; padding: 16px 16px 92px; overflow: auto; }
 .screen.chat-screen-host { display: flex; flex-direction: column; overflow: hidden; }
@@ -126,8 +127,8 @@ button.danger { background: #fee4e2; color: #b42318; }
 .vn-portrait-empty { width: min(100%, 360px); height: 100%; min-height: 80px; }
 .vn-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px 12px; }
 .vn-choices button { min-height: 40px; font-size: 12px; }
-.vn-dialogue-box { flex: 0 0 min(44%, 300px); min-height: 160px; overflow: hidden; border-top: 1px solid #d7dce5; background: #fffffff2; }
-.vn-dialogue-log { gap: 8px; padding: 12px; }
+.vn-dialogue-box { display: flex; flex: 0 0 min(44%, 300px); min-height: 160px; flex-direction: column; overflow: hidden; border-top: 1px solid #d7dce5; background: #fffffff2; }
+.vn-dialogue-log { flex: 1 1 auto; gap: 8px; min-height: 0; padding: 12px; touch-action: pan-y; scrollbar-width: thin; }
 .vn-line { display: grid; gap: 3px; max-width: 100%; padding: 8px 10px; border-left: 3px solid var(--vn-accent); background: #f8fafc; white-space: pre-wrap; line-height: 1.5; }
 .vn-line.user { border-left-color: #315efb; background: #eff4ff; }
 .vn-line.system { border-left-color: transparent; background: transparent; color: #667085; font-style: italic; }
@@ -186,8 +187,8 @@ button.danger { background: #fee4e2; color: #b42318; }
 .request-status.requesting, .request-status.generating { color: #b54708; }
 .request-status.success { color: #027a48; }
 .request-status.error { color: #b42318; }
-.character-picker { margin: 12px 0; }
-.character-picker label { display: grid; gap: 6px; color: #475467; font-size: 13px; }
+.character-picker { margin: 4px 0 8px; }
+.character-picker select { min-height: 40px; padding: 7px 10px; font-size: 12px; }
 .ops-recovery { display: grid; gap: 8px; margin: 12px 0; padding: 12px; border: 1px solid #fecdca; border-radius: 8px; background: #fff8f7; color: #7a271a; }
 .ops-recovery p { color: #9b2c1f; font-size: 13px; line-height: 1.5; }
 .ops-recovery textarea { min-height: 88px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
