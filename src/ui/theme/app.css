@@ -127,10 +127,11 @@ button.danger { background: #fee4e2; color: #b42318; }
 .vn-portrait-empty { width: min(100%, 360px); height: 100%; min-height: 80px; }
 .vn-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px 12px; }
 .vn-choices button { min-height: 40px; font-size: 12px; }
-.vn-dialogue-box { display: flex; flex: 0 0 min(44%, 300px); min-height: 160px; flex-direction: column; overflow: hidden; border-top: 1px solid #d7dce5; background: #fffffff2; }
+.vn-dialogue-box { display: flex; flex: 0 0 min(30%, 200px); min-height: 108px; flex-direction: column; overflow: hidden; border-top: 1px solid #d7dce5; background: #fffffff2; }
 .vn-dialogue-log { flex: 1 1 auto; gap: 8px; min-height: 0; padding: 12px; touch-action: pan-y; scrollbar-width: thin; }
 .vn-line { display: grid; gap: 3px; max-width: 100%; padding: 8px 10px; border-left: 3px solid var(--vn-accent); background: #f8fafc; white-space: pre-wrap; line-height: 1.5; }
 .vn-line.user { border-left-color: #315efb; background: #eff4ff; }
+.vn-line.narration { border-left-color: transparent; background: transparent; color: #667085; font-style: italic; }
 .vn-line.system { border-left-color: transparent; background: transparent; color: #667085; font-style: italic; }
 .vn-speaker { color: var(--vn-accent); font-size: 11px; font-weight: 700; }
 .vn-line.user .vn-speaker { color: #315efb; }

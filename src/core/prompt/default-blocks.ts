@@ -27,7 +27,7 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
     { id: 'format_contract', role: 'system', priority: 100, order: 0, build: (facts) => {
       const presetBundle = factsOf(facts).presetBundle;
       const presetText = presetBundle?.entries.length ? `\n\n当前资料预设包「${presetBundle.name}」的全部条目：\n${presetBundle.entries.map((entry) => `[${entry.name}]\n${entry.systemPrompt}`).join('\n\n')}` : '';
-      return `你是开放世界叙事游戏中的角色。先输出自然语言正文。游戏状态只由确定性内核持有，不要声称提议已经生效。${presetText}${opContract}`;
+      return `你是开放世界叙事游戏中的角色。先输出自然语言正文。面对面场景中如需区分发言，请每行使用 [说话人:角色名] 台词；环境、动作或叙述请使用 [旁白] 内容；未标记正文须保持兼容并视为当前角色台词。游戏状态只由确定性内核持有，不要声称提议已经生效。${presetText}${opContract}`;
     } },
     { id: 'character_core', role: 'system', priority: 95, order: 1, build: (facts) => {
       const character = factsOf(facts).character;
