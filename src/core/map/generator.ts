@@ -50,6 +50,26 @@ export function parseGeneratedMap(text: string, currentNodeId: string): MapState
   };
 }
 
+export function parseGeneratedMapExpansion(text: string, existing: MapState, anchorNodeId: string, count: number): MapState {
+  if (!existing.nodes[anchorNodeId]) throw new Error(`扩展锚点不存在：${anchorNodeId}。`);
+  const parsed = GeneratedMapSchema.parse(extractJson(text));
+  const nodes = Array.isArray(parsed.nodes) ? parsed.nodes : Object.values(parsed.nodes);
+  const requested = Math.max(1, Math.min(8, Math.floor(count)));
+  if (nodes.length !== requested) throw new Error(`本次扩展应生成 ${requested} 个地点，当前为 ${nodes.length}。`);
+  const existingIds = new Set(Object.keys(existing.nodes));
+  for (const node of nodes) if (existingIds.has(node.id)) throw new Error(`扩展地点 ID 已存在：${node.id}。`);
+  const newIds = new Set(nodes.map((node) => node.id));
+  const regions = normalizeRegions(parsed.regions, nodes);
+  for (const node of nodes) if (!regions[node.regionId] && !existing.regions[node.regionId]) throw new Error(`节点 ${node.id} 引用了不存在的区域 ${node.regionId}。`);
+  const allNodeIds = new Set([...existingIds, ...newIds]);
+  for (const edge of parsed.edges) if (!allNodeIds.has(edge.from) || !allNodeIds.has(edge.to)) throw new Error(`扩展边 ${edge.from} → ${edge.to} 引用了不存在的节点。`);
+  const mergedEdges = [...existing.edges, ...parsed.edges];
+  if (!isExpansionConnected([...newIds], parsed.edges, anchorNodeId)) throw new Error('扩展地点没有连到指定锚点，无法合并。');
+  const nodeRecord: MapState['nodes'] = { ...existing.nodes };
+  for (const node of nodes) nodeRecord[node.id] = { ...node, discovered: node.discovered ?? false, visitCount: node.visitCount ?? 0, memories: node.memories };
+  return { ...existing, regions: { ...existing.regions, ...regions }, nodes: nodeRecord, edges: mergedEdges };
+}
+
 function extractJson(text: string): unknown {
   const trimmed = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   try { return JSON.parse(trimmed); } catch {
@@ -72,4 +92,12 @@ function isConnected(nodeIds: string[], edges: z.infer<typeof MapEdgeSchema>[]):
   const seen = new Set<string>(); const queue = [nodeIds[0]];
   while (queue.length) { const id = queue.shift()!; if (seen.has(id)) continue; seen.add(id); for (const next of adjacent.get(id) ?? []) if (!seen.has(next)) queue.push(next); }
   return seen.size === nodeIds.length;
+}
+
+function isExpansionConnected(newIds: string[], edges: z.infer<typeof MapEdgeSchema>[], anchorNodeId: string): boolean {
+  const adjacent = new Map<string, Set<string>>([[anchorNodeId, new Set<string>()], ...newIds.map((id) => [id, new Set<string>()] as const)]);
+  for (const edge of edges) { adjacent.get(edge.from)?.add(edge.to); adjacent.get(edge.to)?.add(edge.from); }
+  const seen = new Set<string>(); const queue = [anchorNodeId];
+  while (queue.length) { const id = queue.shift()!; if (seen.has(id)) continue; seen.add(id); for (const next of adjacent.get(id) ?? []) if (!seen.has(next)) queue.push(next); }
+  return newIds.every((id) => seen.has(id));
 }

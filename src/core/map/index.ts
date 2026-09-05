@@ -74,4 +74,4 @@ function rejected(warning: string): MapOperationResult {
   return { ok: false, changes: [], warning, cost: 0 };
 }
 
-export { parseGeneratedMap } from './generator';
+export { parseGeneratedMap, parseGeneratedMapExpansion } from './generator';
