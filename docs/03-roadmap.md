@@ -252,6 +252,7 @@
 10. 玩家离开地点时可以选择“离开”，或继续对方事件；两条路径的状态结果可追踪
 11. 同一地点在开放时段可触发正式进入范围的相遇，未开放时段只能触发附近外围相遇；判定纯本地完成
 12. 进入相遇后的面对面聊天页符合竖屏视觉小说壳：立绘区域独立、对话框固定在底部、选项位于中间；台词显示说话人，旁白不显示说话人
+13. 聊天记录支持 `kind` / `speakerId` 结构化行元数据；旧的纯文本和 `[说话人]` / `[旁白]` 标记继续兼容
 
 **schema**：v6 —— `config.encounter` / `characters[].schedule` / `characters[].visuals` / `world.npcs` / `world.npcTemplates` / `world.encounterLog` / `nodes[].memories` / `player.personaId`
 

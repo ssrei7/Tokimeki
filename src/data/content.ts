@@ -37,7 +37,14 @@ export const PresetBundleSchema = z.object({
 });
 export type PresetBundle = z.infer<typeof PresetBundleSchema>;
 
-export const ChatMessageSchema = z.object({ role: z.enum(['system', 'user', 'assistant']), content: z.string() });
+export const DialogueKindSchema = z.enum(['dialogue', 'narration']);
+export type DialogueKind = z.infer<typeof DialogueKindSchema>;
+export const ChatMessageSchema = z.object({
+  role: z.enum(['system', 'user', 'assistant']),
+  content: z.string(),
+  kind: DialogueKindSchema.optional(),
+  speakerId: Id.optional(),
+});
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export const ChatRecordSchema = z.object({ characterId: Id, messages: z.array(ChatMessageSchema), updatedAt: z.string().datetime() });
 export type ChatRecord = z.infer<typeof ChatRecordSchema>;

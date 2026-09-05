@@ -512,7 +512,7 @@ export function App() {
     const text = input.trim();
     if (!text || busy) return;
     if (!selectedCharacterId) { setFeedback({ tone: 'error', text: '请先选择聊天角色。' }); return; }
-    const next = [...messages, { role: 'user' as const, content: text }];
+    const next = [...messages, { role: 'user' as const, content: text, kind: 'dialogue' as const, speakerId: 'player' }];
     setMessages(next); setInput(''); setRequestStatus('idle');
     setFeedback({ tone: 'info', text: '消息已发送，点击“生成回复”后才会请求 API。' });
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
@@ -522,7 +522,7 @@ export function App() {
     if (busy) return;
     if (!selectedCharacterId) { setFeedback({ tone: 'error', text: '请先选择聊天角色。' }); return; }
     const text = input.trim();
-    const next = text ? [...messages, { role: 'user' as const, content: text }] : messages;
+    const next = text ? [...messages, { role: 'user' as const, content: text, kind: 'dialogue' as const, speakerId: 'player' }] : messages;
     if (!hasQueuedUserMessage(next) && next.length === 0) { setFeedback({ tone: 'error', text: '请先发送第一条消息。' }); return; }
     const routedProvider = mockFixtureId
       ? createMockProviderConfig(mockFixtureId)
@@ -1217,7 +1217,7 @@ function ChatView(props: {
       </div>
       {!quickReplySelected && <div className="vn-choices" aria-label="快速回应"><button className="secondary" onClick={() => { props.setInput('我点了点头。'); setQuickReplySelected(true); }}>点头回应</button><button className="secondary" onClick={() => { props.setInput('我先听你说。'); setQuickReplySelected(true); }}>先听你说</button></div>}
       <div className="vn-dialogue-box">
-        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && !showOlderMessages && <button className="history-toggle" onClick={() => setShowOlderMessages(true)}>查看更早的 {olderMessageCount} 条消息</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.flatMap((message, index) => splitDialogueMessage(message, characterName, props.playerLabel).map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${olderMessageCount + index}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>))}{props.busy && props.requestStatus === 'requesting' && <div className="vn-line dialogue assistant pending"><span className="vn-speaker">{characterName}</span><span className="vn-line-text">等待回复…</span></div>}</div>
+        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && !showOlderMessages && <button className="history-toggle" onClick={() => setShowOlderMessages(true)}>查看更早的 {olderMessageCount} 条消息</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.flatMap((message, index) => splitDialogueMessage(message, characterName, props.playerLabel, { player: props.playerLabel, [props.selectedCharacterId]: characterName }).map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${olderMessageCount + index}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>))}{props.busy && props.requestStatus === 'requesting' && <div className="vn-line dialogue assistant pending"><span className="vn-speaker">{characterName}</span><span className="vn-line-text">等待回复…</span></div>}</div>
       </div>
     </div>
     {props.pendingOps && <div className="ops-recovery" role="alert">
