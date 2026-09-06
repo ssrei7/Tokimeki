@@ -19,7 +19,7 @@ type Condition = string;   // expr-eval 表达式,禁止 eval
 - 时间坐标统一为 `(day, slotId)`，地点坐标统一为 `nodeId`。
 - 派生值（阶段标签、可达节点、当前在场者）可缓存但必须能重算，且不作为事实来源。
 
-`CURRENT_SCHEMA_VERSION = 5`
+`CURRENT_SCHEMA_VERSION = 7`
 
 ---
 
@@ -237,6 +237,7 @@ interface MapNode {
   memories: NodeMemory[];        // 上限 5
   pos: { x: number; y: number }; // graph 与 hotspot 共用
   parentNodeId?: NodeId;         // 子场景
+  sceneBackground?: AssetRef;    // 面对面聊天场景背景
 }
 
 interface MapEdge {

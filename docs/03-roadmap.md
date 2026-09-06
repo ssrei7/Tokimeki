@@ -12,12 +12,12 @@
 | 2 | 有一天 | 2.5 | v3 |
 | 3 | 有地方去 | 2.5 | v4 |
 | 4 | 有人可遇 | 2.5 | v6 |
-| 5 | 有事可做 | 3 | v7 |
-| 6 | 有方向 | 3 | v7 |
-| 7 | 有故事 | 3.5 | v8 |
-| 8 | 有生活 | 2.5 | v9 |
-| 9 | 有终端 | 2 | v10 |
-| 10 | 有生态 | 2.5 | v11 |
+| 5 | 有事可做 | 3 | v8 |
+| 6 | 有方向 | 3 | v9 |
+| 7 | 有故事 | 3.5 | v10 |
+| 8 | 有生活 | 2.5 | v11 |
+| 9 | 有终端 | 2 | v12 |
+| 10 | 有生态 | 2.5 | v13 |
 
 依赖链上有一条容易搞错：**时间先于地图，地图先于相遇**。没有时间系统支撑的地图只是一张死背景板。
 
@@ -258,7 +258,7 @@
 
 **边界**：地图底部相遇栏只负责触发进入事件，不等同于进入后的聊天场景。手机终端中的短气泡消息回复，以及联系人列表的“所在地点”字段，归入阶段 9「有终端」；阶段 4 只实现地图图钉头像、面对面场景立绘/头像回退和本地“谁在这里”地点事实。
 
-**后续切片**：地点场景背景图上传与相遇场景加载仍属于阶段 4 的后续工作。由于背景引用需要进入 `MapNode` 并随存档/导出包迁移，实施时应升级 schema（预计 v7）、附 migration 与测试后再接入编辑器和聊天场景；不能用临时 UI 状态替代持久化事实。
+**场景背景切片**：已完成。地点可在编辑器上传一张可选场景背景图，引用写入 `MapNode.sceneBackground`，并随 schema v7 存档、资产包导出/导入；进入面对面聊天时按当前位置加载，缺图时回退到主题背景。
 
 **玩家身份切片**：已完成。玩家可维护多个面具身份，但每个世界存档只绑定一个当前身份；该身份作为确定性事实进入提示词。旧存档的 `persona` 文本保留，并在设置页提供补创建/绑定入口。
 
@@ -301,7 +301,7 @@
 10. 结算页只有散文，开 `showNumbers` 才出现数字
 11. 角色提出要离开时，玩家可以用自由输入尝试挽留，也可以无视并放任离开；两条结果可追踪且不消耗行动点
 
-**schema**：v7 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `relations` 全字段 / `characters[].giftPrefs`
+**schema**：v8 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `relations` 全字段 / `characters[].giftPrefs`
 
 **做完**相遇从一次性对话变成可经营的关系。
 
@@ -332,7 +332,7 @@
 7. 喜欢的随机 NPC 转正后有完整卡、独立记忆与日程
 8. 20 个 NPC 时每日调用量不随 NPC 数增长
 
-**schema**：v7 —— `world.morning` / `npcs[].lightMemory`
+**schema**：v9 —— `world.morning` / `npcs[].lightMemory`
 
 **空沙盒问题在这一步解决。** 玩家每天早上知道今天可以去干什么了。
 
@@ -365,7 +365,7 @@
 7. `content` 型事件完全不调 API 也能触发
 8. 地点未开放时，正式进入范围事件不会触发，但同节点的附近外围事件仍可触发；开放时段恢复正式进入事件
 
-**schema**：v8 —— `world.eventDefs` / `world.director` / `world.chapters` / `world.milestones` / `world.eventHistory`
+**schema**：v10 —— `world.eventDefs` / `world.director` / `world.chapters` / `world.milestones` / `world.eventHistory`
 
 **做完**从随机生活变成有起承转合。
 
@@ -392,7 +392,7 @@
 6. 体力开启后不抬高理解门槛，可在设置里关掉
 7. 当无业游民也能玩下去，不会卡死
 
-**schema**：v9 —— `player.job` / `player.shop` / `player.homeNodeId`
+**schema**：v11 —— `player.job` / `player.shop` / `player.homeNodeId`
 
 **约束创造生活感。** 这一步之后"绝对自由导致空虚"的风险才真正解除。
 
@@ -419,7 +419,7 @@
 6. Android / iOS 浏览器或 PWA 切到后台再返回后，已输入和已发送内容不丢；被系统暂停或中止的生成请求可识别、可重试，不重复应用 ops
 7. 音频辅助开关默认关闭，请求结束或超过 90 秒自动停止；两端真机报告成功率与耗电影响，失败时仍能走状态恢复
 
-**schema**：v10 —— `world.flags` 内的终端解锁位 / 消息记录
+**schema**：v12 —— `world.flags` 内的终端解锁位 / 消息记录
 
 **性价比最高的模块**，本质是给聊天和设置换了个壳。可以插在阶段 5 之后任意时刻当奖励做。
 
@@ -446,7 +446,7 @@
 4. Tauri 版能直连此前被 CORS 拦截的 provider
 5. Android / iOS 能力报告明确列出浏览器、PWA 与移动端壳各自的后台限制；已实现的通知或后台任务在两端真机验证，系统不允许时可靠降级为阶段 9 的前台恢复
 
-**schema**：v11 —— 主题配置 / 资产引用扩展
+**schema**：v13 —— 主题配置 / 资产引用扩展
 
 ---
 

@@ -10,7 +10,7 @@ function worldWithMap(): WorldState {
   map.nodes.docks = { id: 'docks', name: '西码头', regionId: 'harbor-region', kind: ['outdoor'], worldbookIds: [], discovered: false, visitCount: 0, memories: [], pos: { x: 800, y: 300 } };
   map.edges.push({ from: 'start', to: 'market', travelSlots: 1 }, { from: 'market', to: 'docks', travelSlots: 2 });
   return SaveFileSchema.parse({
-    schemaVersion: 6,
+    schemaVersion: 7,
     meta: { id: 'map-test', title: '地图测试', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', appVersion: '0.0.1' },
     config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }, { id: 'noon', name: '中午', order: 1 }, { id: 'evening', name: '晚上', order: 2 }, { id: 'night', name: '深夜', order: 3 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12, encounter: { enabled: true, triggerOnLeave: true, leaveProbability: 0.35, guaranteeAfterDays: 3, maxParticipants: 3, weights: {} } },
     world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map, diary: [], settlements: [], characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [] },
@@ -50,13 +50,14 @@ describe('deterministic map movement', () => {
 
   it('creates a validated map node and connecting edge with a unique id', () => {
     const world = worldWithMap();
-    const first = createMapNode(world.map, { name: '海边咖啡馆', description: '可以看海。', regionId: 'start-region', kind: ['indoor', 'cafe'], openSlots: ['morning'], worldbookIds: ['coast-lore', 'coast-lore'], discovered: true, pos: { x: 1200, y: -20 }, anchorNodeId: 'start', travelSlots: 1 });
+    const first = createMapNode(world.map, { name: '海边咖啡馆', description: '可以看海。', regionId: 'start-region', kind: ['indoor', 'cafe'], openSlots: ['morning'], worldbookIds: ['coast-lore', 'coast-lore'], sceneBackground: { kind: 'url', url: 'https://example.test/cafe.webp' }, discovered: true, pos: { x: 1200, y: -20 }, anchorNodeId: 'start', travelSlots: 1 });
     const second = createMapNode(world.map, { name: '海边咖啡馆', regionId: 'start-region', kind: [], discovered: false, pos: { x: 400, y: 200 }, anchorNodeId: 'start', travelSlots: 0 });
     expect(first).toEqual({ ok: true, nodeId: '海边咖啡馆' });
     expect(second).toEqual({ ok: true, nodeId: '海边咖啡馆-2' });
     expect(world.map.nodes['海边咖啡馆'].pos).toEqual({ x: 1000, y: 0 });
     expect(world.map.nodes['海边咖啡馆'].openSlots).toEqual(['morning']);
     expect(world.map.nodes['海边咖啡馆'].worldbookIds).toEqual(['coast-lore']);
+    expect(world.map.nodes['海边咖啡馆'].sceneBackground).toEqual({ kind: 'url', url: 'https://example.test/cafe.webp' });
     expect(world.map.edges.at(-2)).toEqual({ from: 'start', to: '海边咖啡馆', travelSlots: 1 });
   });
 
@@ -70,12 +71,13 @@ describe('deterministic map movement', () => {
 
   it('updates editable node fields without changing its stable id', () => {
     const world = worldWithMap(); world.map.nodes.market.worldbookIds = ['market-lore'];
-    const result = updateMapNode(world.map, 'market', { name: '中央市场', description: '重新整修后的市场。', regionId: 'start-region', kind: ['commercial', 'indoor'], openSlots: ['noon'], discovered: false, pos: { x: 320, y: 280 } });
+    const result = updateMapNode(world.map, 'market', { name: '中央市场', description: '重新整修后的市场。', regionId: 'start-region', kind: ['commercial', 'indoor'], openSlots: ['noon'], sceneBackground: { kind: 'url', url: 'https://example.test/market.webp' }, discovered: false, pos: { x: 320, y: 280 } });
     expect(result).toEqual({ ok: true, nodeId: 'market' });
     expect(world.map.nodes.market.id).toBe('market');
     expect(world.map.nodes.market.name).toBe('中央市场');
     expect(world.map.nodes.market.worldbookIds).toEqual(['market-lore']);
     expect(world.map.nodes.market.openSlots).toEqual(['noon']);
+    expect(world.map.nodes.market.sceneBackground).toEqual({ kind: 'url', url: 'https://example.test/market.webp' });
     expect(updateMapNode(world.map, 'market', { name: '中央市场', regionId: 'start-region', kind: [], worldbookIds: ['new-lore'], discovered: true, pos: { x: 320, y: 280 } }).ok).toBe(true);
     expect(world.map.nodes.market.worldbookIds).toEqual(['new-lore']);
   });

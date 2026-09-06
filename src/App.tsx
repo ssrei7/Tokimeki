@@ -14,7 +14,7 @@ import { loadAsset, saveAsset } from './data/db/assets';
 import { listSnapshots, loadCurrentSave, loadSnapshot, saveCurrentSave, saveDailySnapshot, type SaveSnapshot } from './data/db/save';
 import { downsampleImage } from './data/assets/image';
 import { exportPresetBundle, exportSaveZip, importPresetBundle, importSaveZip } from './data/io/zip';
-import { createDefaultMap, DEFAULT_ACTION_COSTS, DEFAULT_SLOT_DEFS, SaveFileSchema, type SaveFile } from './data/schema/save';
+import { createDefaultMap, DEFAULT_ACTION_COSTS, DEFAULT_SLOT_DEFS, SaveFileSchema, type AssetRef, type SaveFile } from './data/schema/save';
 import { testProviderConnection } from './providers/connection-test';
 import { providerDb } from './providers/db';
 import { listProviderModels } from './providers/models';
@@ -80,7 +80,7 @@ function formatOpsDebug(reply: ParsedReply, applied: ApplyOpsResult, logs: strin
 }
 
 const defaultSave: SaveFile = SaveFileSchema.parse({
-  schemaVersion: 6,
+  schemaVersion: 7,
   meta: { id: 'local-save', title: '我的世界', createdAt: now(), updatedAt: now(), appVersion: '0.0.1' },
   config: { calendar: { slots: [...DEFAULT_SLOT_DEFS], daysPerWeek: 7, weekdayNames: ['一', '二', '三', '四', '五', '六', '日'], preset: 'standard', unlimitedSlots: false }, actionCosts: { ...DEFAULT_ACTION_COSTS }, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12, encounter: { enabled: true, triggerOnLeave: true, leaveProbability: 0.35, guaranteeAfterDays: 3, maxParticipants: 3, weights: {} } },
   world: {
@@ -345,6 +345,21 @@ export function App() {
     } catch (error) {
       setFeedback({ tone: 'error', text: errorMessage(error, '底图导入失败。') });
     }
+  }
+
+  async function importSceneBackground(nodeId: string, file?: File): Promise<void> {
+    if (!file) return;
+    try {
+      const node = saveRef.current.world.map.nodes[nodeId];
+      if (!node) throw new Error('地点不存在。');
+      const image = await downsampleImage(file);
+      const assetId = `scene-background-${nodeId}-${Date.now()}`;
+      await saveAsset({ id: assetId, blob: image.blob, mimeType: image.mimeType, width: image.width, height: image.height, createdAt: now() });
+      const next = structuredClone(saveRef.current);
+      next.world.map.nodes[nodeId].sceneBackground = { kind: 'stored', assetId };
+      commitSave(next);
+      setFeedback({ tone: 'success', text: `“${node.name}”的场景背景已保存（${image.width}×${image.height}，WebP）。` });
+    } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '场景背景导入失败。') }); }
   }
 
   function toggleMapMode(): void {
@@ -856,9 +871,9 @@ export function App() {
     const assetMeta: Record<string, { mimeType: string; width?: number; height?: number }> = {};
     if (includeChatsOnExport) extras.chats = await contentDb.chats.toArray();
     const assets: Record<string, Uint8Array> = {};
-    const background = saveRef.current.world.map.view.background;
-    if (background?.kind === 'stored') {
-      const asset = await loadAsset(background.assetId);
+    const assetRefs: AssetRef[] = [saveRef.current.world.map.view.background, ...Object.values(saveRef.current.world.map.nodes).map((node) => node.sceneBackground)].filter((ref): ref is AssetRef => Boolean(ref));
+    for (const ref of assetRefs) if (ref.kind === 'stored' && !assets[ref.assetId]) {
+      const asset = await loadAsset(ref.assetId);
       if (asset) { assets[asset.id] = new Uint8Array(await asset.blob.arrayBuffer()); assetMeta[asset.id] = { mimeType: asset.mimeType, width: asset.width, height: asset.height }; }
     }
     if (Object.keys(assetMeta).length) extras.assetMeta = assetMeta;
@@ -933,9 +948,9 @@ export function App() {
     {tab !== 'map' && <header className="topbar"><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small><h1>Tokimeki{tab === 'chat' && <span className="topbar-context"> · 面对面</span>}</h1></div></header>}
     <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''} ${tab === 'map' ? 'map-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
-      {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
+      {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacter={activeCharacter ? save.world.characters[activeCharacter.id] : undefined} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
+      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacter={activeCharacter ? save.world.characters[activeCharacter.id] : undefined} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} presetBundleName={presetBundleName} setPresetBundleName={setPresetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} />}
       {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} />}
     </main>
@@ -943,7 +958,7 @@ export function App() {
   </div>;
 }
 
-function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onContinueEncounter, onMove, onOpenChat, onImportBackground, onToggleMode, onCreateNode, onEditNode, onDeleteNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating }: { save: SaveFile; worldbooks: WorldbookEntry[]; activeEncounter: ActiveEncounter | null; onEncounterOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinueEncounter: () => void; onMove: (nodeId: string) => void; onOpenChat: () => void; onImportBackground: (file?: File) => Promise<void>; onToggleMode: () => void; onCreateNode: (input: CreateMapNodeInput) => boolean; onEditNode: (nodeId: string, input: UpdateMapNodeInput) => boolean; onDeleteNode: (nodeId: string) => boolean; onSuggestNode: (input: { requirements: string; regionName: string; anchorName: string }) => Promise<{ name: string; description: string } | null>; onGenerateMap: (requirements?: string) => Promise<void>; onExpandMap: (anchorNodeId: string, count: number, requirements?: string) => Promise<void>; mapGenerating: boolean }) {
+function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onContinueEncounter, onMove, onOpenChat, onImportBackground, onImportSceneBackground, onToggleMode, onCreateNode, onEditNode, onDeleteNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating }: { save: SaveFile; worldbooks: WorldbookEntry[]; activeEncounter: ActiveEncounter | null; onEncounterOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinueEncounter: () => void; onMove: (nodeId: string) => void; onOpenChat: () => void; onImportBackground: (file?: File) => Promise<void>; onImportSceneBackground: (nodeId: string, file?: File) => Promise<void>; onToggleMode: () => void; onCreateNode: (input: CreateMapNodeInput) => boolean; onEditNode: (nodeId: string, input: UpdateMapNodeInput) => boolean; onDeleteNode: (nodeId: string) => boolean; onSuggestNode: (input: { requirements: string; regionName: string; anchorName: string }) => Promise<{ name: string; description: string } | null>; onGenerateMap: (requirements?: string) => Promise<void>; onExpandMap: (anchorNodeId: string, count: number, requirements?: string) => Promise<void>; mapGenerating: boolean }) {
   const map = save.world.map;
   const currentNode = map.nodes[save.world.player.nodeId];
   const nodes = Object.values(map.nodes);
@@ -972,6 +987,7 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
   const [editorTravelSlots, setEditorTravelSlots] = useState('1');
   const [editorRequirements, setEditorRequirements] = useState('');
   const [editorWorldbookIds, setEditorWorldbookIds] = useState<string[]>([]);
+  const [editorSceneBackground, setEditorSceneBackground] = useState<AssetRef>();
   useEffect(() => {
     let objectUrl: string | undefined;
     let cancelled = false;
@@ -998,10 +1014,10 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
     const surface = map.view.mode === 'graph' ? graphSurfaceRef.current : hotspotSurfaceRef.current;
     if (surface) setEditorPos(pointOnMap(event.clientX, event.clientY, surface));
   };
-  const closeEditor = () => { setEditorPos(null); setEditorNodeId(null); setEditorName(''); setEditorDescription(''); setEditorKind(''); setEditorOpenSlots([]); setEditorRequirements(''); setEditorWorldbookIds([]); };
+  const closeEditor = () => { setEditorPos(null); setEditorNodeId(null); setEditorName(''); setEditorDescription(''); setEditorKind(''); setEditorOpenSlots([]); setEditorRequirements(''); setEditorWorldbookIds([]); setEditorSceneBackground(undefined); };
   const beginEditNode = (nodeId: string) => {
     const node = map.nodes[nodeId]; if (!node) return;
-    setEditorNodeId(nodeId); setEditorPos(node.pos); setEditorName(node.name); setEditorDescription(node.description ?? ''); setEditorRegionId(node.regionId); setEditorAnchorId(currentNode?.id ?? nodes[0]?.id ?? ''); setEditorKind(node.kind.join(', ')); setEditorOpenSlots(node.openSlots ?? []); setEditorWorldbookIds(node.worldbookIds.filter((id) => worldbooks.some((entry) => entry.id === id))); setEditorDiscovered(node.discovered); setEditorRequirements('');
+    setEditorNodeId(nodeId); setEditorPos(node.pos); setEditorName(node.name); setEditorDescription(node.description ?? ''); setEditorRegionId(node.regionId); setEditorAnchorId(currentNode?.id ?? nodes[0]?.id ?? ''); setEditorKind(node.kind.join(', ')); setEditorOpenSlots(node.openSlots ?? []); setEditorWorldbookIds(node.worldbookIds.filter((id) => worldbooks.some((entry) => entry.id === id))); setEditorDiscovered(node.discovered); setEditorRequirements(''); setEditorSceneBackground(node.sceneBackground);
   };
   const generateEditorText = async () => {
     const suggestion = await onSuggestNode({ requirements: editorRequirements.trim(), regionName: map.regions[editorRegionId]?.name ?? editorRegionId, anchorName: map.nodes[editorAnchorId]?.name ?? editorAnchorId });
@@ -1009,7 +1025,7 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
   };
   const saveEditorNode = () => {
     if (!editorPos) return;
-    const common = { name: editorName, description: editorDescription, regionId: editorRegionId, kind: editorKind.split(/[,，]/), openSlots: editorOpenSlots, worldbookIds: editorWorldbookIds, discovered: editorDiscovered, pos: editorPos };
+    const common = { name: editorName, description: editorDescription, regionId: editorRegionId, kind: editorKind.split(/[,，]/), openSlots: editorOpenSlots, worldbookIds: editorWorldbookIds, discovered: editorDiscovered, pos: editorPos, sceneBackground: editorSceneBackground };
     const saved = editorNodeId ? onEditNode(editorNodeId, common) : onCreateNode({ ...common, anchorNodeId: editorAnchorId, travelSlots: Math.max(0, Math.floor(Number(editorTravelSlots) || 0)) });
     if (saved) { closeEditor(); setEditorMode(false); }
   };
@@ -1081,6 +1097,7 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
         <div className="map-editor-grid"><label>类型<input value={editorKind} onChange={(event) => setEditorKind(event.target.value)} placeholder="室内, 商业" /></label>{!editorNodeId && <label>跨区域移动成本<input type="number" min="0" step="1" value={editorTravelSlots} onChange={(event) => setEditorTravelSlots(event.target.value)} /></label>}</div>
         <fieldset><legend>开放时段（不选表示始终开放）</legend><div className="map-slot-options">{save.config.calendar.slots.map((slot) => <label key={slot.id}><input type="checkbox" checked={editorOpenSlots.includes(slot.id)} onChange={(event) => setEditorOpenSlots((items) => event.target.checked ? [...items, slot.id] : items.filter((id) => id !== slot.id))} />{slot.name}</label>)}</div></fieldset>
         <fieldset><legend>进入地点时注入的世界书</legend>{worldbooks.length ? <div className="map-worldbook-options">{worldbooks.map((entry) => <label key={entry.id}><input type="checkbox" checked={editorWorldbookIds.includes(entry.id)} onChange={(event) => setEditorWorldbookIds((items) => event.target.checked ? [...items, entry.id] : items.filter((id) => id !== entry.id))} />{entry.name}</label>)}</div> : <p className="io-scope">暂无世界书，请先在资料页创建或导入。</p>}</fieldset>
+        <fieldset><legend>面对面场景背景</legend><p className="io-scope">进入当前地点的面对面聊天时显示；缺图时使用主题背景。</p>{editorNodeId ? <label className="file-button">{editorSceneBackground ? '更换场景背景' : '上传场景背景'}<input type="file" accept="image/*" onChange={(event) => void onImportSceneBackground(editorNodeId, event.target.files?.[0])} /></label> : <p className="io-scope">请先保存地点，再上传场景背景。</p>}{editorSceneBackground && <small>已配置场景背景</small>}</fieldset>
         <label className="map-editor-check"><input type="checkbox" checked={editorDiscovered} onChange={(event) => setEditorDiscovered(event.target.checked)} />创建后立即显示</label>
         <div className="button-row"><button onClick={saveEditorNode} disabled={!editorName.trim() || !editorRegionId || (!editorNodeId && !editorAnchorId)}>保存地点</button><button className="secondary" onClick={() => setEditorPos(null)}>重新选位置</button>{editorNodeId && <button className="danger" onClick={deleteEditorNode} disabled={editorNodeId === save.world.player.nodeId}>删除地点</button>}<button className="secondary" onClick={closeEditor}>取消</button></div>
       </div>}
@@ -1131,6 +1148,7 @@ function DiaryEditor(props: { entry: SaveFile['world']['diary'][number]; onSave:
 function ChatView(props: {
   characters: CharacterCard[];
   worldCharacter?: SaveFile['world']['characters'][string];
+  sceneBackground?: AssetRef;
   playerLabel: string;
   selectedCharacterId: string;
   setSelectedCharacterId: (id: string) => void;
@@ -1157,6 +1175,7 @@ function ChatView(props: {
   const olderMessageCount = Math.max(0, props.messages.length - 40);
   const visibleMessages = showOlderMessages ? props.messages : props.messages.slice(olderMessageCount);
   const [portraitUrl, setPortraitUrl] = useState<string>();
+  const [sceneBackgroundUrl, setSceneBackgroundUrl] = useState<string>();
   const [quickReplySelected, setQuickReplySelected] = useState(false);
   const activePortrait = props.worldCharacter?.visuals.portraits.find((portrait) => portrait.id === props.worldCharacter?.visuals.activePortraitId) ?? props.worldCharacter?.visuals.portraits[0];
   const accentColor = props.worldCharacter?.visuals.accentColor ?? '#315efb';
@@ -1179,6 +1198,21 @@ function ChatView(props: {
     });
     return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [activePortrait?.image]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | undefined;
+    setSceneBackgroundUrl(undefined);
+    const image = props.sceneBackground;
+    if (!image) return () => { cancelled = true; };
+    if (image.kind === 'url') { setSceneBackgroundUrl(image.url); return () => { cancelled = true; }; }
+    void loadAsset(image.assetId).then((asset) => {
+      if (!asset || cancelled) return;
+      objectUrl = URL.createObjectURL(asset.blob);
+      setSceneBackgroundUrl(objectUrl);
+    }).catch(() => { if (!cancelled) setSceneBackgroundUrl(undefined); });
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [props.sceneBackground]);
 
   useEffect(() => {
     const scroller = messagesRef.current;
@@ -1211,7 +1245,7 @@ function ChatView(props: {
 
   return <section className="chat-screen vn-chat-screen">
     <div className="character-picker"><select aria-label="聊天角色" value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">当前地点无人</option>{props.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
-    <div className="vn-stage" style={{ '--vn-accent': accentColor } as CSSProperties}>
+    <div className="vn-stage" style={{ '--vn-accent': accentColor, ...(sceneBackgroundUrl ? { backgroundImage: `linear-gradient(180deg, #0002, #0003), url("${sceneBackgroundUrl}")` } : {}) } as CSSProperties}>
       <div className="vn-portrait-area" aria-label={`${characterName}的立绘`}>
         {portraitUrl ? <img className="vn-portrait" src={portraitUrl} alt={`${characterName}的立绘`} /> : <div className="vn-portrait-empty" aria-label="暂无立绘" />}
       </div>

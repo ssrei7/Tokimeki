@@ -1,6 +1,6 @@
 import { advanceTime } from '../time';
 import type { EventBus } from '../events/bus';
-import { MapEdgeSchema, MapNodeSchema, type CalendarConfig, type MapEdge, type MapState, type WorldState } from '../../data/schema/save';
+import { MapEdgeSchema, MapNodeSchema, type AssetRef, type CalendarConfig, type MapEdge, type MapState, type WorldState } from '../../data/schema/save';
 
 export interface MapOperationResult {
   ok: boolean;
@@ -22,6 +22,7 @@ export interface CreateMapNodeInput {
   anchorNodeId: string;
   travelSlots: number;
   worldbookIds?: string[];
+  sceneBackground?: AssetRef;
 }
 
 export interface MapEditResult {
@@ -39,6 +40,7 @@ export interface UpdateMapNodeInput {
   discovered: boolean;
   pos: { x: number; y: number };
   worldbookIds?: string[];
+  sceneBackground?: AssetRef;
 }
 
 export function createMapNode(map: MapState, input: CreateMapNodeInput): MapEditResult {
@@ -63,6 +65,7 @@ export function createMapNode(map: MapState, input: CreateMapNodeInput): MapEdit
     visitCount: 0,
     memories: [],
     pos: { x: Math.max(0, Math.min(map.view.size.w, input.pos.x)), y: Math.max(0, Math.min(map.view.size.h, input.pos.y)) },
+    sceneBackground: input.sceneBackground,
   });
   const edge = MapEdgeSchema.parse({ from: input.anchorNodeId, to: nodeId, travelSlots: input.travelSlots });
   map.nodes[nodeId] = node;
@@ -87,6 +90,7 @@ export function updateMapNode(map: MapState, nodeId: string, input: UpdateMapNod
     worldbookIds: input.worldbookIds ? [...new Set(input.worldbookIds.map((value) => value.trim()).filter(Boolean))] : existing.worldbookIds,
     discovered: input.discovered,
     pos: { x: Math.max(0, Math.min(map.view.size.w, input.pos.x)), y: Math.max(0, Math.min(map.view.size.h, input.pos.y)) },
+    sceneBackground: input.sceneBackground ?? existing.sceneBackground,
   });
   return { ok: true, nodeId };
 }

@@ -5,6 +5,7 @@ import { migrateV2ToV3 } from './v2-to-v3';
 import { migrateV3ToV4 } from './v3-to-v4';
 import { migrateV4ToV5, repairLegacyV5Save } from './v4-to-v5';
 import { migrateV5ToV6 } from './v5-to-v6';
+import { migrateV6ToV7 } from './v6-to-v7';
 import { MigrationError, UnsupportedSchemaVersionError, type Migration } from './types';
 
 export const migrations: Record<number, Migration> = {
@@ -14,6 +15,7 @@ export const migrations: Record<number, Migration> = {
   4: migrateV3ToV4,
   5: migrateV4ToV5,
   6: migrateV5ToV6,
+  7: migrateV6ToV7,
 };
 
 export function migrateSave(input: unknown): SaveFile {

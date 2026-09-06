@@ -27,7 +27,7 @@ describe('save migrations', () => {
 
   it('migrates a v1 save through v4 without changing existing player state', () => {
     const migrated = migrateSave(fixtureV1);
-    expect(migrated.schemaVersion).toBe(6);
+    expect(migrated.schemaVersion).toBe(7);
     expect(migrated.world.player.stats.money).toBe(10);
     expect(migrated.world.stats).toEqual({});
     expect(migrated.world.flags).toEqual({});
@@ -70,7 +70,7 @@ describe('save migrations', () => {
       world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: '旧玩家', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map: { regions: { 'start-region': { id: 'start-region', name: '起点街区' } }, nodes: { start: { id: 'start', name: '起点街区', regionId: 'start-region', kind: ['outdoor'], worldbookIds: [], discovered: true, visitCount: 0, memories: [], pos: { x: 500, y: 350 } } }, edges: [], view: { mode: 'graph', size: { w: 1000, h: 700 } } }, diary: [], settlements: [] },
     });
     const repaired = migrateSave({ ...source, config: { ...source.config, calendar: { ...source.config.calendar, slots: [source.config.calendar.slots[0]] } } });
-    expect(repaired.schemaVersion).toBe(6);
+    expect(repaired.schemaVersion).toBe(7);
     expect(repaired.config.calendar.slots).toHaveLength(6);
   });
 
@@ -81,8 +81,20 @@ describe('save migrations', () => {
       config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12, encounter: { enabled: true, triggerOnLeave: true, leaveProbability: 0.35, guaranteeAfterDays: 3, maxParticipants: 3, weights: {} } },
       world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: '旧玩家', persona: '沉默的旅行者', personaId: 'mask-1', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map: { regions: { 'start-region': { id: 'start-region', name: '起点街区' } }, nodes: { start: { id: 'start', name: '起点街区', regionId: 'start-region', kind: ['outdoor'], worldbookIds: [], discovered: true, visitCount: 0, memories: [], pos: { x: 500, y: 350 } } }, edges: [], view: { mode: 'graph', size: { w: 1000, h: 700 } } }, diary: [], settlements: [], characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [] },
     });
-    expect(migrated.schemaVersion).toBe(6);
+    expect(migrated.schemaVersion).toBe(7);
     expect(migrated.world.player.persona).toBe('沉默的旅行者');
     expect(migrated.world.player.personaId).toBe('mask-1');
+  });
+
+  it('migrates v6 map nodes while preserving existing node data', () => {
+    const migrated = migrateSave({
+      schemaVersion: 6,
+      meta: { id: 'scene-save', title: 'Scene save', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', appVersion: '0.0.1' },
+      config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12, encounter: { enabled: true, triggerOnLeave: true, leaveProbability: 0.35, guaranteeAfterDays: 3, maxParticipants: 3, weights: {} } },
+      world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: '玩家', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map: { regions: { start: { id: 'start', name: '起点' } }, nodes: { start: { id: 'start', name: '起点', regionId: 'start', kind: ['outdoor'], worldbookIds: [], discovered: true, visitCount: 0, memories: [], pos: { x: 1, y: 2 } } }, edges: [], view: { mode: 'graph', size: { w: 100, h: 100 } } }, diary: [], settlements: [], characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [] },
+    });
+    expect(migrated.schemaVersion).toBe(7);
+    expect(migrated.world.map.nodes.start.name).toBe('起点');
+    expect(migrated.world.map.nodes.start.sceneBackground).toBeUndefined();
   });
 });

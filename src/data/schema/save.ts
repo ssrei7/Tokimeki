@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 const IdSchema = z.string().min(1);
 
@@ -65,6 +65,7 @@ export const AssetRefSchema = z.union([
   z.object({ kind: z.literal('stored'), assetId: IdSchema }),
   z.object({ kind: z.literal('url'), url: z.string().url() }),
 ]);
+export type AssetRef = z.infer<typeof AssetRefSchema>;
 
 export const ScheduleCellSchema = z.object({
   nodeId: IdSchema,
@@ -255,6 +256,7 @@ export const MapNodeSchema = z.object({
   memories: z.array(NodeMemorySchema),
   pos: z.object({ x: z.number().finite(), y: z.number().finite() }),
   parentNodeId: IdSchema.optional(),
+  sceneBackground: AssetRefSchema.optional(),
 });
 
 export const MapEdgeSchema = z.object({
