@@ -40,7 +40,7 @@ button.danger { background: #fee4e2; color: #b42318; }
 .map-menu[open] summary span:last-child::after { content: '点击收起'; font-size: 12px; }
 .map-menu-content { display: grid; gap: 10px; max-height: min(58vh, 520px); overflow-y: auto; padding: 0 10px 10px; overscroll-behavior: contain; }
 .map-bottom-sheet { flex: 0 0 auto; max-height: min(64vh, 620px); border-radius: 12px 12px 0 0; box-shadow: 0 -6px 22px #34405418; }
-.map-bottom-sheet summary { min-height: 40px; }
+.map-bottom-sheet summary { min-height: 40px; touch-action: none; user-select: none; }
 .map-bottom-sheet[open] summary span:last-child { font-size: 0; }
 .map-bottom-sheet[open] summary span:last-child::after { content: '向下收起'; font-size: 12px; }
 .map-controls { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -85,6 +85,7 @@ button.danger { background: #fee4e2; color: #b42318; }
 .map-node-trace { fill: #667085 !important; font-size: 11px !important; }
 .map-node[role="button"] { cursor: pointer; }
 .map-node[role="button"]:focus circle { stroke: #1849a9; stroke-width: 8; }
+.map-node.selected circle { stroke: #1849a9; stroke-width: 8; }
 .map-hotspot-placeholder { min-height: 430px; display: grid; place-items: center; padding: 24px; color: #667085; text-align: center; }
 .hotspot-editor { display: grid; gap: 10px; padding: 12px; }
 .map-screen-host .hotspot-editor { height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr) auto auto; }
@@ -93,6 +94,7 @@ button.danger { background: #fee4e2; color: #b42318; }
 .hotspot-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: #667085; text-align: center; pointer-events: none; }
 .hotspot-pin { position: absolute; transform: translate(-50%, -50%); min-height: 44px; max-width: 160px; padding: 0 11px; border: 2px solid #ffffff; border-radius: 999px; background: #475467; color: #ffffff; box-shadow: 0 2px 8px #34405455; font-size: 12px; white-space: nowrap; overflow: visible; }
 .hotspot-pin.current { background: #315efb; }
+.hotspot-pin.selected { outline: 3px solid #1849a9; outline-offset: 3px; }
 .hotspot-pin-label { display: block; max-width: 136px; overflow: hidden; text-overflow: ellipsis; }
 .hotspot-presence { position: absolute; right: -10px; top: -22px; display: flex; align-items: center; pointer-events: none; }
 .hotspot-presence-avatar { width: 30px; height: 30px; display: grid; place-items: center; margin-left: -6px; overflow: hidden; border: 2px solid #ffffff; border-radius: 50%; background: var(--presence-color); color: #ffffff; box-shadow: 0 2px 6px #34405455; font-size: 12px; font-weight: 700; }
