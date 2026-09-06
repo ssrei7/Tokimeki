@@ -138,6 +138,14 @@ button.danger { background: #fee4e2; color: #b42318; }
 .encounter-options { display: flex; justify-content: center; gap: 10px; }
 .encounter-options button { min-width: 130px; }
 .provider-card, .editor-card { display: grid; gap: 10px; margin-bottom: 14px; }
+.fold-card { margin-bottom: 12px; border: 1px solid #e4e8ef; border-radius: 8px; background: #fff; box-shadow: 0 4px 16px #3440540d; overflow: hidden; }
+.fold-card > summary { display: flex; min-height: 42px; align-items: center; justify-content: space-between; padding: 0 14px; cursor: pointer; color: #344054; font-weight: 600; list-style: none; }
+.fold-card > summary::-webkit-details-marker { display: none; }
+.fold-card > summary::after { content: '展开'; color: #667085; font-size: 12px; font-weight: 400; }
+.fold-card[open] > summary { border-bottom: 1px solid #eef0f3; }
+.fold-card[open] > summary::after { content: '收起'; }
+.fold-card > .fold-body { padding: 12px; }
+.fold-card > .fold-body > :last-child { margin-bottom: 0; }
 .persona-fields { display: grid; gap: 8px; }
 .persona-fields textarea { min-height: 72px; resize: vertical; }
 .persona-list { display: grid; gap: 0; }
