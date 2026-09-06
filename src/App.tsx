@@ -1120,8 +1120,11 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
   const [selectedMapNodeId, setSelectedMapNodeId] = useState<string | null>(null);
   const [toolSheetState, setToolSheetState] = useState<MapSheetState>('collapsed');
   const [detailSheetState, setDetailSheetState] = useState<MapSheetState>('expanded');
+  const [toolSheetProgress, setToolSheetProgress] = useState(0);
+  const [detailSheetProgress, setDetailSheetProgress] = useState(1);
+  const [sheetDraggingKind, setSheetDraggingKind] = useState<'tool' | 'detail' | null>(null);
   const dragRef = useRef({ pointerId: -1, startX: 0, startY: 0, originX: 0, originY: 0, moved: false });
-  const sheetDragRef = useRef({ pointerId: -1, startY: 0, moved: false });
+  const sheetDragRef = useRef({ pointerId: -1, kind: 'tool' as 'tool' | 'detail', startY: 0, startProgress: 0, currentProgress: 0, moved: false, lastY: 0, lastTime: 0 });
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef({ distance: 0, zoom: 1, contentX: 0, contentY: 0 });
   const graphSurfaceRef = useRef<SVGSVGElement>(null);
@@ -1267,12 +1270,62 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
   const currentSlotName = save.config.calendar.slots.find((slot) => slot.id === save.world.clock.slotId)?.name ?? save.world.clock.slotId;
   const selectedMapNode = (selectedMapNodeId ? map.nodes[selectedMapNodeId] : undefined) ?? currentNode;
   const selectedScope = nodeScopeLabel(deriveNodeScope(selectedMapNode, save.world.clock.slotId));
-  const selectMapNode = (nodeId: string) => { if (!map.nodes[nodeId]?.discovered) return; setSelectedMapNodeId(nodeId); setToolSheetState('collapsed'); setDetailSheetState('expanded'); };
-  const beginSheetDrag = (event: PointerEvent<HTMLElement>) => { sheetDragRef.current = { pointerId: event.pointerId, startY: event.clientY, moved: false }; event.currentTarget.setPointerCapture(event.pointerId); };
-  const moveSheetDrag = (event: PointerEvent<HTMLElement>) => { if (sheetDragRef.current.pointerId !== event.pointerId) return; if (Math.abs(event.clientY - sheetDragRef.current.startY) > 8) sheetDragRef.current.moved = true; };
-  const updateSheetState = (kind: 'tool' | 'detail', state: MapSheetState) => { if (kind === 'tool') setToolSheetState(state); else if (state === 'collapsed') { setDetailSheetState('collapsed'); setSelectedMapNodeId(null); } else setDetailSheetState(state); };
-  const endSheetDrag = (event: PointerEvent<HTMLElement>) => { if (sheetDragRef.current.pointerId !== event.pointerId) return; const deltaY = event.clientY - sheetDragRef.current.startY; const moved = sheetDragRef.current.moved; sheetDragRef.current.pointerId = -1; if (!moved) return; event.preventDefault(); const kind = event.currentTarget.closest('.map-detail-sheet') ? 'detail' : 'tool'; const current = kind === 'detail' ? detailSheetState : toolSheetState; const next = deltaY < -24 ? (current === 'collapsed' ? 'half' : 'expanded') : deltaY > 24 ? (current === 'expanded' ? 'half' : 'collapsed') : current; updateSheetState(kind, next); };
-  const handleSheetClick = (kind: 'tool' | 'detail') => (event: MouseEvent<HTMLElement>) => { if (sheetDragRef.current.moved) { event.preventDefault(); event.stopPropagation(); sheetDragRef.current.moved = false; return; } event.preventDefault(); const current = kind === 'detail' ? detailSheetState : toolSheetState; updateSheetState(kind, current === 'collapsed' ? 'half' : 'collapsed'); };
+  const progressForState = (state: MapSheetState) => state === 'expanded' ? 1 : state === 'half' ? 0.5 : 0;
+  const stateForProgress = (progress: number): MapSheetState => progress >= 0.72 ? 'expanded' : progress > 0.04 ? 'half' : 'collapsed';
+  const setSheetProgress = (kind: 'tool' | 'detail', progress: number) => {
+    const next = Math.max(0, Math.min(1, progress));
+    if (kind === 'tool') { setToolSheetProgress(next); setToolSheetState(stateForProgress(next)); }
+    else { setDetailSheetProgress(next); setDetailSheetState(stateForProgress(next)); }
+  };
+  const selectMapNode = (nodeId: string) => { if (!map.nodes[nodeId]?.discovered) return; setSelectedMapNodeId(nodeId); setToolSheetProgress(0); setToolSheetState('collapsed'); setDetailSheetProgress(1); setDetailSheetState('expanded'); };
+  const beginSheetDrag = (event: PointerEvent<HTMLElement>) => {
+    const kind = event.currentTarget.closest('.map-detail-sheet') ? 'detail' : 'tool';
+    const progress = kind === 'detail' ? detailSheetProgress : toolSheetProgress;
+    sheetDragRef.current = { pointerId: event.pointerId, kind, startY: event.clientY, startProgress: progress, currentProgress: progress, moved: false, lastY: event.clientY, lastTime: performance.now() };
+    setSheetDraggingKind(kind);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const moveSheetDrag = (event: PointerEvent<HTMLElement>) => {
+    const drag = sheetDragRef.current;
+    if (drag.pointerId !== event.pointerId) return;
+    const now = performance.now();
+    const dragDistance = Math.max(180, Math.min(window.innerHeight * 0.58, 520));
+    const next = drag.startProgress + (drag.startY - event.clientY) / dragDistance;
+    if (Math.abs(event.clientY - drag.startY) > 6) drag.moved = true;
+    drag.currentProgress = Math.max(0, Math.min(1, next));
+    drag.lastY = event.clientY;
+    drag.lastTime = now;
+    setSheetProgress(drag.kind, drag.currentProgress);
+    if (drag.moved) event.preventDefault();
+  };
+  const updateSheetState = (kind: 'tool' | 'detail', state: MapSheetState) => {
+    const progress = progressForState(state);
+    setSheetProgress(kind, progress);
+    if (kind === 'detail' && state === 'collapsed') setSelectedMapNodeId(null);
+  };
+  const endSheetDrag = (event: PointerEvent<HTMLElement>) => {
+    const drag = sheetDragRef.current;
+    if (drag.pointerId !== event.pointerId) return;
+    const moved = drag.moved;
+    const elapsed = Math.max(1, performance.now() - drag.lastTime);
+    const velocity = (event.clientY - drag.lastY) / elapsed;
+    const kind = drag.kind;
+    const currentProgress = drag.currentProgress;
+    drag.pointerId = -1;
+    setSheetDraggingKind(null);
+    if (!moved) return;
+    event.preventDefault();
+    const target = Math.abs(velocity) > 0.75 ? (velocity < 0 ? 1 : 0) : currentProgress;
+    setSheetProgress(kind, target);
+    if (kind === 'detail' && target <= 0.04) setSelectedMapNodeId(null);
+  };
+  const handleSheetClick = (kind: 'tool' | 'detail') => (event: MouseEvent<HTMLElement>) => {
+    if (sheetDragRef.current.moved) { event.preventDefault(); event.stopPropagation(); sheetDragRef.current.moved = false; return; }
+    event.preventDefault();
+    const progress = kind === 'detail' ? detailSheetProgress : toolSheetProgress;
+    updateSheetState(kind, progress > 0.04 ? 'collapsed' : 'half');
+  };
+  const sheetStyle = (progress: number) => ({ '--sheet-progress': progress } as CSSProperties);
   return <section className="map-screen">
     <div className="map-top-panel">
       <div className="map-toolbar"><div className="map-title"><strong>{currentNode?.name ?? save.world.player.nodeId}</strong></div><div className="map-toolbar-meta"><span>第 {save.world.clock.day} 天 · {currentSlotName}</span><span>{map.view.mode === 'graph' ? 'Graph' : 'Hotspot'} · {Math.round(zoom * 100)}%</span></div></div>
@@ -1300,14 +1353,14 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
       </div>}
     </div>
     {activeEncounter && <EncounterDialog encounter={activeEncounter} onOutcome={onEncounterOutcome} onContinue={onContinueEncounter} />}
-    <details ref={toolSheetRef} open={toolSheetState !== 'collapsed'} data-sheet-state={toolSheetState} className="map-menu map-bottom-sheet map-tool-sheet">
+    <details ref={toolSheetRef} open={toolSheetProgress > 0.001} data-sheet-state={toolSheetState} data-sheet-dragging={sheetDraggingKind === 'tool' ? 'true' : undefined} style={sheetStyle(toolSheetProgress)} className="map-menu map-bottom-sheet map-tool-sheet">
       <summary onPointerDown={beginSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={handleSheetClick('tool')}><span>地图工具{editorMode ? ' · 编辑中' : ''}</span><span>{toolSheetState === 'expanded' ? '向下收起' : toolSheetState === 'half' ? '半展开' : '向上展开'}</span></summary>
       <div className="map-menu-content">
         <div className="map-controls"><label className="file-button">上传底图<input type="file" accept="image/*" onChange={(event) => void onImportBackground(event.target.files?.[0])} /></label><button className="secondary" onClick={() => void onGenerateMap(requirements)} disabled={mapGenerating}>{mapGenerating ? '正在生成地图…' : 'AI 生成地图'}</button><button className="secondary" onClick={() => setZoom((value) => Math.min(2.5, Number((value + 0.1).toFixed(2))))}>放大</button><button className="secondary" onClick={() => setZoom((value) => Math.max(0.65, Number((value - 0.1).toFixed(2))))}>缩小</button><button className="secondary" onClick={centerCurrentNode}>回到当前位置</button><button className="secondary" onClick={resetViewport}>重置视野</button></div>
         <div className="map-generation-panel"><label>地图生成要求<textarea value={requirements} onChange={(event) => setRequirements(event.target.value)} placeholder="例如：沿海小镇，包含车站、海边和一处适合夜晚散步的地点。" /></label><div className="map-expand-row"><label>从地点扩展<select value={anchorNodeId} onChange={(event) => setAnchorNodeId(event.target.value)}>{nodes.map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label><label>新增数量<input type="number" min="1" max="8" value={expandCount} onChange={(event) => setExpandCount(event.target.value)} /></label><button className="secondary" onClick={() => void onExpandMap(anchorNodeId, Math.max(1, Math.min(8, Number(expandCount) || 1)), requirements)} disabled={mapGenerating || !anchorNodeId}>扩展地点</button></div></div>
       </div>
     </details>
-    {selectedMapNodeId && <details ref={detailSheetRef} open data-sheet-state={detailSheetState} className="map-menu map-bottom-sheet map-detail-sheet">
+    {selectedMapNodeId && <details ref={detailSheetRef} open={detailSheetProgress > 0.001} data-sheet-state={detailSheetState} data-sheet-dragging={sheetDraggingKind === 'detail' ? 'true' : undefined} style={sheetStyle(detailSheetProgress)} className="map-menu map-bottom-sheet map-detail-sheet">
       <summary onPointerDown={beginSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={handleSheetClick('detail')}><span>{selectedMapNode?.name ?? '地点详情'}</span><span>{detailSheetState === 'expanded' ? '向下收起' : '继续展开'}</span></summary>
       <div className="map-menu-content"><div className="place-card"><span className="eyebrow">{selectedMapNode?.id === currentNode?.id ? '当前位置' : '地点详情'}</span><h2>{selectedMapNode?.name ?? save.world.player.nodeId}</h2><p>{selectedMapNode?.description ?? '从地图出发，去遇见今天的世界。'}</p>{selectedMapNode && <div className="place-details"><span>区域<strong>{map.regions[selectedMapNode.regionId]?.name ?? selectedMapNode.regionId}</strong></span><span>类型<strong>{selectedMapNode.kind.length ? selectedMapNode.kind.join('、') : '未分类'}</strong></span><span>开放<strong>{selectedMapNode.openSlots?.length ? selectedMapNode.openSlots.map((id) => save.config.calendar.slots.find((slot) => slot.id === id)?.name ?? id).join('、') : '始终开放'}</strong></span><span>范围<strong>{selectedScope}</strong></span></div>}<div className="button-row">{selectedMapNode && selectedMapNode.id !== currentNode?.id ? <button onClick={() => onMove(selectedMapNode.id)}>前往此地</button> : <button onClick={onOpenChat}>打开聊天</button>}{selectedMapNode && <span className="map-meta">访问 {selectedMapNode.visitCount} 次</span>}</div>{selectedMapNode && <PresenceList people={whoIsHere(save.world, selectedMapNode.id, save.world.clock.day, save.world.clock.slotId, save.config.calendar.daysPerWeek)} scope={selectedScope} />}<EncounterTraceList traces={selectedMapNode ? encounterTraces[selectedMapNode.id] ?? [] : []} /></div></div>
     </details>}
