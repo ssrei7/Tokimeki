@@ -1102,6 +1102,8 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
   const [anchorNodeId, setAnchorNodeId] = useState(currentNode?.id ?? nodes[0]?.id ?? '');
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const viewportStorageKey = `tokimeki.map-viewport.${save.meta.id}.${map.view.mode}`;
+  const [viewportHydratedKey, setViewportHydratedKey] = useState('');
   const [selectedMapNodeId, setSelectedMapNodeId] = useState<string | null>(null);
   const dragRef = useRef({ pointerId: -1, startX: 0, startY: 0, originX: 0, originY: 0, moved: false });
   const sheetDragRef = useRef({ pointerId: -1, startY: 0, moved: false });
@@ -1126,6 +1128,27 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
   const [editorRequirements, setEditorRequirements] = useState('');
   const [editorWorldbookIds, setEditorWorldbookIds] = useState<string[]>([]);
   const [editorSceneBackground, setEditorSceneBackground] = useState<AssetRef>();
+  useEffect(() => {
+    let next = { zoom: map.view.mode === 'graph' ? 1.5 : 1, offset: { x: 0, y: 0 } };
+    try {
+      const raw = window.localStorage.getItem(viewportStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { zoom?: unknown; offset?: { x?: unknown; y?: unknown } };
+        const storedZoom = typeof parsed.zoom === 'number' && Number.isFinite(parsed.zoom) ? Math.max(0.65, Math.min(2.5, parsed.zoom)) : undefined;
+        const storedX = typeof parsed.offset?.x === 'number' && Number.isFinite(parsed.offset.x) ? parsed.offset.x : undefined;
+        const storedY = typeof parsed.offset?.y === 'number' && Number.isFinite(parsed.offset.y) ? parsed.offset.y : undefined;
+        if (storedZoom !== undefined && storedX !== undefined && storedY !== undefined) next = { zoom: storedZoom, offset: { x: storedX, y: storedY } };
+      }
+    } catch { /* ignore malformed or unavailable browser storage */ }
+    setZoom(next.zoom); setOffset(next.offset); setViewportHydratedKey(viewportStorageKey);
+  }, [viewportStorageKey]);
+  useEffect(() => {
+    if (viewportHydratedKey !== viewportStorageKey) return;
+    const timer = window.setTimeout(() => {
+      try { window.localStorage.setItem(viewportStorageKey, JSON.stringify({ zoom, offset })); } catch { /* ignore unavailable browser storage */ }
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [offset, viewportHydratedKey, viewportStorageKey, zoom]);
   const mapPresence = useMemo(() => {
     const byNode: Record<string, ReturnType<typeof whoIsWhere>> = {};
     const visuals: Record<string, MapPresenceVisual> = {};
