@@ -22,7 +22,12 @@ button.danger { background: #fee4e2; color: #b42318; }
 .map-screen-host .map-screen { flex: 1; min-height: 0; gap: 8px; }
 .map-top-panel { position: sticky; z-index: 4; top: -16px; display: grid; gap: 8px; margin: -16px -16px 0; padding: 14px 16px 10px; border-bottom: 1px solid #e4e8ef; background: #f8fafcee; backdrop-filter: blur(10px); }
 .map-screen-host .map-top-panel { position: relative; top: auto; flex: 0 0 auto; margin: 0; padding: 0 0 4px; border-bottom: 0; background: #f8fafc; backdrop-filter: none; }
-.map-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.map-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-right: 78px; }
+.map-quick-actions { position: absolute; top: 0; right: 0; display: flex; gap: 6px; }
+.map-icon-button { width: 34px; min-height: 34px; display: grid; place-items: center; padding: 6px; border: 1px solid #d7dce5; border-radius: 9px; background: #fff; color: #475467; box-shadow: 0 2px 8px #34405414; }
+.map-icon-button:hover { background: #f2f4f7; }
+.map-icon-button.active { border-color: #315efb; background: #315efb; color: #fff; }
+.map-icon-button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .map-title { min-width: 0; display: flex; align-items: baseline; gap: 8px; }
 .map-title h1 { margin: 0; font-size: 18px; line-height: 1.2; }
 .map-title strong { min-width: 0; overflow: hidden; color: #475467; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
@@ -74,9 +79,9 @@ button.danger { background: #fee4e2; color: #b42318; }
 .map-node-marker { fill: #ffffff !important; font-size: 20px !important; }
 .map-presence-stack { pointer-events: none; }
 .map-presence-avatar-ring { fill: #ffffff; stroke: #ffffff; stroke-width: 3; }
-.map-presence-avatar-image { clip-path: circle(14px at center); }
-.map-presence-avatar-initial { fill: #ffffff !important; font-size: 13px !important; font-weight: 700; }
-.map-presence-more { fill: #344054 !important; font-size: 13px !important; font-weight: 700; }
+.map-presence-avatar-image { clip-path: circle(28px at center); }
+.map-presence-avatar-initial { fill: #ffffff !important; font-size: 24px !important; font-weight: 700; }
+.map-presence-more { fill: #344054 !important; font-size: 24px !important; font-weight: 700; }
 .map-node-trace { fill: #667085 !important; font-size: 11px !important; }
 .map-node[role="button"] { cursor: pointer; }
 .map-node[role="button"]:focus circle { stroke: #1849a9; stroke-width: 8; }
