@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveNodeScope, resolveScheduledCell, whoIsHere } from '../src/core/encounter';
+import { deriveNodeScope, resolveScheduledCell, whoIsHere, whoIsWhere } from '../src/core/encounter';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import type { FormalCharacter, WorldState } from '../src/data/schema/save';
 
@@ -57,6 +57,14 @@ describe('deterministic schedule presence query', () => {
     expect(whoIsHere(world, 'docks', 2, 'afternoon', 7)).toEqual([
       { id: 'seir', name: '塞伊尔', tier: 'formal', nodeId: 'docks', activity: '整理渔网', source: 'schedule' },
       { id: 'vendor-1', name: '摊主', tier: 'semi', nodeId: 'docks', activity: '在附近', source: 'home' },
+    ]);
+  });
+
+  it('returns every known location in one local query', () => {
+    const world = setup();
+    expect(whoIsWhere(world, 3, 'morning', 7).map(({ id, nodeId }) => ({ id, nodeId }))).toEqual([
+      { id: 'seir', nodeId: 'docks' },
+      { id: 'vendor-1', nodeId: 'docks' },
     ]);
   });
 

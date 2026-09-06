@@ -37,12 +37,16 @@ function presentNpc(npc: NpcLite): PresentCharacter | undefined {
   return { id: npc.id, name: npc.name, tier: 'semi', nodeId: npc.homeNodeId, activity: '在附近', source: 'home' };
 }
 
-export function whoIsHere(world: WorldState, nodeId: string, day = world.clock.day, slotId = world.clock.slotId, daysPerWeek = 7): PresentCharacter[] {
+export function whoIsWhere(world: WorldState, day = world.clock.day, slotId = world.clock.slotId, daysPerWeek = 7): PresentCharacter[] {
   const present = Object.values(world.characters)
     .map((character) => presentFormalCharacter(character, day, slotId, daysPerWeek))
-    .filter((character): character is PresentCharacter => Boolean(character && character.nodeId === nodeId));
+    .filter((character): character is PresentCharacter => Boolean(character));
   const semi = Object.values(world.npcs)
     .map(presentNpc)
-    .filter((character): character is PresentCharacter => Boolean(character && character.nodeId === nodeId));
+    .filter((character): character is PresentCharacter => Boolean(character));
   return [...present, ...semi].sort((a, b) => (a.tier === b.tier ? a.id.localeCompare(b.id) : a.tier === 'formal' ? -1 : 1));
+}
+
+export function whoIsHere(world: WorldState, nodeId: string, day = world.clock.day, slotId = world.clock.slotId, daysPerWeek = 7): PresentCharacter[] {
+  return whoIsWhere(world, day, slotId, daysPerWeek).filter((character) => character.nodeId === nodeId);
 }

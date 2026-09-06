@@ -4,7 +4,7 @@ import type { AssembledPrompt } from './core/prompt/assembler';
 import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
 import { EventBus } from './core/events/bus';
 import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGeneratedMapExpansion, parseGeneratedNodeSuggestion, updateMapNode, type CreateMapNodeInput, type UpdateMapNodeInput } from './core/map';
-import { addCharacterToWorld, deriveNodeScope, nodeScopeLabel, triggerEncounter, updateEncounterOutcome, whoIsHere, type EncounterCandidate } from './core/encounter';
+import { addCharacterToWorld, deriveNodeScope, nodeScopeLabel, triggerEncounter, updateEncounterOutcome, whoIsHere, whoIsWhere, type EncounterCandidate } from './core/encounter';
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
@@ -27,6 +27,7 @@ import { seedScenario } from './dev/scenarios/seeder';
 import { ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, type ProviderBinding, type ProviderConfig, type TaskId } from './providers/types';
 import { canGenerateReply, hasQueuedUserMessage } from './ui/chat-state';
 import { splitDialogueMessage } from './ui/dialogue';
+import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
 import './ui/theme/app.css';
 
 type Tab = 'map' | 'day' | 'chat' | 'library' | 'settings';
@@ -1047,6 +1048,34 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
   const [editorRequirements, setEditorRequirements] = useState('');
   const [editorWorldbookIds, setEditorWorldbookIds] = useState<string[]>([]);
   const [editorSceneBackground, setEditorSceneBackground] = useState<AssetRef>();
+  const mapPresence = useMemo(() => {
+    const byNode: Record<string, ReturnType<typeof whoIsWhere>> = {};
+    const visuals: Record<string, MapPresenceVisual> = {};
+    for (const person of whoIsWhere(save.world, save.world.clock.day, save.world.clock.slotId, save.config.calendar.daysPerWeek)) {
+      if (!map.nodes[person.nodeId]?.discovered) continue;
+      (byNode[person.nodeId] ??= []).push(person);
+      visuals[person.id] = mapPresenceVisual(save.world, person);
+    }
+    return { byNode, visuals };
+  }, [map.nodes, save.config.calendar.daysPerWeek, save.world]);
+  const [mapAvatarUrls, setMapAvatarUrls] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let cancelled = false;
+    const objectUrls: string[] = [];
+    void Promise.all(Object.values(mapPresence.visuals).map(async (visual) => {
+      if (!visual.avatar) return [visual.id, undefined] as const;
+      if (visual.avatar.kind === 'url') return [visual.id, visual.avatar.url] as const;
+      const asset = await loadAsset(visual.avatar.assetId);
+      if (!asset) return [visual.id, undefined] as const;
+      const url = URL.createObjectURL(asset.blob);
+      objectUrls.push(url);
+      return [visual.id, url] as const;
+    })).then((entries) => {
+      if (cancelled) return;
+      setMapAvatarUrls(Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry[1]))));
+    }).catch(() => { if (!cancelled) setMapAvatarUrls({}); });
+    return () => { cancelled = true; objectUrls.forEach((url) => URL.revokeObjectURL(url)); };
+  }, [mapPresence.visuals]);
   useEffect(() => {
     let objectUrl: string | undefined;
     let cancelled = false;
@@ -1143,8 +1172,8 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
     <div ref={mapCanvasRef} className="map-canvas" onClick={handleMapCanvasClick} onWheel={mapWheel} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
       {map.view.mode === 'graph' ? <svg ref={graphSurfaceRef} className={`map-svg ${editorMode ? 'editing' : ''}`} style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: '0 0' }} viewBox={`0 0 ${map.view.size.w} ${map.view.size.h}`} role="img" aria-label="世界地图">
         <g className="map-edges">{map.edges.map((edge) => { const from = map.nodes[edge.from]; const to = map.nodes[edge.to]; if (!from || !to) return null; const visible = from.discovered || to.discovered; return <line key={edgeKey(edge)} className={visible ? '' : 'fog'} x1={from.pos.x} y1={from.pos.y} x2={to.pos.x} y2={to.pos.y} />; })}</g>
-        <g className="map-nodes">{nodes.map((node) => { const isCurrent = node.id === save.world.player.nodeId; const canSelect = node.discovered && !isCurrent; return <g key={node.id} className={`map-node ${node.discovered ? 'discovered' : 'undiscovered'} ${isCurrent ? 'current' : ''}`} role={editorMode || canSelect ? 'button' : undefined} tabIndex={editorMode || canSelect ? 0 : undefined} onClick={(event) => { event.stopPropagation(); if (editorMode) beginEditNode(node.id); else if (canSelect && !dragRef.current.moved) onMove(node.id); }} onKeyDown={(event) => { if ((editorMode || canSelect) && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); if (editorMode) beginEditNode(node.id); else onMove(node.id); } }}><circle cx={node.pos.x} cy={node.pos.y} r={isCurrent ? 22 : 18} /><text x={node.pos.x} y={node.pos.y + 42} textAnchor="middle">{node.discovered ? node.name : '未发现地点'}</text>{isCurrent && <text className="map-node-marker" x={node.pos.x} y={node.pos.y + 5} textAnchor="middle">你</text>}</g>; })}</g>
-      </svg> : <div className="hotspot-editor"><div ref={hotspotSurfaceRef} className={`hotspot-canvas ${editorMode ? 'editing' : ''}`} style={{ aspectRatio: `${map.view.size.w} / ${map.view.size.h}`, backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined, transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: '0 0' }} role="application" aria-label="Hotspot 地图">{nodes.map((node) => { const isCurrent = node.id === save.world.player.nodeId; const canMove = node.discovered && !isCurrent; return <button key={node.id} className={`hotspot-pin ${isCurrent ? 'current' : ''}`} style={{ left: `${(node.pos.x / map.view.size.w) * 100}%`, top: `${(node.pos.y / map.view.size.h) * 100}%` }} onClick={(event) => { event.stopPropagation(); if (editorMode) beginEditNode(node.id); else if (canMove) onMove(node.id); }} title={node.name}>{node.discovered ? node.name : '未发现'}</button>; })}{!backgroundUrl && <span className="hotspot-empty">上传底图后可使用热点地图；编辑模式下点击空白处创建地点。</span>}</div><p className="io-scope">普通模式点击已发现图钉即可移动；编辑模式点击图钉可修改地点，点击空白处可新建。</p></div>}
+        <g className="map-nodes">{nodes.map((node) => { const isCurrent = node.id === save.world.player.nodeId; const canSelect = node.discovered && !isCurrent; return <g key={node.id} className={`map-node ${node.discovered ? 'discovered' : 'undiscovered'} ${isCurrent ? 'current' : ''}`} role={editorMode || canSelect ? 'button' : undefined} tabIndex={editorMode || canSelect ? 0 : undefined} onClick={(event) => { event.stopPropagation(); if (editorMode) beginEditNode(node.id); else if (canSelect && !dragRef.current.moved) onMove(node.id); }} onKeyDown={(event) => { if ((editorMode || canSelect) && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); if (editorMode) beginEditNode(node.id); else onMove(node.id); } }}><circle cx={node.pos.x} cy={node.pos.y} r={isCurrent ? 22 : 18} /><text x={node.pos.x} y={node.pos.y + 42} textAnchor="middle">{node.discovered ? node.name : '未发现地点'}</text>{isCurrent && <text className="map-node-marker" x={node.pos.x} y={node.pos.y + 5} textAnchor="middle">你</text>}<GraphMapPresence people={mapPresence.byNode[node.id] ?? []} visuals={mapPresence.visuals} avatarUrls={mapAvatarUrls} x={node.pos.x} y={node.pos.y} /></g>; })}</g>
+      </svg> : <div className="hotspot-editor"><div ref={hotspotSurfaceRef} className={`hotspot-canvas ${editorMode ? 'editing' : ''}`} style={{ aspectRatio: `${map.view.size.w} / ${map.view.size.h}`, backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined, transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: '0 0' }} role="application" aria-label="Hotspot 地图">{nodes.map((node) => { const isCurrent = node.id === save.world.player.nodeId; const canMove = node.discovered && !isCurrent; return <button key={node.id} className={`hotspot-pin ${isCurrent ? 'current' : ''}`} style={{ left: `${(node.pos.x / map.view.size.w) * 100}%`, top: `${(node.pos.y / map.view.size.h) * 100}%` }} onClick={(event) => { event.stopPropagation(); if (editorMode) beginEditNode(node.id); else if (canMove) onMove(node.id); }} title={node.name}><span className="hotspot-pin-label">{node.discovered ? node.name : '未发现'}</span><HotspotMapPresence people={mapPresence.byNode[node.id] ?? []} visuals={mapPresence.visuals} avatarUrls={mapAvatarUrls} /></button>; })}{!backgroundUrl && <span className="hotspot-empty">上传底图后可使用热点地图；编辑模式下点击空白处创建地点。</span>}</div><p className="io-scope">普通模式点击已发现图钉即可移动；编辑模式点击图钉可修改地点，点击空白处可新建。</p></div>}
       {editorMode && !editorPos && <div className="map-editor-hint">点击空白处新建地点，或点击已有节点进行编辑；仍可拖动和缩放地图。</div>}
       {editorPos && <div className="map-editor-card" role="dialog" aria-label="新建地点" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
         <div className="list-heading"><strong>{editorNodeId ? '编辑地点' : '新建地点'}</strong><small>坐标 X {Math.round(editorPos.x)} / Y {Math.round(editorPos.y)}</small></div>
@@ -1164,6 +1193,16 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
     {activeEncounter && <EncounterDialog encounter={activeEncounter} onOutcome={onEncounterOutcome} onContinue={onContinueEncounter} />}
     <div className="place-card"><span className="eyebrow">当前位置</span><h2>{currentNode?.name ?? save.world.player.nodeId}</h2><p>{currentNode?.description ?? '从地图出发，去遇见今天的世界。'}</p>{currentNode && <div className="place-details"><span>区域<strong>{map.regions[currentNode.regionId]?.name ?? currentNode.regionId}</strong></span><span>类型<strong>{currentNode.kind.length ? currentNode.kind.join('、') : '未分类'}</strong></span><span>开放<strong>{currentNode.openSlots?.length ? currentNode.openSlots.map((id) => save.config.calendar.slots.find((slot) => slot.id === id)?.name ?? id).join('、') : '始终开放'}</strong></span><span>范围<strong>{currentScope}</strong></span></div>}<div className="button-row"><button onClick={onOpenChat}>打开聊天</button>{currentNode && <span className="map-meta">访问 {currentNode.visitCount} 次</span>}</div>{currentNode && <PresenceList people={whoIsHere(save.world, currentNode.id, save.world.clock.day, save.world.clock.slotId, save.config.calendar.daysPerWeek)} scope={currentScope} />}</div>
   </section>;
+}
+
+function GraphMapPresence({ people, visuals, avatarUrls, x, y }: { people: ReturnType<typeof whoIsWhere>; visuals: Record<string, MapPresenceVisual>; avatarUrls: Record<string, string>; x: number; y: number }) {
+  if (!people.length) return null;
+  return <g className="map-presence-stack" transform={`translate(${x + 22} ${y - 30})`} aria-label={`这里有${people.map((person) => person.name).join('、')}`}>{people.slice(0, 3).map((person, index) => { const visual = visuals[person.id]; const avatarUrl = avatarUrls[person.id]; const avatarX = index * 22; return <g key={person.id} transform={`translate(${avatarX} 0)`}><title>{person.name}</title><circle className="map-presence-avatar-ring" cx="0" cy="0" r="13" /><circle cx="0" cy="0" r="11" fill={visual?.accentColor ?? '#667085'} />{avatarUrl ? <image className="map-presence-avatar-image" href={avatarUrl} x="-11" y="-11" width="22" height="22" preserveAspectRatio="xMidYMid slice" /> : <text className="map-presence-avatar-initial" x="0" y="4" textAnchor="middle">{visual?.initial ?? '?'}</text>}</g>; })}{people.length > 3 && <text className="map-presence-more" x="68" y="4">+{people.length - 3}</text>}</g>;
+}
+
+function HotspotMapPresence({ people, visuals, avatarUrls }: { people: ReturnType<typeof whoIsWhere>; visuals: Record<string, MapPresenceVisual>; avatarUrls: Record<string, string> }) {
+  if (!people.length) return null;
+  return <span className="hotspot-presence" aria-label={`这里有${people.map((person) => person.name).join('、')}`}>{people.slice(0, 3).map((person) => { const visual = visuals[person.id]; const avatarUrl = avatarUrls[person.id]; return <span key={person.id} className="hotspot-presence-avatar" style={{ '--presence-color': visual?.accentColor ?? '#667085' } as CSSProperties} title={person.name}>{avatarUrl ? <img src={avatarUrl} alt={person.name} /> : visual?.initial ?? '?'}</span>; })}{people.length > 3 && <span className="hotspot-presence-more">+{people.length - 3}</span>}</span>;
 }
 
 function EncounterDialog({ encounter, onOutcome, onContinue }: { encounter: ActiveEncounter; onOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinue: () => void }) {

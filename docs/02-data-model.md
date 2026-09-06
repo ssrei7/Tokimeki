@@ -203,7 +203,7 @@ interface NpcTemplate {          // 背景 NPC 生成模版
 
 背景 NPC 不落库，运行时由 `{ seed, templateId }` 现场生成。`promote_npc` op 负责 `NpcLite → Character` 的扩写与落库。
 
-**立绘回退链**：`activePortraitId` → `portraits[0]` → `avatar` → `accentColor` 名牌占位。任一级缺失继续降级，不报错、不留白。
+**视觉资产显示规则**：当前产品界面只维护一张可选立绘；新上传会替换旧图。存档暂时保留 `portraits[]` 与 `activePortraitId` 以兼容旧存档和导入内容，但内置编辑器写入时最多保留一项。面对面场景缺少立绘时保留空的立绘区域，不使用头像代替；地图/图钉头像缺失时使用 `accentColor + 角色名首字` 占位，不报错。
 
 ---
 
