@@ -54,7 +54,14 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
         .filter((entry): entry is WorldbookEntry => Boolean(entry?.enabled));
       return matched.map((entry) => `[${entry.name}]\n${entry.content}`).join('\n\n') || null;
     } },
-    { id: 'node_memory', role: 'system', priority: 70, order: 5, build: missing },
+    { id: 'node_memory', role: 'system', priority: 70, order: 5, build: (facts) => {
+      const world = factsOf(facts).world;
+      const node = world?.map?.nodes?.[world.player.nodeId];
+      if (!node?.memories?.length) return null;
+      const names = new Map(Object.values(world.characters).map((character) => [character.id, character.name]));
+      for (const npc of Object.values(world.npcs)) names.set(npc.id, npc.name);
+      return `地点记忆（最近 ${node.memories.length} 条）：\n${node.memories.slice(-5).map((memory) => `- 第 ${memory.day} 天${memory.charIds.length ? `（${memory.charIds.map((id) => names.get(id) ?? id).join('、')}）` : ''}：${memory.text}`).join('\n')}`;
+    } },
     { id: 'char_memory', role: 'system', priority: 65, order: 6, build: missing },
     { id: 'recent_diary', role: 'system', priority: 60, order: 7, build: (facts) => {
       const diary = factsOf(facts).world?.diary.slice(-7);

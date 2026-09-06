@@ -21,7 +21,7 @@ function setup() {
 describe('op registry and built-ins', () => {
   it('registers complete prompt documentation for all stage 1 ops', () => {
     const docs = createDefaultOpRegistry().promptDocs();
-    for (const op of ['add_stat', 'set_stat', 'set_flag', 'give_item', 'take_item', 'add_memory', 'move_player', 'reveal_node', 'move_npc']) expect(docs).toContain(op);
+    for (const op of ['add_stat', 'set_stat', 'set_flag', 'give_item', 'take_item', 'add_memory', 'add_node_memory', 'move_player', 'reveal_node', 'move_npc']) expect(docs).toContain(op);
   });
 
   it('clamps stat deltas and records a diff without hard-coded stat keys', () => {
@@ -89,6 +89,22 @@ describe('op registry and built-ins', () => {
     expect(result.rejected).toHaveLength(1);
     expect(state.world.relations.unknown).toBeUndefined();
     expect(state.world.relations.seir.memories[0]).toEqual({ id: 'memory-seir-3-1', text: '在码头交谈', day: 3, nodeId: 'docks' });
+  });
+
+  it('records current-node memories, validates participants, and keeps five entries', () => {
+    const state = setup();
+    state.context.nodeId = 'start';
+    state.world.map.nodes.docks = { ...state.world.map.nodes.start, id: 'docks', name: '西码头' };
+    state.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '测试角色', personality: '安静' }, visuals: { portraits: [] }, schedule: { grid: {}, overrides: {} } };
+    const first = state.registry.applyAll([{ op: 'add_node_memory', text: '在码头一起看过潮汐。', charIds: ['seir'], pinned: true }], state.context, 12);
+    expect(first.applied).toBe(1);
+    expect(state.world.map.nodes.start.memories[0]).toEqual({ id: 'node-memory-start-3-1', text: '在码头一起看过潮汐。', day: 3, charIds: ['seir'], pinned: true });
+    expect(state.registry.applyAll([{ op: 'add_node_memory', nodeId: 'docks', text: '不应写入。' }], state.context, 12).rejected).toHaveLength(1);
+    expect(state.registry.applyAll([{ op: 'add_node_memory', text: '未知角色。', charIds: ['missing'] }], state.context, 12).rejected).toHaveLength(1);
+    for (let index = 0; index < 5; index += 1) state.registry.applyAll([{ op: 'add_node_memory', text: `记忆 ${index}` }], state.context, 12);
+    expect(state.world.map.nodes.start.memories).toHaveLength(5);
+    expect(state.world.map.nodes.start.memories[0].text).toBe('在码头一起看过潮汐。');
+    expect(state.world.map.nodes.start.memories.at(-1)?.text).toBe('记忆 4');
   });
 
   it('advances deterministic time through the registered op', () => {

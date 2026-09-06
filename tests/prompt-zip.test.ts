@@ -54,6 +54,16 @@ describe('prompt assembler', () => {
     expect(result.blocks.find((block) => block.id === 'recent_diary')?.text).toContain('用户编辑后的日记');
   });
 
+  it('injects recent node memories with local character names', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks()) assembler.register(block);
+    const map = createDefaultMap();
+    map.nodes.start.memories = [{ id: 'memory-1', text: '在这里等过雨停。', day: 2, charIds: ['seir'] }];
+    const result = assembler.assemble({ input: '', worldbooks: [], history: [], world: { clock: { day: 3, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, settlements: [], characters: { seir: { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '测试', personality: '安静' }, visuals: { portraits: [] } } }, npcs: {}, npcTemplates: {}, encounterLog: [], map, diary: [] } }, { budget: 4096, task: 'narrate_main' });
+    expect(result.blocks.find((block) => block.id === 'node_memory')?.text).toContain('塞伊尔');
+    expect(result.blocks.find((block) => block.id === 'node_memory')?.text).toContain('在这里等过雨停');
+  });
+
   it('injects node-bound worldbook before keyword matches without duplicating it', () => {
     const assembler = new PromptAssembler();
     for (const block of createDefaultPromptBlocks()) assembler.register(block);

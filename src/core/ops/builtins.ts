@@ -13,6 +13,7 @@ const SetFlagSchema = z.object({ op: z.literal('set_flag'), target: StatTargetSc
 const GiveItemSchema = z.object({ op: z.literal('give_item'), id: z.string().min(1), count: z.number().int().positive().default(1), from: z.string().min(1).optional() });
 const TakeItemSchema = z.object({ op: z.literal('take_item'), id: z.string().min(1), count: z.number().int().positive().default(1) });
 const AddMemorySchema = z.object({ op: z.literal('add_memory'), target: z.string().min(1), text: z.string().min(1).max(1000) });
+const AddNodeMemorySchema = z.object({ op: z.literal('add_node_memory'), nodeId: z.string().min(1).optional(), text: z.string().min(1).max(1000), charIds: z.array(z.string().min(1)).max(3).default([]), pinned: z.boolean().optional() });
 const AdvanceTimeSchema = z.object({ op: z.literal('advance_time'), kind: z.string().min(1).optional(), slots: z.number().int().positive().default(1) });
 const MovePlayerSchema = z.object({ op: z.literal('move_player'), nodeId: z.string().min(1) });
 const RevealNodeSchema = z.object({ op: z.literal('reveal_node'), nodeId: z.string().min(1) });
@@ -64,6 +65,12 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     promptDoc: 'add_memory: {"op":"add_memory","target":"current-character-id","text":"fact grounded in this scene"}.',
     describe: (payload) => `add memory for ${payload.target}: ${payload.text}`,
     apply: (payload, context) => addMemory(payload, context),
+  });
+  registry.register({
+    op: 'add_node_memory', schema: AddNodeMemorySchema, clamp: {},
+    promptDoc: 'add_node_memory: {"op":"add_node_memory","nodeId":"current-node-id","text":"fact grounded in this place","charIds":["character-id"],"pinned":false}; records a visit memory on the current node, keeping at most five memories.',
+    describe: (payload) => `add node memory at ${payload.nodeId ?? 'current node'}: ${payload.text}`,
+    apply: (payload, context) => addNodeMemory(payload, context),
   });
   registry.register({
     op: 'advance_time', schema: AdvanceTimeSchema, clamp: { numeric: { slots: { min: 1, max: 24 } } },
@@ -155,6 +162,34 @@ function addMemory(payload: z.infer<typeof AddMemorySchema>, context: OpContext)
   const memory = { id: `memory-${payload.target}-${context.day}-${relation.memories.length + 1}`, text: payload.text, day: context.day, nodeId: context.nodeId };
   relation.memories.push(memory);
   return changed(`relations.${payload.target}.memories`, relation.memories.length - 1, relation.memories.length, `Added memory for ${payload.target}.`);
+}
+
+function addNodeMemory(payload: z.infer<typeof AddNodeMemorySchema>, context: OpContext): OpResult {
+  const nodeId = payload.nodeId ?? context.nodeId;
+  if (nodeId !== context.nodeId) return rejected('Node memory must target the current node.');
+  const node = context.world.map.nodes[nodeId];
+  if (!node) return rejected(`Unknown node: ${nodeId}.`);
+  const text = payload.text.trim();
+  if (!text) return rejected('Node memory text cannot be blank.');
+  const knownCharacterIds = new Set([...Object.keys(context.world.characters), ...Object.keys(context.world.npcs)]);
+  const charIds = [...new Set(payload.charIds)].filter((id) => knownCharacterIds.has(id));
+  const invalidCharIds = payload.charIds.filter((id) => !knownCharacterIds.has(id));
+  if (invalidCharIds.length) return rejected(`Unknown character in node memory: ${invalidCharIds[0]}.`);
+  const before = structuredClone(node.memories);
+  const memory = {
+    id: `node-memory-${nodeId}-${context.day}-${node.memories.length + 1}`,
+    text,
+    day: Math.max(1, Math.floor(context.day)),
+    charIds,
+    ...(payload.pinned === undefined ? {} : { pinned: payload.pinned }),
+  };
+  if (node.memories.length >= 5) {
+    const removeIndex = node.memories.findIndex((item) => !item.pinned);
+    if (removeIndex < 0) return rejected('Node memory limit reached; all existing memories are pinned.');
+    node.memories.splice(removeIndex, 1);
+  }
+  node.memories.push(memory);
+  return changed(`world.map.nodes.${nodeId}.memories`, before, structuredClone(node.memories), `Added a memory to ${nodeId}.`);
 }
 
 function itemCount(world: WorldState, itemId: string): number {
