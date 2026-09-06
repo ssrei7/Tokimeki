@@ -3,7 +3,7 @@ import type { SaveFile } from '../../data/schema/save';
 import type { PromptBlock, PromptFacts } from './assembler';
 
 export const DEFAULT_PROMPT_BLOCK_IDS = [
-  'preset_bundle', 'format_contract', 'character_core', 'encounter_participants', 'relationship_state', 'scene_now', 'node_worldbook', 'node_memory',
+  'preset_bundle', 'format_contract', 'encounter_participants', 'character_core', 'relationship_state', 'scene_now', 'node_worldbook', 'node_memory',
   'char_memory', 'recent_diary', 'milestones', 'worldbook_keyword', 'chapter_summary', 'raw_history',
 ] as const;
 
@@ -33,15 +33,18 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
       return entries.map((entry, index) => `[${index === 0 ? '核心预设' : '预设'}：${entry.name}]\n${entry.systemPrompt}`).join('\n\n');
     } },
     { id: 'format_contract', role: 'system', priority: 100, order: 1, build: () => `你是开放世界叙事游戏中的角色。先输出自然语言正文。面对面场景中只有明确写成 [说话人:角色名] 的内容才是角色台词；环境、动作、心理或其他描写一律使用 [旁白] 内容。未标记的助手正文为兼容旧记录，界面会按旁白显示。游戏状态只由确定性内核持有，不要声称提议已经生效。${opContract}` },
-    { id: 'character_core', role: 'system', priority: 95, order: 2, build: (facts) => {
+    { id: 'encounter_participants', role: 'system', priority: 96, order: 2, build: (facts) => {
+      const { participants, character, playerPersona, world } = factsOf(facts);
+      if (!participants?.length) return null;
+      const playerLabel = playerPersona?.displayName ?? world?.player.name ?? '玩家';
+      const playerIdentity = playerPersona?.description ? `\n玩家身份：${playerPersona.description}` : '';
+      const cast = participants.map((participant) => `${participant.name}（${participant.id === character?.id ? '主要聊天角色' : '其他在场角色'}）\n简介：${participant.description}\n性格：${participant.personality}${participant.scenario ? `\n场景：${participant.scenario}` : ''}`).join('\n\n');
+      return `[面对面场景角色与指代]\n玩家（叙事主角与旁白视角主体）：${playerLabel}${playerIdentity}\n\n本次在场的非玩家角色（除玩家外，仅这些角色可以发言）：\n${cast}\n\n指代与互动规则：\n- 旁白的人称形式由启用的预设决定，但旁白的视角主体始终是玩家。第一人称旁白中的“我”、第二人称旁白中的“你”、第三人称旁白中的玩家称呼都指向玩家；第三人称代词若可能与在场角色混淆，改用玩家称呼。\n- 角色台词中的“我”只指当前 [说话人]；台词中的“你”必须有清楚的受话对象。\n- 角色向玩家提问后，不得让另一名角色无提示地当作玩家回答。另一角色可以插话、抢答或打断，但必须用 [旁白] 明确写出其动作和介入方式。\n- 非玩家角色可以互相交谈。注意力从玩家转向另一角色时，必须用姓名、视线、动作或 [旁白] 明确交代；如果他们暂时无视玩家，也要描写玩家仍在场以及这种冷落或注意力转移。\n- 不得把任何非玩家角色静默替换成叙事中的玩家。`;
+    } },
+    { id: 'character_core', role: 'system', priority: 95, order: 3, build: (facts) => {
       const character = factsOf(facts).character;
       if (!character) return null;
-      return [character.name, character.description, character.personality, character.scenario].filter(Boolean).join('\n');
-    } },
-    { id: 'encounter_participants', role: 'system', priority: 94, order: 3, build: (facts) => {
-      const participants = factsOf(facts).participants;
-      if (!participants?.length) return null;
-      return `本次面对面在场的非玩家角色（除玩家外，仅这些角色可以发言）：\n${participants.map((character) => `${character.name}\n简介：${character.description}\n性格：${character.personality}${character.scenario ? `\n场景：${character.scenario}` : ''}`).join('\n\n')}`;
+      return [`当前主要聊天角色（非玩家）：${character.name}`, `简介：${character.description}`, `性格：${character.personality}`, character.scenario ? `场景：${character.scenario}` : ''].filter(Boolean).join('\n');
     } },
     { id: 'relationship_state', role: 'system', priority: 90, order: 4, build: missing },
     { id: 'scene_now', role: 'system', priority: 88, order: 5, build: (facts) => {

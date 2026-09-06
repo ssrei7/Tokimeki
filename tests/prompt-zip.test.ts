@@ -11,14 +11,29 @@ import { createBuiltinNarrationPresetBundle } from '../src/data/presets/builtins
 describe('prompt assembler', () => {
   it('orders blocks and reports truncation', () => { const assembler = new PromptAssembler(); assembler.register({ id: 'low', role: 'system', priority: 10, order: 2, build: () => 'low '.repeat(20) }); assembler.register({ id: 'high', role: 'system', priority: 100, order: 1, build: () => 'high' }); const result = assembler.assemble({}, { budget: 4 }); expect(result.blocks.find((b) => b.id === 'high')?.dropped).toBe(false); expect(result.estimatedTokens).toBeLessThanOrEqual(4); });
 
-  it('injects the selected encounter participants into the prompt', () => {
+  it('anchors the player and explicit addressees before the primary character in multi-character scenes', () => {
     const assembler = new PromptAssembler();
     for (const block of createDefaultPromptBlocks()) assembler.register(block);
     const result = assembler.assemble({
       input: '', worldbooks: [], history: [], world: undefined,
-      participants: [{ id: 'rin', name: '凛', description: '花店店员', personality: '爽朗。', updatedAt: '2026-01-01T00:00:00.000Z' }],
+      character: { id: 'rin', name: '凛', description: '花店店员', personality: '爽朗。', updatedAt: '2026-01-01T00:00:00.000Z' },
+      participants: [
+        { id: 'rin', name: '凛', description: '花店店员', personality: '爽朗。', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'seir', name: '塞伊尔', description: '码头青年', personality: '安静。', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ],
+      playerPersona: { id: 'traveler', name: '旅行身份', displayName: '旅人', description: '刚来到港口的外乡人。', updatedAt: '2026-01-01T00:00:00.000Z' },
     }, { budget: 4096, task: 'narrate_main' });
-    expect(result.messages.some((message) => message.content.includes('本次面对面在场的非玩家角色') && message.content.includes('凛'))).toBe(true);
+    const cast = result.blocks.find((block) => block.id === 'encounter_participants');
+    expect(cast?.text).toContain('玩家（叙事主角与旁白视角主体）：旅人');
+    expect(cast?.text).toContain('凛（主要聊天角色）');
+    expect(cast?.text).toContain('塞伊尔（其他在场角色）');
+    expect(cast?.text).toContain('第一人称旁白中的“我”');
+    expect(cast?.text).toContain('第二人称旁白中的“你”');
+    expect(cast?.text).toContain('第三人称代词若可能与在场角色混淆');
+    expect(cast?.text).toContain('不得让另一名角色无提示地当作玩家回答');
+    expect(cast?.text).toContain('如果他们暂时无视玩家，也要描写玩家仍在场');
+    expect(result.blocks.findIndex((block) => block.id === 'encounter_participants')).toBeLessThan(result.blocks.findIndex((block) => block.id === 'character_core'));
+    expect(result.blocks.find((block) => block.id === 'character_core')?.text).toContain('当前主要聊天角色（非玩家）：凛');
   });
 
   it('registers all default blocks and reports blocks without stage data as skipped', () => {
