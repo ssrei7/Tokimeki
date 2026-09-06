@@ -79,9 +79,9 @@ button.danger { background: #fee4e2; color: #b42318; }
 .map-node-marker { fill: #ffffff !important; font-size: 20px !important; }
 .map-presence-stack { pointer-events: none; }
 .map-presence-avatar-ring { fill: #ffffff; stroke: #ffffff; stroke-width: 3; }
-.map-presence-avatar-image { clip-path: circle(28px at center); }
-.map-presence-avatar-initial { fill: #ffffff !important; font-size: 24px !important; font-weight: 700; }
-.map-presence-more { fill: #344054 !important; font-size: 24px !important; font-weight: 700; }
+.map-presence-avatar-image { clip-path: circle(56px at center); }
+.map-presence-avatar-initial { fill: #ffffff !important; font-size: 48px !important; font-weight: 700; }
+.map-presence-more { fill: #344054 !important; font-size: 48px !important; font-weight: 700; }
 .map-node-trace { fill: #667085 !important; font-size: 11px !important; }
 .map-node[role="button"] { cursor: pointer; }
 .map-node[role="button"]:focus circle { stroke: #1849a9; stroke-width: 8; }
@@ -94,10 +94,10 @@ button.danger { background: #fee4e2; color: #b42318; }
 .hotspot-pin { position: absolute; transform: translate(-50%, -50%); min-height: 44px; max-width: 160px; padding: 0 11px; border: 2px solid #ffffff; border-radius: 999px; background: #475467; color: #ffffff; box-shadow: 0 2px 8px #34405455; font-size: 12px; white-space: nowrap; overflow: visible; }
 .hotspot-pin.current { background: #315efb; }
 .hotspot-pin-label { display: block; max-width: 136px; overflow: hidden; text-overflow: ellipsis; }
-.hotspot-presence { position: absolute; right: -10px; top: -22px; display: flex; align-items: center; pointer-events: none; }
-.hotspot-presence-avatar { width: 30px; height: 30px; display: grid; place-items: center; margin-left: -6px; overflow: hidden; border: 2px solid #ffffff; border-radius: 50%; background: var(--presence-color); color: #ffffff; box-shadow: 0 2px 6px #34405455; font-size: 12px; font-weight: 700; }
+.hotspot-presence { position: absolute; right: -20px; top: -44px; display: flex; align-items: center; pointer-events: none; }
+.hotspot-presence-avatar { width: 60px; height: 60px; display: grid; place-items: center; margin-left: -12px; overflow: hidden; border: 2px solid #ffffff; border-radius: 50%; background: var(--presence-color); color: #ffffff; box-shadow: 0 2px 6px #34405455; font-size: 24px; font-weight: 700; }
 .hotspot-presence-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.hotspot-presence-more { margin-left: 2px; color: #344054; font-size: 11px; font-weight: 700; text-shadow: 0 1px 2px #ffffff; }
+.hotspot-presence-more { margin-left: 4px; color: #344054; font-size: 22px; font-weight: 700; text-shadow: 0 1px 2px #ffffff; }
 .hotspot-trace { position: absolute; top: 36px; left: 50%; width: max-content; max-width: 200px; transform: translateX(-50%); color: #475467; font-size: 10px; line-height: 1.2; text-shadow: 0 1px 2px #ffffff; pointer-events: none; }
 .hotspot-select { display: grid; gap: 6px; color: #475467; font-size: 13px; }
 .hotspot-select select { width: 100%; border: 1px solid #d7dce5; border-radius: 8px; padding: 11px 12px; background: #fff; }
