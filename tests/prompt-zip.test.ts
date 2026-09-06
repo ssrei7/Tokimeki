@@ -10,12 +10,22 @@ import { createDefaultMap } from '../src/data/schema/save';
 describe('prompt assembler', () => {
   it('orders blocks and reports truncation', () => { const assembler = new PromptAssembler(); assembler.register({ id: 'low', role: 'system', priority: 10, order: 2, build: () => 'low '.repeat(20) }); assembler.register({ id: 'high', role: 'system', priority: 100, order: 1, build: () => 'high' }); const result = assembler.assemble({}, { budget: 4 }); expect(result.blocks.find((b) => b.id === 'high')?.dropped).toBe(false); expect(result.estimatedTokens).toBeLessThanOrEqual(4); });
 
+  it('injects the selected encounter participants into the prompt', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks()) assembler.register(block);
+    const result = assembler.assemble({
+      input: '', worldbooks: [], history: [], world: undefined,
+      participants: [{ id: 'rin', name: '凛', description: '花店店员', personality: '爽朗。', updatedAt: '2026-01-01T00:00:00.000Z' }],
+    }, { budget: 4096, task: 'narrate_main' });
+    expect(result.messages.some((message) => message.content.includes('本次面对面在场角色') && message.content.includes('凛'))).toBe(true);
+  });
+
   it('registers all default blocks and reports blocks without stage data as skipped', () => {
     const assembler = new PromptAssembler();
     for (const block of createDefaultPromptBlocks()) assembler.register(block);
     expect(assembler.listBlocks().map((block) => block.id)).toEqual([...DEFAULT_PROMPT_BLOCK_IDS]);
     const result = assembler.assemble({ input: '', worldbooks: [], history: [], world: undefined }, { budget: 200, task: 'narrate_main' });
-    expect(result.blocks).toHaveLength(12);
+    expect(result.blocks).toHaveLength(13);
     expect(result.blocks.find((block) => block.id === 'relationship_state')?.skipped).toBe(true);
     expect(result.messages.some((message) => message.content.includes('开放世界叙事游戏'))).toBe(true);
   });

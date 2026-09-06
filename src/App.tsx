@@ -105,6 +105,7 @@ export function App() {
   const [presetBundles, setPresetBundles] = useState<PresetBundle[]>([]);
   const [selectedPresetBundleId, setSelectedPresetBundleId] = useState('');
   const [selectedCharacterId, setSelectedCharacterId] = useState('');
+  const [chatParticipantIds, setChatParticipantIds] = useState<string[]>([]);
   const [visualCharacterId, setVisualCharacterId] = useState('');
   const [personaEditingId, setPersonaEditingId] = useState('');
   const [personaName, setPersonaName] = useState('');
@@ -573,9 +574,18 @@ export function App() {
     commitSave(next);
     setActiveEncounter(null);
     if (!formal) { setFeedback({ tone: 'info', text: '你决定留下继续，但当前没有可用的正式角色聊天卡。' }); return; }
+    const participantIds = activeEncounter.candidates.filter((candidate) => candidate.tier === 'formal' && characters.some((item) => item.id === candidate.id)).map((candidate) => candidate.id);
+    setChatParticipantIds(participantIds);
     setSelectedCharacterId(formal.id);
     setTab('chat');
     setFeedback({ tone: 'info', text: `你留下来和${formal.name}继续聊聊。` });
+  }
+
+  function updateChatParticipants(ids: string[]): void {
+    const available = [...new Set(ids)].filter((id) => presentChatCharacters.some((character) => character.id === id));
+    if (!available.length) return;
+    setChatParticipantIds(available);
+    if (!available.includes(selectedCharacterId)) setSelectedCharacterId(available[0]);
   }
 
   async function appendMessage() {
@@ -609,7 +619,9 @@ export function App() {
     const splitter = new OpsStreamSplitter();
     const latestInput = [...next].reverse().find((message) => message.role === 'user')?.content ?? '';
     const activePresetBundle = presetBundles.find((item) => item.id === selectedPresetBundleId);
-    const promptFacts = { input: latestInput, character: activeCharacter, presetBundle: activePresetBundle, playerPersona: activePersona, worldbooks, history: next, world: saveRef.current.world };
+    const participantIds = chatParticipantIds.length ? chatParticipantIds : [selectedCharacterId];
+    const participants = participantIds.map((id) => characters.find((item) => item.id === id)).filter((character): character is CharacterCard => Boolean(character));
+    const promptFacts = { input: latestInput, character: activeCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, worldbooks, history: next, world: saveRef.current.world };
     promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
     const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
     setDebug((current) => ({ ...current, prompt: assembled }));
@@ -1010,7 +1022,7 @@ export function App() {
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
+      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} participantIds={chatParticipantIds} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} />}
       {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} />}
     </main>
@@ -1258,6 +1270,8 @@ function ChatView(props: {
   characters: CharacterCard[];
   worldCharacters: SaveFile['world']['characters'];
   worldCharacter?: SaveFile['world']['characters'][string];
+  participantIds: string[];
+  onParticipantIdsChange: (ids: string[]) => void;
   sceneBackground?: AssetRef;
   playerLabel: string;
   selectedCharacterId: string;
@@ -1294,6 +1308,17 @@ function ChatView(props: {
   const activePortrait = activeWorldCharacter?.visuals.portraits.find((portrait) => portrait.id === activeWorldCharacter?.visuals.activePortraitId) ?? activeWorldCharacter?.visuals.portraits[0];
   const accentColor = activeWorldCharacter?.visuals.accentColor ?? '#315efb';
   const activeSpeakerName = activeWorldCharacter?.name ?? (activeSpeakerId === 'player' ? props.playerLabel : characterName);
+  const participantIds = props.participantIds.length ? props.participantIds : (props.selectedCharacterId ? [props.selectedCharacterId] : []);
+  const participantCharacters = props.characters.filter((character) => participantIds.includes(character.id));
+  const toggleParticipant = (id: string) => {
+    if (participantIds.includes(id)) {
+      const next = participantIds.filter((participantId) => participantId !== id);
+      if (next.length) props.onParticipantIdsChange(next);
+      return;
+    }
+    if (participantIds.length >= 3) return;
+    props.onParticipantIdsChange([...participantIds, id]);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -1358,7 +1383,7 @@ function ChatView(props: {
   }, [latestRole, props.busy]);
 
   return <section className="chat-screen vn-chat-screen">
-    <div className="character-picker"><select aria-label="聊天角色" value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">当前地点无人</option>{props.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
+    <div className="character-picker"><div className="participant-picker" aria-label="本次对话角色">{props.characters.length > 1 && <span className="participant-label">本次对话</span>}{props.characters.map((item) => <label key={item.id} className="participant-option"><input type="checkbox" checked={participantIds.includes(item.id)} onChange={() => toggleParticipant(item.id)} /><span>{item.name}</span></label>)}</div><select aria-label="主要聊天角色" value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">当前地点无人</option>{participantCharacters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
     <div className="vn-stage" style={{ '--vn-accent': accentColor, ...(sceneBackgroundUrl ? { backgroundImage: `linear-gradient(180deg, #0002, #0003), url("${sceneBackgroundUrl}")` } : {}) } as CSSProperties}>
       <div className="vn-portrait-area" aria-label={`${activeSpeakerName}的立绘`}>
         {portraitUrl ? <img className="vn-portrait" style={activePortrait?.transform ? { transform: `translate(${activePortrait.transform.offsetX}px, ${activePortrait.transform.offsetY}px) scale(${activePortrait.transform.scale})` } : undefined} src={portraitUrl} alt={`${activeSpeakerName}的立绘`} /> : <div className="vn-portrait-empty" aria-label="暂无立绘" />}
