@@ -73,6 +73,7 @@ button.danger { background: #fee4e2; color: #b42318; }
 .map-presence-avatar-image { clip-path: circle(11px at center); }
 .map-presence-avatar-initial { fill: #ffffff !important; font-size: 11px !important; font-weight: 700; }
 .map-presence-more { fill: #344054 !important; font-size: 11px !important; font-weight: 700; }
+.map-node-trace { fill: #667085 !important; font-size: 11px !important; }
 .map-node[role="button"] { cursor: pointer; }
 .map-node[role="button"]:focus circle { stroke: #1849a9; stroke-width: 8; }
 .map-hotspot-placeholder { min-height: 430px; display: grid; place-items: center; padding: 24px; color: #667085; text-align: center; }
@@ -88,6 +89,7 @@ button.danger { background: #fee4e2; color: #b42318; }
 .hotspot-presence-avatar { width: 24px; height: 24px; display: grid; place-items: center; margin-left: -5px; overflow: hidden; border: 2px solid #ffffff; border-radius: 50%; background: var(--presence-color); color: #ffffff; box-shadow: 0 2px 6px #34405455; font-size: 10px; font-weight: 700; }
 .hotspot-presence-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .hotspot-presence-more { margin-left: 2px; color: #344054; font-size: 10px; font-weight: 700; text-shadow: 0 1px 2px #ffffff; }
+.hotspot-trace { position: absolute; top: 30px; left: 50%; width: max-content; max-width: 180px; transform: translateX(-50%); color: #475467; font-size: 9px; line-height: 1.2; text-shadow: 0 1px 2px #ffffff; pointer-events: none; }
 .hotspot-select { display: grid; gap: 6px; color: #475467; font-size: 13px; }
 .hotspot-select select { width: 100%; border: 1px solid #d7dce5; border-radius: 8px; padding: 11px 12px; background: #fff; }
 .map-meta { align-self: center; color: #667085; font-size: 12px; }
@@ -100,6 +102,9 @@ button.danger { background: #fee4e2; color: #b42318; }
 .road-b { width: 52%; left: 43%; top: 48%; transform: rotate(32deg); }
 .place-card, .provider-card, .editor-card, .list-card, .io-card, .day-card, .settlement-card, .snapshot-card { border: 1px solid #e4e8ef; border-radius: 8px; padding: 16px; background: #fff; box-shadow: 0 4px 16px #3440540d; }
 .map-screen-host .place-card { flex: 0 0 auto; padding: 10px 12px; }
+.encounter-trace-list { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; margin-top: 8px; color: #667085; font-size: 11px; }
+.encounter-trace-list .eyebrow { color: #98a2b3; font-size: 10px; }
+.encounter-trace { white-space: nowrap; }
 .map-screen-host .place-card .eyebrow { display: none; }
 .map-screen-host .place-card h2 { font-size: 16px; }
 .map-screen-host .place-card p { margin: 4px 0 8px; max-height: 2.8em; overflow: hidden; font-size: 12px; line-height: 1.4; }

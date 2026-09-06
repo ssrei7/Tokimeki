@@ -10,3 +10,5 @@ export { triggerEncounter, updateEncounterOutcome } from './trigger';
 export type { EncounterOutcomeResult, EncounterTriggerOptions, EncounterTriggerResult } from './trigger';
 export { addCharacterToWorld, formalCharacterFromCard } from './roster';
 export type { RosterResult } from './roster';
+export { recentEncounterTraces } from './traces';
+export type { EncounterTrace } from './traces';

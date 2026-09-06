@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveNodeScope, resolveScheduledCell, whoIsHere, whoIsWhere } from '../src/core/encounter';
+import { deriveNodeScope, recentEncounterTraces, resolveScheduledCell, whoIsHere, whoIsWhere } from '../src/core/encounter';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import type { FormalCharacter, WorldState } from '../src/data/schema/save';
 
@@ -66,6 +66,15 @@ describe('deterministic schedule presence query', () => {
       { id: 'seir', nodeId: 'docks' },
       { id: 'vendor-1', nodeId: 'docks' },
     ]);
+  });
+
+  it('derives recent encounter traces without changing world state', () => {
+    const world = setup();
+    world.encounterLog.push({ id: 'trace-old', day: 1, slotId: 'morning', nodeId: 'docks', characterIds: ['seir'], trigger: 'enter', scope: 'formal', outcome: 'continued' });
+    world.encounterLog.push({ id: 'trace-recent', day: 2, slotId: 'afternoon', nodeId: 'docks', characterIds: ['vendor-1'], trigger: 'leave', scope: 'peripheral', outcome: 'urgent_leave' });
+    const before = structuredClone(world);
+    expect(recentEncounterTraces(world, 'docks', 4, 2)).toEqual([{ day: 2, daysAgo: 2, characterIds: ['vendor-1'], characterNames: ['摊主'], trigger: 'leave', scope: 'peripheral', outcome: 'urgent_leave' }]);
+    expect(world).toEqual(before);
   });
 
   it('does not query providers or create state while reading presence', () => {
