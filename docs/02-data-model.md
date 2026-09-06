@@ -151,7 +151,7 @@ interface CharacterVisuals {
   avatar?: AssetRef;             // 地图图钉 / 联系人 / 消息头像
   portraits: PortraitSet[];
   activePortraitId?: Id;
-  accentColor?: string;          // 无图时名牌占位配色
+  accentColor?: string;          // 用户指定的名牌/头像占位配色；未设置时由角色 ID 派生稳定默认色
 }
 
 interface Character {            // 正式角色
@@ -203,7 +203,7 @@ interface NpcTemplate {          // 背景 NPC 生成模版
 
 背景 NPC 不落库，运行时由 `{ seed, templateId }` 现场生成。`promote_npc` op 负责 `NpcLite → Character` 的扩写与落库。
 
-**视觉资产显示规则**：当前产品界面只维护一张可选立绘；新上传会替换旧图。存档暂时保留 `portraits[]` 与 `activePortraitId` 以兼容旧存档和导入内容，但内置编辑器写入时最多保留一项。面对面场景缺少立绘时保留空的立绘区域，不使用头像代替；地图/图钉头像缺失时使用 `accentColor + 角色名首字` 占位，不报错。
+**视觉资产显示规则**：当前产品界面只维护一张可选立绘；新上传会替换旧图。存档暂时保留 `portraits[]` 与 `activePortraitId` 以兼容旧存档和导入内容，但内置编辑器写入时最多保留一项。面对面场景缺少立绘时保留空的立绘区域，不使用头像代替；地图/图钉头像缺失时使用角色颜色与角色名首字占位，不报错。用户可编辑 `accentColor`；未设置时由本地代码根据稳定角色 ID 从默认调色板分配，同场正式角色尽量避免重复。
 
 ---
 
