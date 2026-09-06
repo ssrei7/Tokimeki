@@ -6,6 +6,22 @@ export type DialogueLine = {
   text: string;
 };
 
+/** Finds the latest explicit speaker without guessing from unmarked narration. */
+export function latestDialogueSpeakerId(messages: ChatMessage[], fallbackSpeakerId: string, speakerIdsByName: Record<string, string> = {}): string {
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const message = messages[messageIndex];
+    if (message.role === 'system') continue;
+    if (message.kind === 'dialogue' && message.speakerId) return message.speakerId;
+    if (message.role === 'user') return message.speakerId ?? 'player';
+    const lines = message.content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    for (let lineIndex = lines.length - 1; lineIndex >= 0; lineIndex -= 1) {
+      const speaker = lines[lineIndex].match(/^\[(?:说话人|speaker)[:：]\s*([^\]]+)\]/i);
+      if (speaker) return speakerIdsByName[speaker[1].trim()] ?? fallbackSpeakerId;
+    }
+  }
+  return fallbackSpeakerId;
+}
+
 /** Parse optional, human-readable speaker markers while keeping legacy plain text compatible. */
 export function splitDialogueMessage(message: ChatMessage, fallbackSpeaker: string, userSpeaker = '你', speakerLabels: Record<string, string> = {}): DialogueLine[] {
   const lines = message.content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);

@@ -26,7 +26,7 @@ import { createStage4EncounterScenario } from './dev/scenarios/stage4';
 import { seedScenario } from './dev/scenarios/seeder';
 import { ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, type ProviderBinding, type ProviderConfig, type TaskId } from './providers/types';
 import { canGenerateReply, hasQueuedUserMessage } from './ui/chat-state';
-import { splitDialogueMessage } from './ui/dialogue';
+import { latestDialogueSpeakerId, splitDialogueMessage } from './ui/dialogue';
 import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
 import './ui/theme/app.css';
 
@@ -1010,7 +1010,7 @@ export function App() {
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
+      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} />}
       {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} />}
     </main>
@@ -1256,6 +1256,7 @@ function DiaryEditor(props: { entry: SaveFile['world']['diary'][number]; onSave:
 
 function ChatView(props: {
   characters: CharacterCard[];
+  worldCharacters: SaveFile['world']['characters'];
   worldCharacter?: SaveFile['world']['characters'][string];
   sceneBackground?: AssetRef;
   playerLabel: string;
@@ -1286,9 +1287,13 @@ function ChatView(props: {
   const [portraitUrl, setPortraitUrl] = useState<string>();
   const [sceneBackgroundUrl, setSceneBackgroundUrl] = useState<string>();
   const [quickReplySelected, setQuickReplySelected] = useState(false);
-  const activePortrait = props.worldCharacter?.visuals.portraits.find((portrait) => portrait.id === props.worldCharacter?.visuals.activePortraitId) ?? props.worldCharacter?.visuals.portraits[0];
-  const accentColor = props.worldCharacter?.visuals.accentColor ?? '#315efb';
   const characterName = props.characters.find((item) => item.id === props.selectedCharacterId)?.name ?? '选择角色聊天';
+  const speakerIdsByName = Object.fromEntries(Object.values(props.worldCharacters).map((character) => [character.name, character.id]));
+  const activeSpeakerId = latestDialogueSpeakerId(props.messages, props.selectedCharacterId, speakerIdsByName);
+  const activeWorldCharacter = props.worldCharacters[activeSpeakerId] ?? props.worldCharacter;
+  const activePortrait = activeWorldCharacter?.visuals.portraits.find((portrait) => portrait.id === activeWorldCharacter?.visuals.activePortraitId) ?? activeWorldCharacter?.visuals.portraits[0];
+  const accentColor = activeWorldCharacter?.visuals.accentColor ?? '#315efb';
+  const activeSpeakerName = activeWorldCharacter?.name ?? (activeSpeakerId === 'player' ? props.playerLabel : characterName);
 
   useEffect(() => {
     let cancelled = false;
@@ -1355,12 +1360,12 @@ function ChatView(props: {
   return <section className="chat-screen vn-chat-screen">
     <div className="character-picker"><select aria-label="聊天角色" value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">当前地点无人</option>{props.characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
     <div className="vn-stage" style={{ '--vn-accent': accentColor, ...(sceneBackgroundUrl ? { backgroundImage: `linear-gradient(180deg, #0002, #0003), url("${sceneBackgroundUrl}")` } : {}) } as CSSProperties}>
-      <div className="vn-portrait-area" aria-label={`${characterName}的立绘`}>
-        {portraitUrl ? <img className="vn-portrait" src={portraitUrl} alt={`${characterName}的立绘`} /> : <div className="vn-portrait-empty" aria-label="暂无立绘" />}
+      <div className="vn-portrait-area" aria-label={`${activeSpeakerName}的立绘`}>
+        {portraitUrl ? <img className="vn-portrait" style={activePortrait?.transform ? { transform: `translate(${activePortrait.transform.offsetX}px, ${activePortrait.transform.offsetY}px) scale(${activePortrait.transform.scale})` } : undefined} src={portraitUrl} alt={`${activeSpeakerName}的立绘`} /> : <div className="vn-portrait-empty" aria-label="暂无立绘" />}
       </div>
       {!quickReplySelected && <div className="vn-choices" aria-label="快速回应"><button className="secondary" onClick={() => { props.setInput('我点了点头。'); setQuickReplySelected(true); }}>点头回应</button><button className="secondary" onClick={() => { props.setInput('我先听你说。'); setQuickReplySelected(true); }}>先听你说</button></div>}
       <div className="vn-dialogue-box">
-        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && !showOlderMessages && <button className="history-toggle" onClick={() => setShowOlderMessages(true)}>查看更早的 {olderMessageCount} 条消息</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.flatMap((message, index) => splitDialogueMessage(message, characterName, props.playerLabel, { player: props.playerLabel, [props.selectedCharacterId]: characterName }).map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${olderMessageCount + index}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>))}{props.busy && props.requestStatus === 'requesting' && <div className="vn-line dialogue assistant pending"><span className="vn-speaker">{characterName}</span><span className="vn-line-text">等待回复…</span></div>}</div>
+        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && !showOlderMessages && <button className="history-toggle" onClick={() => setShowOlderMessages(true)}>查看更早的 {olderMessageCount} 条消息</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.flatMap((message, index) => splitDialogueMessage(message, characterName, props.playerLabel, { player: props.playerLabel, ...Object.fromEntries(Object.values(props.worldCharacters).map((character) => [character.id, character.name])) }).map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${olderMessageCount + index}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>))}{props.busy && props.requestStatus === 'requesting' && <div className="vn-line dialogue assistant pending"><span className="vn-speaker">{characterName}</span><span className="vn-line-text">等待回复…</span></div>}</div>
       </div>
     </div>
     {props.pendingOps && <div className="ops-recovery" role="alert">

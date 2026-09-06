@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { canGenerateReply, hasQueuedUserMessage } from '../src/ui/chat-state';
-import { splitDialogueMessage } from '../src/ui/dialogue';
+import { latestDialogueSpeakerId, splitDialogueMessage } from '../src/ui/dialogue';
 
 describe('chat actions', () => {
   it('detects user messages waiting for a reply', () => {
@@ -30,5 +30,14 @@ describe('dialogue line markers', () => {
     expect(splitDialogueMessage({ role: 'assistant', content: '欢迎回来。', kind: 'dialogue', speakerId: 'char-rin' }, '塞伊尔', '旅人', { 'char-rin': '凛' })).toEqual([{ kind: 'dialogue', speaker: '凛', text: '欢迎回来。' }]);
     expect(splitDialogueMessage({ role: 'user', content: '我留下。', kind: 'dialogue', speakerId: 'player' }, '塞伊尔', '旅人', { player: '旅人' })).toEqual([{ kind: 'dialogue', speaker: '旅人', text: '我留下。' }]);
     expect(splitDialogueMessage({ role: 'assistant', content: '灯光在雨里晕开。', kind: 'narration', speakerId: 'char-rin' }, '塞伊尔', '旅人', { 'char-rin': '凛' })).toEqual([{ kind: 'narration', text: '灯光在雨里晕开。' }]);
+  });
+
+  it('tracks the latest explicit speaker for the active portrait', () => {
+    expect(latestDialogueSpeakerId([
+      { role: 'assistant', content: '[说话人:凛] 先说。' },
+      { role: 'assistant', content: '[旁白] 海风吹过。' },
+      { role: 'assistant', content: '[说话人:塞伊尔] 后说。' },
+    ], 'char-rin', { 凛: 'char-rin', 塞伊尔: 'char-seir' })).toBe('char-seir');
+    expect(latestDialogueSpeakerId([{ role: 'assistant', content: '只有旁白。' }], 'char-rin', { 凛: 'char-rin' })).toBe('char-rin');
   });
 });
