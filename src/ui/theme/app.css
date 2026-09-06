@@ -38,12 +38,13 @@ button.danger { background: #fee4e2; color: #b42318; }
 .map-menu summary span:last-child { color: #667085; font-size: 12px; font-weight: 400; }
 .map-menu[open] summary span:last-child { font-size: 0; }
 .map-menu[open] summary span:last-child::after { content: '点击收起'; font-size: 12px; }
-.map-menu-content { display: grid; gap: 10px; max-height: min(58vh, 520px); overflow-y: auto; padding: 0 10px 10px; overscroll-behavior: contain; }
+.map-menu-content { display: grid; gap: 10px; max-height: 0; overflow-y: hidden; padding: 0 10px; opacity: 0; pointer-events: none; transform: translateY(10px); transition: max-height 240ms cubic-bezier(.22,.8,.32,1), padding 240ms cubic-bezier(.22,.8,.32,1), opacity 180ms ease, transform 240ms cubic-bezier(.22,.8,.32,1); overscroll-behavior: contain; }
 .map-bottom-sheet { flex: 0 0 auto; max-height: min(64vh, 620px); border-radius: 12px 12px 0 0; box-shadow: 0 -6px 22px #34405418; }
 .map-screen-host .map-bottom-sheet { position: absolute; right: 0; bottom: 0; left: 0; z-index: 7; }
 .map-screen-host .map-tool-sheet { z-index: 7; }
 .map-screen-host .map-detail-sheet { z-index: 8; }
 .map-bottom-sheet summary { min-height: 40px; touch-action: none; user-select: none; }
+.map-bottom-sheet[open] .map-menu-content { max-height: min(58vh, 520px); overflow-y: auto; padding: 0 10px 10px; opacity: 1; pointer-events: auto; transform: translateY(0); }
 .map-bottom-sheet[open] summary span:last-child { font-size: 0; }
 .map-bottom-sheet[open] summary span:last-child::after { content: '向下收起'; font-size: 12px; }
 .map-controls { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -58,7 +59,7 @@ button.danger { background: #fee4e2; color: #b42318; }
 .map-screen-host .map-canvas { flex: 1 1 auto; min-height: 0; }
 .map-svg.editing, .hotspot-canvas.editing { cursor: crosshair; }
 .map-editor-hint { position: absolute; z-index: 5; top: 10px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 20px); padding: 7px 10px; border-radius: 999px; background: #1d2939dd; color: #fff; font-size: 11px; line-height: 1.4; text-align: center; pointer-events: none; }
-.map-editor-card { position: absolute; z-index: 6; right: 10px; bottom: 10px; left: 10px; display: grid; gap: 8px; max-height: calc(100% - 20px); overflow-y: auto; padding: 12px; border: 1px solid #d7dce5; border-radius: 8px; background: #fffffff2; box-shadow: 0 10px 30px #1d293955; cursor: default; overscroll-behavior: contain; touch-action: pan-y; }
+.map-editor-card { position: absolute; z-index: 12; right: 10px; bottom: 10px; left: 10px; display: grid; gap: 8px; max-height: calc(100% - 20px); overflow-y: auto; padding: 12px; border: 1px solid #d7dce5; border-radius: 8px; background: #fffffff2; box-shadow: 0 10px 30px #1d293955; cursor: default; overscroll-behavior: contain; touch-action: pan-y; }
 .map-editor-card label { display: grid; gap: 5px; color: #475467; font-size: 12px; }
 .map-editor-card input, .map-editor-card textarea, .map-editor-card select { width: 100%; border: 1px solid #d7dce5; border-radius: 7px; padding: 8px 10px; background: #fff; }
 .map-editor-card textarea { min-height: 62px; resize: vertical; }
