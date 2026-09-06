@@ -26,7 +26,7 @@ import { MOCK_FIXTURE_IDS, type MockFixtureId } from './providers/mock/fixtures'
 import { createStage4EncounterScenario } from './dev/scenarios/stage4';
 import { seedScenario } from './dev/scenarios/seeder';
 import { ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, type ProviderBinding, type ProviderConfig, type TaskId } from './providers/types';
-import { canGenerateReply, hasQueuedUserMessage } from './ui/chat-state';
+import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from './ui/chat-state';
 import { latestDialogueSpeakerId, splitDialogueMessage } from './ui/dialogue';
 import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
 import { PLAYER_ACCENT_COLOR, resolveCharacterAccentColors, resolveSpeakerAccentColor } from './ui/character-color';
@@ -128,6 +128,7 @@ export function App() {
   const [models, setModels] = useState<string[]>([]);
   const [requestStatus, setRequestStatus] = useState<RequestStatus>('idle');
   const [busy, setBusy] = useState(false);
+  const [replyInProgress, setReplyInProgress] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [save, setSave] = useState<SaveFile>(defaultSave);
   const [snapshots, setSnapshots] = useState<SaveSnapshot[]>([]);
@@ -636,7 +637,7 @@ export function App() {
       parsed = ProviderConfigSchema.parse(routedProvider);
     } catch (error) { setRequestStatus('error'); setFeedback({ tone: 'error', text: errorMessage(error, 'Provider 配置无效，请在设置中检查基础 URL、模型与渠道。') }); return; }
 
-    setMessages(next); setInput(''); setBusy(true); setRequestStatus('requesting'); setFeedback(null); setPendingOps(null);
+    setMessages(next); setInput(''); setBusy(true); setReplyInProgress(true); setRequestStatus('requesting'); setFeedback(null); setPendingOps(null);
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
     let narrative = '';
     const splitter = new OpsStreamSplitter();
@@ -678,7 +679,7 @@ export function App() {
         raw: finished.raw || message,
         ops: JSON.stringify({ stage: 'stream-error', applied: 0, warnings: [message], message: '本回合未产生状态变更。' }, null, 2),
       }));
-    } finally { setBusy(false); }
+    } finally { setBusy(false); setReplyInProgress(false); }
   }
 
   async function extractOps(rawReply: string): Promise<string> {
@@ -1083,7 +1084,7 @@ export function App() {
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} participantIds={chatParticipantIds} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
+      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} participantIds={chatParticipantIds} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} />}
       {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} />}
     </main>
@@ -1345,6 +1346,7 @@ function ChatView(props: {
   onGenerate: () => Promise<void>;
   requestStatus: RequestStatus;
   busy: boolean;
+  replyInProgress: boolean;
   pendingOps: PendingOpsRecovery | null;
   manualOps: string;
   setManualOps: (value: string) => void;
@@ -1382,6 +1384,7 @@ function ChatView(props: {
     : [];
   const latestAssistantKey = latestAssistantIndex >= 0 ? `${latestAssistantIndex}:${props.messages[latestAssistantIndex].content}` : '';
   const effectiveRevealedLineCount = latestRole === 'assistant' && revealedAssistantKey !== latestAssistantKey ? 1 : revealedLineCount;
+  const replyProgress = replyProgressIndicator(props.replyInProgress, props.requestStatus, latestRole === 'assistant' && latestAssistantLines.length > 0);
   const activeSpeakerId = (() => {
     if (latestRole !== 'assistant' || latestAssistantIndex < 0 || latestAssistantLines.length <= effectiveRevealedLineCount) return latestDialogueSpeakerId(props.messages, props.selectedCharacterId, speakerIdsByName);
     const displayed = latestAssistantLines.slice(0, Math.max(1, effectiveRevealedLineCount));
@@ -1398,7 +1401,6 @@ function ChatView(props: {
   const accentColor = activeSpeakerId === 'player' ? PLAYER_ACCENT_COLOR : activeWorldCharacter ? accentColorsById[activeWorldCharacter.id] : PLAYER_ACCENT_COLOR;
   const activeSpeakerName = activeWorldCharacter?.name ?? (activeSpeakerId === 'player' ? props.playerLabel : characterName);
   const lineAccentColor = (speaker?: string) => resolveSpeakerAccentColor(speaker ? speakerIdsByName[speaker] : undefined, accentColorsById);
-  const selectedCharacterAccentColor = resolveSpeakerAccentColor(props.selectedCharacterId, accentColorsById);
   const participantIds = props.participantIds.length ? props.participantIds : (props.selectedCharacterId ? [props.selectedCharacterId] : []);
   const participantCharacters = props.characters.filter((character) => participantIds.includes(character.id));
   const toggleParticipant = (id: string) => {
@@ -1501,7 +1503,7 @@ function ChatView(props: {
       </div>
       <div className="vn-dialogue-box" style={{ height: `${dialogueBoxHeight}px` }}>
         <div className="vn-dialogue-resize-handle" role="separator" tabIndex={0} aria-label="调整对话框高度" aria-orientation="horizontal" aria-valuemin={80} aria-valuemax={360} aria-valuenow={dialogueBoxHeight} onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); setDialogueBoxHeight((height) => Math.min(360, Math.max(80, height + (event.key === 'ArrowUp' ? 10 : -10)))); } }} onPointerDown={beginDialogueResize} onPointerMove={moveDialogueResize} onPointerUp={endDialogueResize} onPointerCancel={endDialogueResize} />
-        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.flatMap((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, speakerLabelsById); const isLatestCollapsible = latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, effectiveRevealedLineCount)) : lines; return displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} style={line.kind === 'dialogue' ? { '--vn-line-accent': lineAccentColor(line.speaker) } as CSSProperties : undefined} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>); })}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > effectiveRevealedLineCount && <button className="vn-next-line" onClick={() => { followLatestRef.current = true; setRevealedAssistantKey(latestAssistantKey); setRevealedLineCount(Math.min(latestAssistantLines.length, effectiveRevealedLineCount + 1)); }}>下一段 · {effectiveRevealedLineCount}/{latestAssistantLines.length}</button>}{props.busy && props.requestStatus === 'requesting' && <div className="vn-line dialogue assistant pending" style={{ '--vn-line-accent': selectedCharacterAccentColor } as CSSProperties}><span className="vn-speaker">{characterName}</span><span className="vn-line-text">等待回复…</span></div>}</div>
+        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.flatMap((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, speakerLabelsById); const isLatestCollapsible = latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, effectiveRevealedLineCount)) : lines; return displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} style={line.kind === 'dialogue' ? { '--vn-line-accent': lineAccentColor(line.speaker) } as CSSProperties : undefined} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>); })}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > effectiveRevealedLineCount ? <button className="vn-next-line" onClick={() => { followLatestRef.current = true; setRevealedAssistantKey(latestAssistantKey); setRevealedLineCount(Math.min(latestAssistantLines.length, effectiveRevealedLineCount + 1)); }}>下一段 · {effectiveRevealedLineCount}/{latestAssistantLines.length}</button> : replyProgress && <div className="vn-generation-progress" role="status" aria-live="polite"><span>{replyProgress === 'first-line' ? '正在生成第一段' : '后续内容生成中'}</span><span className="vn-generation-dots" aria-hidden="true"><i /><i /><i /></span></div>}</div>
       </div>
     </div>
     {props.pendingOps && <div className="ops-recovery" role="alert">

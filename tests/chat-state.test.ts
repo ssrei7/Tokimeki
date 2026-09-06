@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canGenerateReply, hasQueuedUserMessage } from '../src/ui/chat-state';
+import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from '../src/ui/chat-state';
 import { latestDialogueSpeakerId, splitDialogueMessage } from '../src/ui/dialogue';
 
 describe('chat actions', () => {
@@ -13,6 +13,15 @@ describe('chat actions', () => {
     expect(canGenerateReply([], 'hello')).toBe(true);
     expect(canGenerateReply([{ role: 'user', content: 'hello' }], '')).toBe(true);
     expect(canGenerateReply([{ role: 'assistant', content: 'reply' }], '')).toBe(true);
+  });
+
+  it('distinguishes waiting for the first line from preparing later lines', () => {
+    expect(replyProgressIndicator(false, 'idle', false)).toBeNull();
+    expect(replyProgressIndicator(true, 'requesting', false)).toBe('first-line');
+    expect(replyProgressIndicator(true, 'requesting', true)).toBe('first-line');
+    expect(replyProgressIndicator(true, 'generating', true)).toBe('next-line');
+    expect(replyProgressIndicator(true, 'success', true)).toBe('next-line');
+    expect(replyProgressIndicator(true, 'error', true)).toBeNull();
   });
 });
 
