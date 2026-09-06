@@ -25,6 +25,7 @@ export type WorldbookEntry = z.infer<typeof WorldbookEntrySchema>;
 
 export const PresetSchema = z.object({
   id: Id, name: z.string().min(1), systemPrompt: z.string().default(''), temperature: z.number().min(0).max(2).default(0.7), maxOutputTokens: z.number().int().positive().default(1024),
+  enabled: z.boolean().default(true),
   updatedAt: z.string().datetime(),
 });
 export type Preset = z.infer<typeof PresetSchema>;

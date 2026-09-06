@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import { migrateSave } from '../migrations';
 import { SaveFileSchema, type SaveFile } from '../schema/save';
 import { PresetBundleSchema, PresetSchema, type Preset, type PresetBundle } from '../content';
+import { CURRENT_PRESET_BUNDLE_SCHEMA_VERSION, migratePresetBundle } from '../migrations/preset-bundle';
 
 export interface ZipManifest { type: 'save' | 'character' | 'world' | 'events' | 'preset'; appVersion: string; schemaVersion: number }
 export interface ImportedSaveZip { manifest: ZipManifest; save: SaveFile; assets: Map<string, Uint8Array>; extras: Record<string, unknown> }
@@ -32,7 +33,7 @@ export async function exportPresetBundle(bundle: PresetBundle | readonly Preset[
     ? { id: 'imported-bundle', name: 'Imported preset bundle', entries: bundle.map((preset) => PresetSchema.parse(preset)), updatedAt: new Date().toISOString() }
     : PresetBundleSchema.parse(bundle);
   const zip = new JSZip();
-  zip.file('manifest.json', JSON.stringify({ type: 'preset', appVersion, schemaVersion: 1 }, null, 2));
+  zip.file('manifest.json', JSON.stringify({ type: 'preset', appVersion, schemaVersion: CURRENT_PRESET_BUNDLE_SCHEMA_VERSION }, null, 2));
   zip.file('preset-bundle.json', JSON.stringify(parsedBundle, null, 2));
   return zip.generateAsync({ type: 'blob' });
 }
@@ -47,7 +48,7 @@ export async function importPresetBundle(input: Blob | ArrayBuffer | Uint8Array)
   const manifest = JSON.parse(await manifestFile.async('text')) as Partial<ZipManifest>;
   if (manifest.type !== 'preset') throw new Error('This zip is not a preset bundle.');
   const value: unknown = JSON.parse(await (bundleFile ?? legacyFile!).async('text'));
-  if (bundleFile) return PresetBundleSchema.parse(value);
+  if (bundleFile) return migratePresetBundle(value, typeof manifest.schemaVersion === 'number' ? manifest.schemaVersion : 1);
   if (!Array.isArray(value) || value.length === 0) throw new Error('Preset bundle must contain at least one preset.');
   return PresetBundleSchema.parse({ id: 'imported-bundle', name: 'Imported preset bundle', entries: value.map((preset) => PresetSchema.parse(preset)), updatedAt: new Date().toISOString() });
 }

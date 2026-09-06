@@ -14,6 +14,12 @@ export class ContentDatabase extends Dexie {
     this.version(2).stores({ characters: 'id', worldbooks: 'id', presets: 'id', chats: 'characterId' });
     this.version(3).stores({ characters: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', chats: 'characterId' });
     this.version(4).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', chats: 'characterId' });
+    this.version(5).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', chats: 'characterId' }).upgrade(async (transaction) => {
+      await transaction.table('presets').toCollection().modify((preset: { enabled?: boolean }) => { if (typeof preset.enabled !== 'boolean') preset.enabled = true; });
+      await transaction.table('presetBundles').toCollection().modify((bundle: { entries?: Array<{ enabled?: boolean }> }) => {
+        for (const entry of bundle.entries ?? []) if (typeof entry.enabled !== 'boolean') entry.enabled = true;
+      });
+    });
   }
 }
 

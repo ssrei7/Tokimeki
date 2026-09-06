@@ -6,6 +6,7 @@ import { exportPresetBundle, exportSaveZip, importPresetBundle, importSaveZip } 
 import { UnsupportedSchemaVersionError } from '../src/data/migrations/types';
 import type { SaveFile } from '../src/data/schema/save';
 import { createDefaultMap } from '../src/data/schema/save';
+import { createBuiltinNarrationPresetBundle } from '../src/data/presets/builtins';
 
 describe('prompt assembler', () => {
   it('orders blocks and reports truncation', () => { const assembler = new PromptAssembler(); assembler.register({ id: 'low', role: 'system', priority: 10, order: 2, build: () => 'low '.repeat(20) }); assembler.register({ id: 'high', role: 'system', priority: 100, order: 1, build: () => 'high' }); const result = assembler.assemble({}, { budget: 4 }); expect(result.blocks.find((b) => b.id === 'high')?.dropped).toBe(false); expect(result.estimatedTokens).toBeLessThanOrEqual(4); });
@@ -17,7 +18,7 @@ describe('prompt assembler', () => {
       input: '', worldbooks: [], history: [], world: undefined,
       participants: [{ id: 'rin', name: '凛', description: '花店店员', personality: '爽朗。', updatedAt: '2026-01-01T00:00:00.000Z' }],
     }, { budget: 4096, task: 'narrate_main' });
-    expect(result.messages.some((message) => message.content.includes('本次面对面在场角色') && message.content.includes('凛'))).toBe(true);
+    expect(result.messages.some((message) => message.content.includes('本次面对面在场的非玩家角色') && message.content.includes('凛'))).toBe(true);
   });
 
   it('registers all default blocks and reports blocks without stage data as skipped', () => {
@@ -25,7 +26,7 @@ describe('prompt assembler', () => {
     for (const block of createDefaultPromptBlocks()) assembler.register(block);
     expect(assembler.listBlocks().map((block) => block.id)).toEqual([...DEFAULT_PROMPT_BLOCK_IDS]);
     const result = assembler.assemble({ input: '', worldbooks: [], history: [], world: undefined }, { budget: 200, task: 'narrate_main' });
-    expect(result.blocks).toHaveLength(13);
+    expect(result.blocks).toHaveLength(14);
     expect(result.blocks.find((block) => block.id === 'relationship_state')?.skipped).toBe(true);
     expect(result.messages.some((message) => message.content.includes('开放世界叙事游戏'))).toBe(true);
   });
@@ -38,17 +39,27 @@ describe('prompt assembler', () => {
     expect(result.messages[0].content).toContain('add_stat example');
   });
 
-  it('injects every entry from the selected preset bundle together', () => {
+  it('injects enabled preset entries first and preserves their bundle order', () => {
     const assembler = new PromptAssembler();
     for (const block of createDefaultPromptBlocks()) assembler.register(block);
     const result = assembler.assemble({ input: '', worldbooks: [], history: [], world: undefined, presetBundle: {
       id: 'bundle', name: '组合风格', updatedAt: '2026-01-01T00:00:00.000Z', entries: [
-        { id: 'a', name: '短句', systemPrompt: '使用短句。', temperature: 0.5, maxOutputTokens: 100, updatedAt: '2026-01-01T00:00:00.000Z' },
-        { id: 'b', name: '克制', systemPrompt: '保持克制。', temperature: 0.5, maxOutputTokens: 100, updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'a', name: '短句', systemPrompt: '使用短句。', enabled: true, temperature: 0.5, maxOutputTokens: 100, updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'b', name: '克制', systemPrompt: '保持克制。', enabled: true, temperature: 0.5, maxOutputTokens: 100, updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'c', name: '停用', systemPrompt: '不应发送。', enabled: false, temperature: 0.5, maxOutputTokens: 100, updatedAt: '2026-01-01T00:00:00.000Z' },
       ],
     } }, { budget: 300, task: 'narrate_main' });
-    expect(result.messages[0].content).toContain('使用短句。');
-    expect(result.messages[0].content).toContain('保持克制。');
+    expect(result.blocks[0].id).toBe('preset_bundle');
+    expect(result.messages[0].content.indexOf('使用短句。')).toBeLessThan(result.messages[0].content.indexOf('保持克制。'));
+    expect(result.messages[0].content).not.toContain('不应发送。');
+    expect(result.messages[1].content).toContain('开放世界叙事游戏');
+    expect(result.messages[1].content).not.toContain('不要替玩家决定');
+  });
+
+  it('provides a built-in bundle with separate authorship and narration-person entries', () => {
+    const bundle = createBuiltinNarrationPresetBundle();
+    expect(bundle.entries.map((entry) => entry.name)).toEqual(['玩家代写方式', '旁白人称']);
+    expect(bundle.entries.every((entry) => entry.enabled)).toBe(true);
   });
 
   it('uses the latest edited diary text in prompt context', () => {
@@ -129,9 +140,19 @@ describe('save zip IO', () => {
 describe('preset bundle IO', () => {
   it('round trips multiple prompt presets as one bundle', async () => {
     const presets = [
-      { id: 'quiet', name: '克制文风', systemPrompt: '短句、克制。', temperature: 0.4, maxOutputTokens: 800, updatedAt: '2026-01-01T00:00:00.000Z' },
-      { id: 'lyric', name: '抒情文风', systemPrompt: '细腻、抒情。', temperature: 0.8, maxOutputTokens: 1200, updatedAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'quiet', name: '克制文风', systemPrompt: '短句、克制。', enabled: true, temperature: 0.4, maxOutputTokens: 800, updatedAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'lyric', name: '抒情文风', systemPrompt: '细腻、抒情。', enabled: true, temperature: 0.8, maxOutputTokens: 1200, updatedAt: '2026-01-01T00:00:00.000Z' },
     ];
     await expect(importPresetBundle(await exportPresetBundle(presets))).resolves.toEqual(expect.objectContaining({ entries: presets }));
+  });
+
+  it('migrates a version 1 preset bundle by enabling legacy entries', async () => {
+    const zip = new JSZip();
+    zip.file('manifest.json', JSON.stringify({ type: 'preset', appVersion: '0.0.1', schemaVersion: 1 }));
+    zip.file('preset-bundle.json', JSON.stringify({ id: 'legacy', name: '旧预设包', updatedAt: '2026-01-01T00:00:00.000Z', entries: [
+      { id: 'legacy-entry', name: '旧条目', systemPrompt: '旧提示词。', temperature: 0.7, maxOutputTokens: 1024, updatedAt: '2026-01-01T00:00:00.000Z' },
+    ] }));
+    const imported = await importPresetBundle(await zip.generateAsync({ type: 'uint8array' }));
+    expect(imported.entries[0].enabled).toBe(true);
   });
 });

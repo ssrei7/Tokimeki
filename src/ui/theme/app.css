@@ -173,6 +173,13 @@ button.danger { background: #fee4e2; color: #b42318; }
 .list-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid #eef0f3; }
 .list-row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .list-row button { min-height: 36px; padding: 0 10px; background: #eef2f6; color: #475467; font-size: 12px; }
+.preset-entry-list { display: grid; gap: 0; }
+.preset-entry-row.disabled { opacity: .58; }
+.preset-entry-title { display: flex; align-items: center; gap: 6px; }
+.preset-entry-title strong { padding: 2px 5px; border-radius: 4px; background: #e9efff; color: #315efb; font-size: 10px; }
+.preset-entry-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 5px; }
+.preset-entry-actions .checkbox-line { width: auto; color: #475467; font-size: 11px; }
+.preset-entry-actions button[aria-label] { min-width: 34px; padding: 0; }
 .io-card { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .io-card > div { flex: 1 1 100%; min-width: 0; }
 .io-card strong { display: block; margin-bottom: 4px; }

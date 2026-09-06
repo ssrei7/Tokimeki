@@ -518,6 +518,7 @@ interface Preset {
   id: Id;
   name: string;
   systemPrompt: string;          // 文风与提示词模板
+  enabled: boolean;              // 是否参与当前预设包的 prompt 组装
   temperature: number;           // 可选的生成偏好覆盖，不是 Provider 身份
   maxOutputTokens: number;       // 可选的生成长度覆盖，不是 Provider 身份
   updatedAt: string;
@@ -526,12 +527,12 @@ interface Preset {
 interface PresetBundle {
   id: Id;
   name: string;
-  entries: Preset[];              // 包内所有条目同时生效
+  entries: Preset[];              // 数组顺序就是 prompt 顺序，首项为核心预设
   updatedAt: string;
 }
 ```
 
-这里的预设条目属于资料内容，主要作用是复用文风和提示词。用户切换的是 `PresetBundle`，包内所有条目在下一次生成时同时注入；条目本身不再作为独立生效选项。Provider、endpoint、API key 与任务路由仍由独立的 Provider 设置管理；预设包不等于 Provider 配置。
+这里的预设条目属于资料内容，主要作用是复用文风和提示词。用户切换的是 `PresetBundle`；包内启用条目在下一次生成时按数组顺序注入，越靠上的条目越早发送，首项标记为核心预设并位于所有内置 prompt block 之前。条目可以单独停用而不删除。内置“基础叙事控制”包将“玩家代写方式”和“旁白人称”拆成两个可独立编辑、启用和排序的条目，不把玩家叙事主权写死在格式契约中。Provider、endpoint、API key 与任务路由仍由独立的 Provider 设置管理；预设包不等于 Provider 配置。
 
 角色卡、世界书与预设均由本地 IndexedDB 管理；它们不写入 `SaveFile.world`，导出角色包/世界包时再按 `manifest.type` 选择性打包。
 
