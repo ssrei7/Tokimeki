@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { selectEncounterCandidates } from '../src/core/encounter';
+import { simulateEncounterDistribution } from '../src/dev/encounter-simulator';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import type { FormalCharacter } from '../src/data/schema/save';
 
@@ -46,5 +47,23 @@ describe('deterministic encounter selection', () => {
     const selected = selectEncounterCandidates({ world: save.world, config: { ...config, maxParticipants: 1, weights: { seir: 0 } }, nodeId: 'docks', seed: 8 });
     expect(selected.map((candidate) => candidate.id)).toEqual(['vendor-1']);
     expect(save.world).toEqual(before);
+  });
+
+  it('runs a reproducible long-term distribution across fixed seeds', () => {
+    const save = setup();
+    save.world.characters = Object.fromEntries(['a', 'b', 'c', 'd', 'e'].map((id, index) => [id, {
+      id, name: `角色${index + 1}`, tier: 'formal', card: { description: '测试角色', personality: '普通' }, visuals: { portraits: [] }, homeNodeId: 'docks',
+      schedule: { grid: {}, overrides: {} },
+    } satisfies FormalCharacter]));
+    const simulationConfig = { ...config, maxParticipants: 2, guaranteeAfterDays: 3 };
+    const options = { seeds: Array.from({ length: 20 }, (_, index) => index + 1), days: 60, nodeIds: ['docks'] };
+    const first = simulateEncounterDistribution(save.world, save.config.calendar, simulationConfig, options);
+    const second = simulateEncounterDistribution(save.world, save.config.calendar, simulationConfig, options);
+    expect(first).toEqual(second);
+    expect(first.runs).toHaveLength(20);
+    expect(first.aggregate.every((item) => item.encounters > 0)).toBe(true);
+    expect(first.aggregate.map((item) => item.id)).toContain('vendor-1');
+    expect(new Set(first.runs.map((run) => run.characters.map((item) => item.encounters).join(','))).size).toBeGreaterThan(1);
+    expect(first.aggregate.every((item) => item.maxUnseenDays <= 3)).toBe(true);
   });
 });
