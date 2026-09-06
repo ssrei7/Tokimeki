@@ -144,9 +144,8 @@ button.danger { background: #fee4e2; color: #b42318; }
 .vn-portrait-area { min-height: 150px; display: grid; flex: 1 1 auto; place-items: end center; overflow: hidden; padding: 6px 12px 0; }
 .vn-portrait { display: block; max-width: min(100%, 360px); max-height: 100%; object-fit: contain; object-position: center bottom; filter: drop-shadow(0 10px 14px #34405426); }
 .vn-portrait-empty { width: min(100%, 360px); height: 100%; min-height: 80px; }
-.vn-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 6px 8px; }
-.vn-choices button { min-height: 40px; font-size: 12px; }
-.vn-dialogue-box { display: flex; flex: 0 0 min(22%, 160px); min-height: 80px; flex-direction: column; overflow: hidden; border-top: 1px solid #d7dce5; background: #fffffff2; }
+.vn-dialogue-box { display: flex; flex: 0 0 auto; min-height: 80px; max-height: min(60%, 360px); flex-direction: column; overflow: hidden; border-top: 1px solid #d7dce5; background: #fffffff2; }
+.vn-dialogue-resize-handle { flex: 0 0 8px; cursor: ns-resize; touch-action: none; background: linear-gradient(180deg, transparent 0 3px, #d7dce5 3px 5px, transparent 5px); }
 .vn-dialogue-log { flex: 1 1 auto; gap: 6px; min-height: 0; padding: 8px; touch-action: pan-y; scrollbar-width: thin; }
 .vn-line { display: grid; gap: 3px; max-width: 100%; padding: 8px 10px; border-left: 3px solid var(--vn-accent); background: #f8fafc; white-space: pre-wrap; line-height: 1.5; }
 .vn-line.user { border-left-color: #315efb; background: #eff4ff; }

@@ -1294,6 +1294,15 @@ function ChatView(props: {
   const previousCharacterIdRef = useRef(props.selectedCharacterId);
   const [showOlderMessages, setShowOlderMessages] = useState(false);
   const [revealedLineCount, setRevealedLineCount] = useState(1);
+  const [revealedAssistantKey, setRevealedAssistantKey] = useState('');
+  const [dialogueBoxHeight, setDialogueBoxHeight] = useState(() => {
+    if (typeof window === 'undefined') return 150;
+    try {
+      const stored = Number(window.localStorage.getItem('tokimeki.dialogueBoxHeight'));
+      return Number.isFinite(stored) ? Math.min(360, Math.max(80, stored)) : 150;
+    } catch { return 150; }
+  });
+  const resizeStartRef = useRef<{ y: number; height: number } | null>(null);
   const canGenerate = canGenerateReply(props.messages, props.input);
   const latestMessage = props.messages.at(-1)?.content;
   const latestRole = props.messages.at(-1)?.role;
@@ -1302,15 +1311,16 @@ function ChatView(props: {
   const visibleMessages = showOlderMessages ? props.messages : props.messages.slice(olderMessageCount);
   const [portraitUrl, setPortraitUrl] = useState<string>();
   const [sceneBackgroundUrl, setSceneBackgroundUrl] = useState<string>();
-  const [quickReplySelected, setQuickReplySelected] = useState(false);
   const characterName = props.characters.find((item) => item.id === props.selectedCharacterId)?.name ?? '选择角色聊天';
   const speakerIdsByName = Object.fromEntries(Object.values(props.worldCharacters).map((character) => [character.name, character.id]));
   const latestAssistantLines = latestAssistantIndex >= 0
     ? splitDialogueMessage(props.messages[latestAssistantIndex], characterName, props.playerLabel, { player: props.playerLabel, ...Object.fromEntries(Object.values(props.worldCharacters).map((character) => [character.id, character.name])) })
     : [];
+  const latestAssistantKey = latestAssistantIndex >= 0 ? `${latestAssistantIndex}:${props.messages[latestAssistantIndex].content}` : '';
+  const effectiveRevealedLineCount = latestRole === 'assistant' && revealedAssistantKey !== latestAssistantKey ? 1 : revealedLineCount;
   const activeSpeakerId = (() => {
-    if (props.busy || latestRole !== 'assistant' || latestAssistantIndex < 0 || latestAssistantLines.length <= revealedLineCount) return latestDialogueSpeakerId(props.messages, props.selectedCharacterId, speakerIdsByName);
-    const displayed = latestAssistantLines.slice(0, Math.max(1, revealedLineCount));
+    if (latestRole !== 'assistant' || latestAssistantIndex < 0 || latestAssistantLines.length <= effectiveRevealedLineCount) return latestDialogueSpeakerId(props.messages, props.selectedCharacterId, speakerIdsByName);
+    const displayed = latestAssistantLines.slice(0, Math.max(1, effectiveRevealedLineCount));
     for (let index = displayed.length - 1; index >= 0; index -= 1) {
       const line = displayed[index];
       if (line.kind !== 'dialogue') continue;
@@ -1391,15 +1401,31 @@ function ChatView(props: {
         requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; });
       }
     }
-  }, [latestMessage, props.busy, props.messages.length, props.requestStatus, props.selectedCharacterId]);
+  }, [effectiveRevealedLineCount, latestMessage, props.busy, props.messages.length, props.requestStatus, props.selectedCharacterId]);
 
   useEffect(() => {
-    if (latestRole === 'assistant' && !props.busy) setQuickReplySelected(false);
-  }, [latestRole, props.busy]);
+    if (!props.busy && latestRole === 'assistant') {
+      setRevealedAssistantKey(latestAssistantKey);
+      setRevealedLineCount(1);
+    }
+  }, [latestAssistantKey, latestRole, props.busy]);
 
   useEffect(() => {
-    if (!props.busy && latestRole === 'assistant') setRevealedLineCount(1);
-  }, [latestMessage, latestRole, props.busy]);
+    try { window.localStorage.setItem('tokimeki.dialogueBoxHeight', String(dialogueBoxHeight)); }
+    catch { /* The current browser may block local UI preferences. */ }
+  }, [dialogueBoxHeight]);
+
+  const beginDialogueResize = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeStartRef.current = { y: event.clientY, height: dialogueBoxHeight };
+  };
+  const moveDialogueResize = (event: PointerEvent<HTMLDivElement>) => {
+    const start = resizeStartRef.current;
+    if (!start) return;
+    setDialogueBoxHeight(Math.min(360, Math.max(80, start.height + start.y - event.clientY)));
+  };
+  const endDialogueResize = () => { resizeStartRef.current = null; };
 
   return <section className="chat-screen vn-chat-screen">
     <div className="character-picker"><div className="participant-picker" aria-label="本次对话角色">{props.characters.length > 1 && <span className="participant-label">本次对话</span>}{props.characters.map((item) => <label key={item.id} className="participant-option"><input type="checkbox" checked={participantIds.includes(item.id)} onChange={() => toggleParticipant(item.id)} /><span>{item.name}</span></label>)}</div><select aria-label="主要聊天角色" value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">当前地点无人</option>{participantCharacters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
@@ -1407,9 +1433,9 @@ function ChatView(props: {
       <div className="vn-portrait-area" aria-label={`${activeSpeakerName}的立绘`}>
         {portraitUrl ? <img className="vn-portrait" style={activePortrait?.transform ? { transform: `translate(${activePortrait.transform.offsetX}px, ${activePortrait.transform.offsetY}px) scale(${activePortrait.transform.scale})` } : undefined} src={portraitUrl} alt={`${activeSpeakerName}的立绘`} /> : <div className="vn-portrait-empty" aria-label="暂无立绘" />}
       </div>
-      {!quickReplySelected && <div className="vn-choices" aria-label="快速回应"><button className="secondary" onClick={() => { props.setInput('我点了点头。'); setQuickReplySelected(true); }}>点头回应</button><button className="secondary" onClick={() => { props.setInput('我先听你说。'); setQuickReplySelected(true); }}>先听你说</button></div>}
-      <div className="vn-dialogue-box">
-        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.flatMap((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, { player: props.playerLabel, ...Object.fromEntries(Object.values(props.worldCharacters).map((character) => [character.id, character.name])) }); const isLatestCollapsible = !props.busy && latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, revealedLineCount)) : lines; return displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>); })}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > revealedLineCount && <button className="vn-next-line" onClick={() => setRevealedLineCount((count) => Math.min(latestAssistantLines.length, count + 1))}>下一段 · {revealedLineCount}/{latestAssistantLines.length}</button>}{props.busy && props.requestStatus === 'requesting' && <div className="vn-line dialogue assistant pending"><span className="vn-speaker">{characterName}</span><span className="vn-line-text">等待回复…</span></div>}</div>
+      <div className="vn-dialogue-box" style={{ height: `${dialogueBoxHeight}px` }}>
+        <div className="vn-dialogue-resize-handle" role="separator" tabIndex={0} aria-label="调整对话框高度" aria-orientation="horizontal" aria-valuemin={80} aria-valuemax={360} aria-valuenow={dialogueBoxHeight} onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); setDialogueBoxHeight((height) => Math.min(360, Math.max(80, height + (event.key === 'ArrowUp' ? 10 : -10)))); } }} onPointerDown={beginDialogueResize} onPointerMove={moveDialogueResize} onPointerUp={endDialogueResize} onPointerCancel={endDialogueResize} />
+        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.flatMap((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, { player: props.playerLabel, ...Object.fromEntries(Object.values(props.worldCharacters).map((character) => [character.id, character.name])) }); const isLatestCollapsible = latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, effectiveRevealedLineCount)) : lines; return displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>); })}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > effectiveRevealedLineCount && <button className="vn-next-line" onClick={() => { followLatestRef.current = true; setRevealedAssistantKey(latestAssistantKey); setRevealedLineCount(Math.min(latestAssistantLines.length, effectiveRevealedLineCount + 1)); }}>下一段 · {effectiveRevealedLineCount}/{latestAssistantLines.length}</button>}{props.busy && props.requestStatus === 'requesting' && <div className="vn-line dialogue assistant pending"><span className="vn-speaker">{characterName}</span><span className="vn-line-text">等待回复…</span></div>}</div>
       </div>
     </div>
     {props.pendingOps && <div className="ops-recovery" role="alert">
