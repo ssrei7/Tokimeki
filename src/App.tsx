@@ -1326,7 +1326,7 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
     if (sheetDragRef.current.moved) { event.preventDefault(); event.stopPropagation(); sheetDragRef.current.moved = false; return; }
     event.preventDefault();
     const progress = kind === 'detail' ? detailSheetProgress : toolSheetProgress;
-    updateSheetState(kind, progress > 0.04 ? 'collapsed' : 'half');
+    updateSheetState(kind, progress > 0.04 ? 'collapsed' : kind === 'tool' ? 'expanded' : 'half');
   };
   const sheetStyle = (progress: number) => ({ '--sheet-progress': progress } as CSSProperties);
   return <section className="map-screen">
