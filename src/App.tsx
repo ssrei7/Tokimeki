@@ -41,6 +41,27 @@ type Feedback = { tone: 'info' | 'success' | 'error'; text: string } | null;
 type DebugState = { prompt: AssembledPrompt | null; raw: string; ops: string; state: string };
 type PendingOpsRecovery = { raw: string; actorId?: string; streamError?: string };
 type ActiveEncounter = { entryId: string; nodeId: string; scope: 'formal' | 'peripheral'; candidates: EncounterCandidate[] };
+type EncounterChatSession = { characterId: string; participantIds: string[]; nodeId: string; mode: 'topics' | 'manual' | 'ended' };
+const ENCOUNTER_CHAT_SESSION_KEY = 'tokimeki.encounter-chat-session';
+
+function readEncounterChatSession(): EncounterChatSession | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(ENCOUNTER_CHAT_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<EncounterChatSession>;
+    if (typeof parsed.characterId !== 'string' || !Array.isArray(parsed.participantIds) || typeof parsed.nodeId !== 'string' || !['topics', 'manual', 'ended'].includes(parsed.mode ?? '')) return null;
+    return { characterId: parsed.characterId, participantIds: parsed.participantIds.filter((id): id is string => typeof id === 'string'), nodeId: parsed.nodeId, mode: parsed.mode as EncounterChatSession['mode'] };
+  } catch { return null; }
+}
+
+function writeEncounterChatSession(session: EncounterChatSession | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (session) window.sessionStorage.setItem(ENCOUNTER_CHAT_SESSION_KEY, JSON.stringify(session));
+    else window.sessionStorage.removeItem(ENCOUNTER_CHAT_SESSION_KEY);
+  } catch { /* Session storage may be unavailable in privacy-restricted browsers. */ }
+}
 
 const now = () => new Date().toISOString();
 const slug = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '') || `item-${Date.now()}`;
@@ -149,7 +170,7 @@ export function App() {
   const [mapGenerating, setMapGenerating] = useState(false);
   const [activeEncounter, setActiveEncounter] = useState<ActiveEncounter | null>(null);
   const [encounterParticipantIds, setEncounterParticipantIds] = useState<string[]>([]);
-  const [chatParticipantsLocked, setChatParticipantsLocked] = useState(false);
+  const [chatParticipantsLocked, setChatParticipantsLocked] = useState(() => Boolean(readEncounterChatSession()));
   const [topicTree, setTopicTree] = useState<TopicTree | null>(null);
   const [topicMode, setTopicMode] = useState<'topics' | 'manual' | 'ended'>('manual');
   const [topicLoading, setTopicLoading] = useState(false);
@@ -163,6 +184,14 @@ export function App() {
         saveRef.current = parsedSave;
         setSave(parsedSave);
         setDebug((current) => ({ ...current, state: JSON.stringify(parsedSave, null, 2) }));
+        const session = readEncounterChatSession();
+        if (session && session.nodeId === parsedSave.world.player.nodeId && session.participantIds.length) {
+          setChatParticipantsLocked(true);
+          setChatParticipantIds(session.participantIds);
+          setSelectedCharacterId(session.characterId);
+          setTopicMode(session.mode);
+          setTopicTree(parsedSave.world.topicTrees[topicTreeKey(session.characterId, session.nodeId)] ?? null);
+        } else if (session) writeEncounterChatSession(null);
       } else {
         void saveCurrentSave(defaultSave);
       }
@@ -186,7 +215,7 @@ export function App() {
       if (!storedBuiltin) void savePresetBundle(builtinBundle);
       if (legacyBundle) void savePresetBundle(legacyBundle);
       setBindings(bs);
-      if (c[0]) setSelectedCharacterId(c[0].id);
+      if (c[0] && !readEncounterChatSession()) setSelectedCharacterId(c[0].id);
       if (ps[0]) setProvider(ps[0]);
       const resolvedDefaultProviderId = ps.some((item) => item.id === setting?.value) ? setting?.value ?? '' : ps[0]?.id ?? '';
       setDefaultProviderId(resolvedDefaultProviderId);
@@ -355,6 +384,7 @@ export function App() {
     commitSave(next);
     setActiveEncounter(null);
     setEncounterParticipantIds([]);
+    writeEncounterChatSession(null);
     setFeedback({ tone: 'info', text: outcome === 'continued' ? '你决定留下继续这次相遇。' : '你选择离开了。' });
   }
 
@@ -631,9 +661,9 @@ export function App() {
       const next = structuredClone(saveRef.current);
       next.world.topicTrees[key] = tree;
       commitSave(next);
-      setTopicTree(tree); setTopicMode('topics'); setFeedback({ tone: 'success', text: `已生成 ${tree.topics.length} 个话题，点击话题不会再次调用 API。` });
+      setTopicTree(tree); setTopicMode('topics'); writeEncounterChatSession({ characterId: charId, participantIds, nodeId, mode: 'topics' }); setFeedback({ tone: 'success', text: `已生成 ${tree.topics.length} 个话题，点击话题不会再次调用 API。` });
     } catch (error) {
-      setTopicTree(null); setTopicMode('manual'); setFeedback({ tone: 'info', text: `话题树生成失败，已解锁手动对话：${errorMessage(error, '生成失败')}` });
+      setTopicTree(null); setTopicMode('manual'); writeEncounterChatSession({ characterId: charId, participantIds, nodeId, mode: 'manual' }); setFeedback({ tone: 'info', text: `话题树生成失败，已解锁手动对话：${errorMessage(error, '生成失败')}` });
     } finally { setTopicLoading(false); }
   }
 
@@ -655,10 +685,10 @@ export function App() {
     const nextMessages = [...messages, { role: 'assistant' as const, content: response }];
     setMessages(nextMessages);
     void saveChat({ characterId: selectedCharacterId, messages: nextMessages, updatedAt: now() });
-    if (topic.terminal) { setTopicMode('ended'); setFeedback({ tone: 'info', text: '这次话题推进结束了场景。' }); return; }
+    if (topic.terminal) { setTopicMode('ended'); writeEncounterChatSession({ characterId: selectedCharacterId, participantIds: chatParticipantIds, nodeId: next.world.player.nodeId, mode: 'ended' }); setFeedback({ tone: 'info', text: '这次话题推进结束了场景。' }); return; }
     const refreshed = next.world.topicTrees[topicTreeKey(selectedCharacterId, next.world.player.nodeId)];
     const remaining = refreshed?.topics.some((item) => topicVisibility(item, next.world, next.config.hiddenTopicStyle) === 'available');
-    if (!remaining) { setTopicMode('manual'); setFeedback({ tone: 'info', text: '话题树已结束，现在可以自由输入。' }); }
+    if (!remaining) { setTopicMode('manual'); writeEncounterChatSession({ characterId: selectedCharacterId, participantIds: chatParticipantIds, nodeId: next.world.player.nodeId, mode: 'manual' }); setFeedback({ tone: 'info', text: '话题树已结束，现在可以自由输入。' }); }
   }
 
   function continueEncounter(): void {
@@ -671,6 +701,7 @@ export function App() {
       commitSave(next);
       setActiveEncounter(null);
       setEncounterParticipantIds([]);
+      writeEncounterChatSession(null);
       setFeedback({ tone: 'info', text: '你决定留下继续，但当前没有可用的正式角色聊天卡。' });
       return;
     }
@@ -686,16 +717,10 @@ export function App() {
     setSelectedCharacterId(formal.id);
     setTopicTree(null);
     setTopicMode('topics');
+    writeEncounterChatSession({ characterId: formal.id, participantIds, nodeId: next.world.player.nodeId, mode: 'topics' });
     setTab('chat');
     void generateTopicTree(formal.id, next.world.player.nodeId, participantIds);
     setFeedback({ tone: 'info', text: `你留下来和${formal.name}继续聊聊。` });
-  }
-
-  function openManualChat(): void {
-    setChatParticipantsLocked(false);
-    setTopicTree(null);
-    setTopicMode('manual');
-    setTab('chat');
   }
 
   function updateChatParticipants(ids: string[]): void {
@@ -1175,7 +1200,7 @@ export function App() {
     {tab !== 'map' && <header className={`topbar ${tab === 'chat' ? 'chat-topbar' : ''}`}><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small><h1>Tokimeki{tab === 'chat' && <span className="topbar-context"> · 面对面</span>}</h1></div></header>}
     <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''} ${tab === 'map' ? 'map-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
-      {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onOpenChat={openManualChat} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
+      {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
       {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} onTopicSelect={selectTopic} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} />}
@@ -1185,7 +1210,7 @@ export function App() {
   </div>;
 }
 
-function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, onEncounterParticipantIdsChange, onEncounterOutcome, onContinueEncounter, onMove, onOpenChat, onImportBackground, onImportSceneBackground, onRemoveSceneBackground, onToggleMode, onCreateNode, onEditNode, onDeleteNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating }: { save: SaveFile; worldbooks: WorldbookEntry[]; activeEncounter: ActiveEncounter | null; encounterParticipantIds: string[]; onEncounterParticipantIdsChange: (ids: string[]) => void; onEncounterOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinueEncounter: () => void; onMove: (nodeId: string) => void; onOpenChat: () => void; onImportBackground: (file?: File) => Promise<void>; onImportSceneBackground: (nodeId: string, file?: File) => Promise<void>; onRemoveSceneBackground: (nodeId: string) => Promise<void>; onToggleMode: () => void; onCreateNode: (input: CreateMapNodeInput) => boolean; onEditNode: (nodeId: string, input: UpdateMapNodeInput) => boolean; onDeleteNode: (nodeId: string) => boolean; onSuggestNode: (input: { requirements: string; regionName: string; anchorName: string }) => Promise<{ name: string; description: string } | null>; onGenerateMap: (requirements?: string) => Promise<void>; onExpandMap: (anchorNodeId: string, count: number, requirements?: string) => Promise<void>; mapGenerating: boolean }) {
+function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, onEncounterParticipantIdsChange, onEncounterOutcome, onContinueEncounter, onMove, onImportBackground, onImportSceneBackground, onRemoveSceneBackground, onToggleMode, onCreateNode, onEditNode, onDeleteNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating }: { save: SaveFile; worldbooks: WorldbookEntry[]; activeEncounter: ActiveEncounter | null; encounterParticipantIds: string[]; onEncounterParticipantIdsChange: (ids: string[]) => void; onEncounterOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinueEncounter: () => void; onMove: (nodeId: string) => void; onImportBackground: (file?: File) => Promise<void>; onImportSceneBackground: (nodeId: string, file?: File) => Promise<void>; onRemoveSceneBackground: (nodeId: string) => Promise<void>; onToggleMode: () => void; onCreateNode: (input: CreateMapNodeInput) => boolean; onEditNode: (nodeId: string, input: UpdateMapNodeInput) => boolean; onDeleteNode: (nodeId: string) => boolean; onSuggestNode: (input: { requirements: string; regionName: string; anchorName: string }) => Promise<{ name: string; description: string } | null>; onGenerateMap: (requirements?: string) => Promise<void>; onExpandMap: (anchorNodeId: string, count: number, requirements?: string) => Promise<void>; mapGenerating: boolean }) {
   type MapSheetState = 'collapsed' | 'half' | 'expanded';
   const map = save.world.map;
   const currentNode = map.nodes[save.world.player.nodeId];
@@ -1458,7 +1483,7 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, o
     </details>
     {selectedMapNodeId && <details ref={detailSheetRef} open={detailSheetProgress > 0.001} data-sheet-state={detailSheetState} data-sheet-dragging={sheetDraggingKind === 'detail' ? 'true' : undefined} style={sheetStyle(detailSheetProgress)} className="map-menu map-bottom-sheet map-detail-sheet">
       <summary onPointerDown={beginSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={handleSheetClick('detail')}><span>{selectedMapNode?.name ?? '地点详情'}</span><span>{detailSheetState === 'expanded' ? '向下收起' : '继续展开'}</span></summary>
-      <div className="map-menu-content"><div className="place-card"><span className="eyebrow">{selectedMapNode?.id === currentNode?.id ? '当前位置' : '地点详情'}</span><h2>{selectedMapNode?.name ?? save.world.player.nodeId}</h2><p>{selectedMapNode?.description ?? '从地图出发，去遇见今天的世界。'}</p>{selectedMapNode && <div className="place-details"><span>区域<strong>{map.regions[selectedMapNode.regionId]?.name ?? selectedMapNode.regionId}</strong></span><span>类型<strong>{selectedMapNode.kind.length ? selectedMapNode.kind.join('、') : '未分类'}</strong></span><span>开放<strong>{selectedMapNode.openSlots?.length ? selectedMapNode.openSlots.map((id) => save.config.calendar.slots.find((slot) => slot.id === id)?.name ?? id).join('、') : '始终开放'}</strong></span><span>范围<strong>{selectedScope}</strong></span></div>}<div className="button-row">{selectedMapNode && selectedMapNode.id !== currentNode?.id ? <button onClick={() => onMove(selectedMapNode.id)}>前往此地</button> : <button onClick={onOpenChat}>打开聊天</button>}{selectedMapNode && <span className="map-meta">访问 {selectedMapNode.visitCount} 次</span>}</div>{selectedMapNode && <PresenceList people={whoIsHere(save.world, selectedMapNode.id, save.world.clock.day, save.world.clock.slotId, save.config.calendar.daysPerWeek)} scope={selectedScope} />}<EncounterTraceList traces={selectedMapNode ? encounterTraces[selectedMapNode.id] ?? [] : []} /></div></div>
+      <div className="map-menu-content"><div className="place-card"><span className="eyebrow">{selectedMapNode?.id === currentNode?.id ? '当前位置' : '地点详情'}</span><h2>{selectedMapNode?.name ?? save.world.player.nodeId}</h2><p>{selectedMapNode?.description ?? '从地图出发，去遇见今天的世界。'}</p>{selectedMapNode && <div className="place-details"><span>区域<strong>{map.regions[selectedMapNode.regionId]?.name ?? selectedMapNode.regionId}</strong></span><span>类型<strong>{selectedMapNode.kind.length ? selectedMapNode.kind.join('、') : '未分类'}</strong></span><span>开放<strong>{selectedMapNode.openSlots?.length ? selectedMapNode.openSlots.map((id) => save.config.calendar.slots.find((slot) => slot.id === id)?.name ?? id).join('、') : '始终开放'}</strong></span><span>范围<strong>{selectedScope}</strong></span></div>}<div className="button-row">{selectedMapNode && selectedMapNode.id !== currentNode?.id && <button onClick={() => onMove(selectedMapNode.id)}>前往此地</button>}{selectedMapNode && <span className="map-meta">访问 {selectedMapNode.visitCount} 次</span>}</div>{selectedMapNode && <PresenceList people={whoIsHere(save.world, selectedMapNode.id, save.world.clock.day, save.world.clock.slotId, save.config.calendar.daysPerWeek)} scope={selectedScope} />}<EncounterTraceList traces={selectedMapNode ? encounterTraces[selectedMapNode.id] ?? [] : []} /></div></div>
     </details>}
   </section>;
 }
