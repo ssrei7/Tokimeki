@@ -4,7 +4,7 @@ import type { PromptBlock, PromptFacts } from './assembler';
 
 export const DEFAULT_PROMPT_BLOCK_IDS = [
   'preset_bundle', 'format_contract', 'encounter_participants', 'character_core', 'relationship_state', 'scene_now', 'node_worldbook', 'node_memory',
-  'char_memory', 'recent_diary', 'milestones', 'worldbook_keyword', 'chapter_summary', 'raw_history',
+  'char_memory', 'recent_diary', 'milestones', 'worldbook_keyword', 'chapter_summary', 'raw_history', 'regeneration_request',
 ] as const;
 
 export interface DefaultPromptFacts extends PromptFacts {
@@ -15,6 +15,7 @@ export interface DefaultPromptFacts extends PromptFacts {
   participants?: CharacterCard[];
   presetBundle?: PresetBundle;
   playerPersona?: Persona;
+  regenerationRequest?: string;
   world: SaveFile['world'];
 }
 
@@ -94,6 +95,11 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
       const history = factsOf(facts).history;
       if (!history.length) return null;
       return history.map((message) => `${message.role}: ${message.content}`).join('\n');
+    } },
+    { id: 'regeneration_request', role: 'user', priority: 25, order: 14, build: (facts) => {
+      const request = factsOf(facts).regenerationRequest?.trim();
+      if (!request) return null;
+      return `[重生成上一条角色回复]\n用户要求：${request}\n请只输出替代上一条回复的自然语言正文。不要输出或提议任何 <ops> 状态操作。`;
     } },
   ];
 }

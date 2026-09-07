@@ -41,7 +41,7 @@ type Feedback = { tone: 'info' | 'success' | 'error'; text: string } | null;
 type DebugState = { prompt: AssembledPrompt | null; raw: string; ops: string; state: string };
 type PendingOpsRecovery = { raw: string; actorId?: string; streamError?: string };
 type ActiveEncounter = { entryId: string; nodeId: string; scope: 'formal' | 'peripheral'; candidates: EncounterCandidate[] };
-type EncounterChatSession = { characterId: string; participantIds: string[]; nodeId: string; mode: 'topics' | 'manual' | 'ended' };
+type EncounterChatSession = { characterId: string; participantIds: string[]; nodeId: string; mode: 'topics' | 'manual' | 'ended'; lastResponseSource?: 'topic' | 'manual' };
 const ENCOUNTER_CHAT_SESSION_KEY = 'tokimeki.encounter-chat-session';
 
 function readEncounterChatSession(): EncounterChatSession | null {
@@ -51,7 +51,7 @@ function readEncounterChatSession(): EncounterChatSession | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<EncounterChatSession>;
     if (typeof parsed.characterId !== 'string' || !Array.isArray(parsed.participantIds) || typeof parsed.nodeId !== 'string' || !['topics', 'manual', 'ended'].includes(parsed.mode ?? '')) return null;
-    return { characterId: parsed.characterId, participantIds: parsed.participantIds.filter((id): id is string => typeof id === 'string'), nodeId: parsed.nodeId, mode: parsed.mode as EncounterChatSession['mode'] };
+    return { characterId: parsed.characterId, participantIds: parsed.participantIds.filter((id): id is string => typeof id === 'string'), nodeId: parsed.nodeId, mode: parsed.mode as EncounterChatSession['mode'], ...(parsed.lastResponseSource === 'topic' || parsed.lastResponseSource === 'manual' ? { lastResponseSource: parsed.lastResponseSource } : {}) };
   } catch { return null; }
 }
 
@@ -143,6 +143,7 @@ export function App() {
   const [editing, setEditing] = useState<{ kind: ContentKind; id: string } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const [regenerateInput, setRegenerateInput] = useState('');
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [provider, setProvider] = useState<ProviderConfig>(newProvider);
   const [bindings, setBindings] = useState<ProviderBinding[]>([]);
@@ -174,8 +175,15 @@ export function App() {
   const [topicTree, setTopicTree] = useState<TopicTree | null>(null);
   const [topicMode, setTopicMode] = useState<'topics' | 'manual' | 'ended'>('manual');
   const [topicLoading, setTopicLoading] = useState(false);
+  const [lastResponseSource, setLastResponseSource] = useState<'topic' | 'manual' | null>(() => readEncounterChatSession()?.lastResponseSource ?? null);
   const [debugTab, setDebugTab] = useState<'Prompt' | 'Raw' | 'Ops' | 'State'>('Prompt');
   const [debug, setDebug] = useState<DebugState>({ prompt: null, raw: '', ops: '尚未解析状态变化。', state: JSON.stringify(defaultSave, null, 2) });
+
+  function markResponseSource(source: 'topic' | 'manual' | null): void {
+    setLastResponseSource(source);
+    const session = readEncounterChatSession();
+    if (session) writeEncounterChatSession({ ...session, ...(source ? { lastResponseSource: source } : { lastResponseSource: undefined }) });
+  }
 
   useEffect(() => {
     void Promise.all([contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), contentDb.presetBundles.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.settings.get('defaultProviderId'), loadCurrentSave(), listSnapshots()]).then(([c, masks, w, p, bundles, ps, bs, setting, persistedSave, savedSnapshots]) => {
@@ -190,6 +198,7 @@ export function App() {
           setChatParticipantIds(session.participantIds);
           setSelectedCharacterId(session.characterId);
           setTopicMode(session.mode);
+          setLastResponseSource(session.lastResponseSource ?? null);
           setTopicTree(parsedSave.world.topicTrees[topicTreeKey(session.characterId, session.nodeId)] ?? null);
         } else if (session) writeEncounterChatSession(null);
       } else {
@@ -629,6 +638,7 @@ export function App() {
   }
 
   async function generateTopicTree(charId: string, nodeId: string, participantIds: string[]): Promise<void> {
+    markResponseSource(null);
     const key = topicTreeKey(charId, nodeId);
     const existing = saveRef.current.world.topicTrees[key];
     if (existing && isTopicTreeFresh(existing, saveRef.current.world.clock.day)) {
@@ -684,11 +694,12 @@ export function App() {
     if (applied.changes.length) promptEvents.emit('onOpsApply', { changes: applied.changes });
     const nextMessages = [...messages, { role: 'assistant' as const, content: response }];
     setMessages(nextMessages);
+    markResponseSource('topic');
     void saveChat({ characterId: selectedCharacterId, messages: nextMessages, updatedAt: now() });
-    if (topic.terminal) { setTopicMode('ended'); writeEncounterChatSession({ characterId: selectedCharacterId, participantIds: chatParticipantIds, nodeId: next.world.player.nodeId, mode: 'ended' }); setFeedback({ tone: 'info', text: '这次话题推进结束了场景。' }); return; }
+    if (topic.terminal) { setTopicMode('ended'); writeEncounterChatSession({ characterId: selectedCharacterId, participantIds: chatParticipantIds, nodeId: next.world.player.nodeId, mode: 'ended', lastResponseSource: 'topic' }); setFeedback({ tone: 'info', text: '这次话题推进结束了场景。' }); return; }
     const refreshed = next.world.topicTrees[topicTreeKey(selectedCharacterId, next.world.player.nodeId)];
     const remaining = refreshed?.topics.some((item) => topicVisibility(item, next.world, next.config.hiddenTopicStyle) === 'available');
-    if (!remaining) { setTopicMode('manual'); writeEncounterChatSession({ characterId: selectedCharacterId, participantIds: chatParticipantIds, nodeId: next.world.player.nodeId, mode: 'manual' }); setFeedback({ tone: 'info', text: '话题树已结束，现在可以自由输入。' }); }
+    if (!remaining) { setTopicMode('manual'); writeEncounterChatSession({ characterId: selectedCharacterId, participantIds: chatParticipantIds, nodeId: next.world.player.nodeId, mode: 'manual', lastResponseSource: 'topic' }); setFeedback({ tone: 'info', text: '话题树已结束，现在可以自由输入。' }); }
   }
 
   function continueEncounter(): void {
@@ -714,6 +725,7 @@ export function App() {
     if (!formal) { setFeedback({ tone: 'info', text: '你决定留下继续，但当前没有可用的正式角色聊天卡。' }); return; }
     setChatParticipantIds(participantIds);
     setChatParticipantsLocked(true);
+    markResponseSource(null);
     setSelectedCharacterId(formal.id);
     setTopicTree(null);
     setTopicMode('topics');
@@ -736,6 +748,7 @@ export function App() {
     if (!selectedCharacterId) { setFeedback({ tone: 'error', text: '请先选择聊天角色。' }); return; }
     const next = [...messages, { role: 'user' as const, content: text, kind: 'dialogue' as const, speakerId: 'player' }];
     setMessages(next); setInput(''); setRequestStatus('idle');
+    markResponseSource(null);
     setFeedback({ tone: 'info', text: '消息已发送，点击“生成回复”后才会请求 API。' });
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
   }
@@ -776,6 +789,7 @@ export function App() {
       narrative += finished.text;
       const completed = [...next, { role: 'assistant' as const, content: narrative }];
       setMessages(completed);
+      markResponseSource('manual');
       await saveChat({ characterId: selectedCharacterId, messages: completed, updatedAt: now() });
       const reply = await parseReply(finished.raw, extractOps);
       applyReplyOps(reply, selectedCharacterId);
@@ -797,6 +811,57 @@ export function App() {
         raw: finished.raw || message,
         ops: JSON.stringify({ stage: 'stream-error', applied: 0, warnings: [message], message: '本回合未产生状态变更。' }, null, 2),
       }));
+    } finally { setBusy(false); setReplyInProgress(false); }
+  }
+
+  async function regenerateReply(): Promise<void> {
+    const requirement = regenerateInput.trim();
+    if (busy || topicMode !== 'manual' || lastResponseSource === 'topic' || !requirement || !selectedCharacterId) return;
+    const latestAssistantIndex = [...messages].map((message, index) => message.role === 'assistant' ? index : -1).filter((index) => index >= 0).at(-1) ?? -1;
+    if (latestAssistantIndex < 0) return;
+    const originalMessages = messages;
+    const baseMessages = messages.slice(0, latestAssistantIndex);
+    const routedProvider = mockFixtureId
+      ? createMockProviderConfig(mockFixtureId)
+      : resolveProviderForTask(providers, bindings, 'narrate_main', defaultProviderId);
+    let parsed: ProviderConfig;
+    try {
+      if (!routedProvider) throw new Error('请先保存并设置默认 Provider，或在高级调试中启用 Mock fixture。');
+      parsed = ProviderConfigSchema.parse(routedProvider);
+    } catch (error) { setRequestStatus('error'); setFeedback({ tone: 'error', text: errorMessage(error, 'Provider 配置无效，请在设置中检查基础 URL、模型与渠道。') }); return; }
+    const activePresetBundle = presetBundles.find((item) => item.id === selectedPresetBundleId);
+    const participantIds = chatParticipantIds.length ? chatParticipantIds : [selectedCharacterId];
+    const participants = participantIds.map((id) => characters.find((item) => item.id === id)).filter((character): character is CharacterCard => Boolean(character));
+    const latestInput = [...baseMessages].reverse().find((message) => message.role === 'user')?.content ?? '';
+    const promptFacts = { input: latestInput, regenerationRequest: requirement, character: activeCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, worldbooks, history: originalMessages, world: saveRef.current.world };
+    promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
+    const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
+    setDebug((current) => ({ ...current, prompt: assembled }));
+    setBusy(true); setReplyInProgress(true); setRequestStatus('requesting'); setFeedback(null); setPendingOps(null);
+    let narrative = '';
+    const splitter = new OpsStreamSplitter();
+    try {
+      await streamChat(parsed, assembled.messages, (delta) => {
+        narrative += splitter.push(delta);
+        setMessages(narrative ? [...baseMessages, { role: 'assistant', content: narrative }] : baseMessages);
+      }, { taskId: 'narrate_main', onStatus: (status) => setRequestStatus(status) });
+      const finished = splitter.finish();
+      narrative += finished.text;
+      if (!narrative.trim()) throw new Error('Provider 未返回可读正文。');
+      const completed = [...baseMessages, { role: 'assistant' as const, content: narrative }];
+      setMessages(completed);
+      await saveChat({ characterId: selectedCharacterId, messages: completed, updatedAt: now() });
+      const parsedReply = await parseReply(finished.raw);
+      const discardedOps = parsedReply.ops.length;
+      const hadOpsBlock = finished.foundOps || finished.raw.includes('<ops>');
+      markResponseSource('manual');
+      setRegenerateInput('');
+      setDebug((current) => ({ ...current, raw: finished.raw, ops: JSON.stringify({ stage: parsedReply.stage, parsedOps: discardedOps ? parsedReply.ops : [], discardedOps, warnings: [...parsedReply.warnings, ...(hadOpsBlock ? ['重生成响应中的 ops 已丢弃，未应用任何状态变化。'] : [])], message: '重生成只替换叙述正文。' }, null, 2) }));
+      setFeedback({ tone: 'success', text: hadOpsBlock ? '已重新生成正文，响应中的状态操作已丢弃。' : '已重新生成正文。' });
+    } catch (error) {
+      splitter.finish();
+      setMessages(originalMessages);
+      setRequestStatus('error'); setFeedback({ tone: 'error', text: errorMessage(error, '重新生成失败，原回复已保留。') });
     } finally { setBusy(false); setReplyInProgress(false); }
   }
 
@@ -1202,7 +1267,7 @@ export function App() {
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} onTopicSelect={selectTopic} />}
+      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} onTopicSelect={selectTopic} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} />}
       {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} />}
     </main>
@@ -1566,6 +1631,10 @@ function ChatView(props: {
   setInput: (value: string) => void;
   onAppend: () => Promise<void>;
   onGenerate: () => Promise<void>;
+  regenerateInput: string;
+  setRegenerateInput: (value: string) => void;
+  onRegenerate: () => Promise<void>;
+  canRegenerate: boolean;
   requestStatus: RequestStatus;
   busy: boolean;
   replyInProgress: boolean;
@@ -1739,6 +1808,11 @@ function ChatView(props: {
       {!props.topicLoading && props.topicTree && <div className="topic-choice-list">{topicEntries.map(({ topic, visibility, label }) => <button key={topic.id} className="topic-choice" disabled={visibility === 'locked' || props.busy} onClick={() => props.onTopicSelect(topic)}><span>{label}</span>{visibility === 'used' && <small>再聊一次</small>}{topic.terminal && <small>推进</small>}</button>)}</div>}
     </div>}
     {props.topicMode === 'ended' && <div className="topic-tree-panel"><p className="empty">本次面对面场景已经结束。</p></div>}
+    {props.topicMode === 'manual' && props.canRegenerate && latestRole === 'assistant' && <div className="regenerate-panel" aria-label="重新生成回复">
+      <div className="list-heading"><strong>对这条回复不满意？</strong><span className="io-scope">只会替换叙述文字，不会重复应用状态变化</span></div>
+      <textarea value={props.regenerateInput} onChange={(event) => props.setRegenerateInput(event.target.value)} placeholder="告诉角色换一种说法……" aria-label="重新生成要求" />
+      <button className="secondary" onClick={() => void props.onRegenerate()} disabled={props.busy || !props.regenerateInput.trim()}>按要求重新生成</button>
+    </div>}
     {props.pendingOps && <div className="ops-recovery" role="alert">
       <strong>本回合未产生状态变更</strong>
       <p>{props.pendingOps.streamError ? '回复流中断，已保留收到的正文。你可以重试提取或手动补录。' : '正文已保留，但 ops 无法解析。你可以重试提取或手动补录。'}</p>
