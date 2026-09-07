@@ -1,6 +1,7 @@
 import type { CharacterCard, ChatMessage, Persona, PresetBundle, WorldbookEntry } from '../../data/content';
 import type { SaveFile } from '../../data/schema/save';
 import type { PromptBlock, PromptFacts } from './assembler';
+import { buildRelationshipStatePrompt, type RelationshipPromptState } from '../relationship';
 
 export const DEFAULT_PROMPT_BLOCK_IDS = [
   'preset_bundle', 'format_contract', 'encounter_participants', 'character_core', 'relationship_state', 'scene_now', 'node_worldbook', 'node_memory',
@@ -16,6 +17,7 @@ export interface DefaultPromptFacts extends PromptFacts {
   presetBundle?: PresetBundle;
   playerPersona?: Persona;
   regenerationRequest?: string;
+  relationshipState?: RelationshipPromptState;
   world: SaveFile['world'];
 }
 
@@ -47,7 +49,7 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
       if (!character) return null;
       return [`当前主要聊天角色（非玩家）：${character.name}`, `简介：${character.description}`, `性格：${character.personality}`, character.scenario ? `场景：${character.scenario}` : ''].filter(Boolean).join('\n');
     } },
-    { id: 'relationship_state', role: 'system', priority: 90, order: 4, build: missing },
+    { id: 'relationship_state', role: 'system', priority: 90, order: 4, build: (facts) => buildRelationshipStatePrompt(factsOf(facts).relationshipState) },
     { id: 'scene_now', role: 'system', priority: 88, order: 5, build: (facts) => {
       const world = factsOf(facts).world;
       if (!world) return null;

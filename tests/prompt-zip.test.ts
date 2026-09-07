@@ -7,6 +7,7 @@ import { UnsupportedSchemaVersionError } from '../src/data/migrations/types';
 import type { SaveFile } from '../src/data/schema/save';
 import { createDefaultMap } from '../src/data/schema/save';
 import { createBuiltinNarrationPresetBundle } from '../src/data/presets/builtins';
+import { buildRelationshipStatePrompt, deriveRelationshipPromptState } from '../src/core/relationship';
 
 describe('prompt assembler', () => {
   it('orders blocks and reports truncation', () => { const assembler = new PromptAssembler(); assembler.register({ id: 'low', role: 'system', priority: 10, order: 2, build: () => 'low '.repeat(20) }); assembler.register({ id: 'high', role: 'system', priority: 100, order: 1, build: () => 'high' }); const result = assembler.assemble({}, { budget: 4 }); expect(result.blocks.find((b) => b.id === 'high')?.dropped).toBe(false); expect(result.estimatedTokens).toBeLessThanOrEqual(4); });
@@ -52,6 +53,22 @@ describe('prompt assembler', () => {
     const result = assembler.assemble({ input: '上一句', worldbooks: [], history: [{ role: 'assistant', content: '原回复' }], regenerationRequest: '更温柔一些，并缩短为两句。', world: undefined }, { budget: 500, task: 'narrate_main' });
     expect(result.messages.at(-1)).toEqual({ role: 'user', content: '[重生成上一条角色回复]\n用户要求：更温柔一些，并缩短为两句。\n请只输出替代上一条回复的自然语言正文。不要输出或提议任何 <ops> 状态操作。' });
     expect(result.blocks.find((block) => block.id === 'regeneration_request')?.skipped).toBe(false);
+  });
+
+  it('injects deterministic relationship labels without exposing axes by default', () => {
+    const world = {
+      clock: { day: 10, slotId: 'evening' }, player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {},
+      relations: { rin: { memories: [], axes: { affection: 60, trust: 20 }, mood: { word: '疲惫', setDay: 9, decayDays: 2 }, situation: '在花店收拾打烊', lastSeenDay: 6, stageId: 'acquaintance' } },
+    } as unknown as import('../src/data/schema/save').WorldState;
+    const rules = [{ id: 'acquaintance', name: '熟人', when: 'axes.affection >= 0', order: 1 }];
+    const state = deriveRelationshipPromptState(world, 'rin', rules, false);
+    const prompt = buildRelationshipStatePrompt(state);
+    expect(prompt).toContain('阶段：熟人');
+    expect(prompt).toContain('当前心情：疲惫');
+    expect(prompt).toContain('当前处境：在花店收拾打烊');
+    expect(prompt).toContain('距上次见面：4 天');
+    expect(prompt).not.toContain('affection');
+    expect(buildRelationshipStatePrompt({ ...state!, showNumbers: true })).toContain('affection=60');
   });
 
   it('includes registered op documentation in the format contract', () => {

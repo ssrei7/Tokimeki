@@ -411,3 +411,4 @@ export type ItemDef = z.infer<typeof ItemDefSchema>;
 export type CalendarConfig = z.infer<typeof CalendarConfigSchema>;
 export type ActionCostTable = z.infer<typeof ActionCostTableSchema>;
 export type DailySettlement = z.infer<typeof DailySettlementSchema>;
+export type StageRule = z.infer<typeof StageRuleSchema>;

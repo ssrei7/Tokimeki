@@ -30,6 +30,7 @@ import { seedScenario } from './dev/scenarios/seeder';
 import { ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, type ProviderBinding, type ProviderConfig, type TaskId } from './providers/types';
 import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from './ui/chat-state';
 import { latestDialogueSpeakerId, splitDialogueMessage } from './ui/dialogue';
+import { deriveRelationshipPromptState } from './core/relationship';
 import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
 import { PLAYER_ACCENT_COLOR, resolveCharacterAccentColors, resolveSpeakerAccentColor } from './ui/character-color';
 import './ui/theme/app.css';
@@ -776,7 +777,8 @@ export function App() {
     const activePresetBundle = presetBundles.find((item) => item.id === selectedPresetBundleId);
     const participantIds = chatParticipantIds.length ? chatParticipantIds : [selectedCharacterId];
     const participants = participantIds.map((id) => characters.find((item) => item.id === id)).filter((character): character is CharacterCard => Boolean(character));
-    const promptFacts = { input: latestInput, character: activeCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, worldbooks, history: next, world: saveRef.current.world };
+    const relationshipState = activeCharacter ? deriveRelationshipPromptState(saveRef.current.world, activeCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
+    const promptFacts = { input: latestInput, character: activeCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, worldbooks, history: next, world: saveRef.current.world };
     promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
     const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
     setDebug((current) => ({ ...current, prompt: assembled }));
@@ -833,7 +835,8 @@ export function App() {
     const participantIds = chatParticipantIds.length ? chatParticipantIds : [selectedCharacterId];
     const participants = participantIds.map((id) => characters.find((item) => item.id === id)).filter((character): character is CharacterCard => Boolean(character));
     const latestInput = [...baseMessages].reverse().find((message) => message.role === 'user')?.content ?? '';
-    const promptFacts = { input: latestInput, regenerationRequest: requirement, character: activeCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, worldbooks, history: originalMessages, world: saveRef.current.world };
+    const relationshipState = activeCharacter ? deriveRelationshipPromptState(saveRef.current.world, activeCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
+    const promptFacts = { input: latestInput, regenerationRequest: requirement, character: activeCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, worldbooks, history: originalMessages, world: saveRef.current.world };
     promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
     const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
     setDebug((current) => ({ ...current, prompt: assembled }));
