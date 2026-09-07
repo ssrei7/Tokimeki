@@ -148,6 +148,8 @@ export function App() {
   const [summarizingDay, setSummarizingDay] = useState<number | null>(null);
   const [mapGenerating, setMapGenerating] = useState(false);
   const [activeEncounter, setActiveEncounter] = useState<ActiveEncounter | null>(null);
+  const [encounterParticipantIds, setEncounterParticipantIds] = useState<string[]>([]);
+  const [chatParticipantsLocked, setChatParticipantsLocked] = useState(false);
   const [topicTree, setTopicTree] = useState<TopicTree | null>(null);
   const [topicMode, setTopicMode] = useState<'topics' | 'manual' | 'ended'>('manual');
   const [topicLoading, setTopicLoading] = useState(false);
@@ -339,6 +341,7 @@ export function App() {
     const encounter = triggerEncounter(next.world, next.config.encounter, { nodeId, trigger: 'enter', daysPerWeek: next.config.calendar.daysPerWeek, events: promptEvents });
     commitSave(next);
     setActiveEncounter(encounter.triggered && encounter.entry ? { entryId: encounter.entry.id, nodeId, scope: encounter.entry.scope, candidates: encounter.candidates } : null);
+    setEncounterParticipantIds(encounter.triggered ? encounter.candidates.filter((candidate) => candidate.tier === 'formal' && characters.some((character) => character.id === candidate.id)).map((candidate) => candidate.id) : []);
     const arrival = result.cost > 0 ? `已抵达${destination?.name ?? nodeId}，消耗 ${result.cost} 个时段。` : `已抵达${destination?.name ?? nodeId}。`;
     const names = encounter.candidates.map((candidate) => candidate.name).join('、');
     setFeedback({ tone: 'success', text: encounter.triggered ? `${arrival} 遇见了${names}。` : arrival });
@@ -351,6 +354,7 @@ export function App() {
     if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '无法记录相遇结果。' }); return; }
     commitSave(next);
     setActiveEncounter(null);
+    setEncounterParticipantIds([]);
     setFeedback({ tone: 'info', text: outcome === 'continued' ? '你决定留下继续这次相遇。' : '你选择离开了。' });
   }
 
@@ -662,18 +666,36 @@ export function App() {
     const next = structuredClone(saveRef.current);
     const result = updateEncounterOutcome(next.world, activeEncounter.entryId, 'continued');
     if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '无法记录相遇结果。' }); return; }
-    const formal = activeEncounter.candidates.find((candidate) => candidate.tier === 'formal' && characters.some((item) => item.id === candidate.id));
+    const availableIds = new Set(activeEncounter.candidates.filter((candidate) => candidate.tier === 'formal' && characters.some((item) => item.id === candidate.id)).map((candidate) => candidate.id));
+    if (!availableIds.size) {
+      commitSave(next);
+      setActiveEncounter(null);
+      setEncounterParticipantIds([]);
+      setFeedback({ tone: 'info', text: '你决定留下继续，但当前没有可用的正式角色聊天卡。' });
+      return;
+    }
+    const participantIds = encounterParticipantIds.filter((id) => availableIds.has(id));
+    if (!participantIds.length) { setFeedback({ tone: 'error', text: '请至少选择一位正式角色进入对话。' }); return; }
+    const formal = characters.find((item) => item.id === participantIds[0]);
     commitSave(next);
     setActiveEncounter(null);
+    setEncounterParticipantIds([]);
     if (!formal) { setFeedback({ tone: 'info', text: '你决定留下继续，但当前没有可用的正式角色聊天卡。' }); return; }
-    const participantIds = activeEncounter.candidates.filter((candidate) => candidate.tier === 'formal' && characters.some((item) => item.id === candidate.id)).map((candidate) => candidate.id);
     setChatParticipantIds(participantIds);
+    setChatParticipantsLocked(true);
     setSelectedCharacterId(formal.id);
     setTopicTree(null);
     setTopicMode('topics');
     setTab('chat');
     void generateTopicTree(formal.id, next.world.player.nodeId, participantIds);
     setFeedback({ tone: 'info', text: `你留下来和${formal.name}继续聊聊。` });
+  }
+
+  function openManualChat(): void {
+    setChatParticipantsLocked(false);
+    setTopicTree(null);
+    setTopicMode('manual');
+    setTab('chat');
   }
 
   function updateChatParticipants(ids: string[]): void {
@@ -1153,9 +1175,9 @@ export function App() {
     {tab !== 'map' && <header className={`topbar ${tab === 'chat' ? 'chat-topbar' : ''}`}><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small><h1>Tokimeki{tab === 'chat' && <span className="topbar-context"> · 面对面</span>}</h1></div></header>}
     <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''} ${tab === 'map' ? 'map-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
-      {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onOpenChat={() => setTab('chat')} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
+      {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onOpenChat={openManualChat} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} onTopicSelect={selectTopic} />}
+      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} onTopicSelect={selectTopic} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} />}
       {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} />}
     </main>
@@ -1163,7 +1185,7 @@ export function App() {
   </div>;
 }
 
-function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onContinueEncounter, onMove, onOpenChat, onImportBackground, onImportSceneBackground, onRemoveSceneBackground, onToggleMode, onCreateNode, onEditNode, onDeleteNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating }: { save: SaveFile; worldbooks: WorldbookEntry[]; activeEncounter: ActiveEncounter | null; onEncounterOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinueEncounter: () => void; onMove: (nodeId: string) => void; onOpenChat: () => void; onImportBackground: (file?: File) => Promise<void>; onImportSceneBackground: (nodeId: string, file?: File) => Promise<void>; onRemoveSceneBackground: (nodeId: string) => Promise<void>; onToggleMode: () => void; onCreateNode: (input: CreateMapNodeInput) => boolean; onEditNode: (nodeId: string, input: UpdateMapNodeInput) => boolean; onDeleteNode: (nodeId: string) => boolean; onSuggestNode: (input: { requirements: string; regionName: string; anchorName: string }) => Promise<{ name: string; description: string } | null>; onGenerateMap: (requirements?: string) => Promise<void>; onExpandMap: (anchorNodeId: string, count: number, requirements?: string) => Promise<void>; mapGenerating: boolean }) {
+function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, onEncounterParticipantIdsChange, onEncounterOutcome, onContinueEncounter, onMove, onOpenChat, onImportBackground, onImportSceneBackground, onRemoveSceneBackground, onToggleMode, onCreateNode, onEditNode, onDeleteNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating }: { save: SaveFile; worldbooks: WorldbookEntry[]; activeEncounter: ActiveEncounter | null; encounterParticipantIds: string[]; onEncounterParticipantIdsChange: (ids: string[]) => void; onEncounterOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinueEncounter: () => void; onMove: (nodeId: string) => void; onOpenChat: () => void; onImportBackground: (file?: File) => Promise<void>; onImportSceneBackground: (nodeId: string, file?: File) => Promise<void>; onRemoveSceneBackground: (nodeId: string) => Promise<void>; onToggleMode: () => void; onCreateNode: (input: CreateMapNodeInput) => boolean; onEditNode: (nodeId: string, input: UpdateMapNodeInput) => boolean; onDeleteNode: (nodeId: string) => boolean; onSuggestNode: (input: { requirements: string; regionName: string; anchorName: string }) => Promise<{ name: string; description: string } | null>; onGenerateMap: (requirements?: string) => Promise<void>; onExpandMap: (anchorNodeId: string, count: number, requirements?: string) => Promise<void>; mapGenerating: boolean }) {
   type MapSheetState = 'collapsed' | 'half' | 'expanded';
   const map = save.world.map;
   const currentNode = map.nodes[save.world.player.nodeId];
@@ -1426,7 +1448,7 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
         <div className="button-row"><button onClick={saveEditorNode} disabled={!editorName.trim() || !editorRegionId || (!editorNodeId && !editorAnchorId)}>保存地点</button><button className="secondary" onClick={() => setEditorPos(null)}>重新选位置</button>{editorNodeId && <button className="danger" onClick={deleteEditorNode} disabled={editorNodeId === save.world.player.nodeId}>删除地点</button>}<button className="secondary" onClick={closeEditor}>取消</button></div>
       </div>}
     </div>
-    {activeEncounter && <EncounterDialog encounter={activeEncounter} onOutcome={onEncounterOutcome} onContinue={onContinueEncounter} />}
+    {activeEncounter && <EncounterDialog encounter={activeEncounter} selectedParticipantIds={encounterParticipantIds} onSelectionChange={onEncounterParticipantIdsChange} onOutcome={onEncounterOutcome} onContinue={onContinueEncounter} />}
     <details ref={toolSheetRef} open={toolSheetProgress > 0.001} data-sheet-state={toolSheetState} data-sheet-dragging={sheetDraggingKind === 'tool' ? 'true' : undefined} style={sheetStyle(toolSheetProgress)} className="map-menu map-bottom-sheet map-tool-sheet">
       <summary onPointerDown={beginSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={handleSheetClick('tool')}><span>地图工具{editorMode ? ' · 编辑中' : ''}</span><span>{toolSheetState === 'expanded' ? '向下收起' : toolSheetState === 'half' ? '半展开' : '向上展开'}</span></summary>
       <div className="map-menu-content">
@@ -1461,9 +1483,11 @@ function EncounterTraceList({ traces }: { traces: EncounterTrace[] }) {
   return <div className="encounter-trace-list" aria-label="最近相遇残影"><span className="eyebrow">相遇残影</span>{traces.map((trace) => <span className="encounter-trace" key={`${trace.day}-${trace.characterIds.join(',')}`}>{encounterTraceLabel(trace)}</span>)}</div>;
 }
 
-function EncounterDialog({ encounter, onOutcome, onContinue }: { encounter: ActiveEncounter; onOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinue: () => void }) {
+function EncounterDialog({ encounter, selectedParticipantIds, onSelectionChange, onOutcome, onContinue }: { encounter: ActiveEncounter; selectedParticipantIds: string[]; onSelectionChange: (ids: string[]) => void; onOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinue: () => void }) {
   const names = encounter.candidates.map((candidate) => candidate.name).join('、');
-  return <div className="encounter-dialog" role="dialog" aria-label="相遇事件"><div className="encounter-dialog-copy"><span className="eyebrow">有人可遇</span><strong>你在这里遇见了{names}</strong><p>{encounter.scope === 'formal' ? '地点正在开放，可以正式进入范围。' : '地点尚未开放，你们只能在附近外围短暂相遇。'}</p></div><div className="encounter-options"><button onClick={onContinue}>留下并对话</button><button className="secondary" onClick={() => onOutcome('urgent_leave')}>离开</button></div></div>;
+  const formalCandidates = encounter.candidates.filter((candidate) => candidate.tier === 'formal');
+  const toggle = (id: string) => onSelectionChange(selectedParticipantIds.includes(id) ? selectedParticipantIds.filter((item) => item !== id) : [...selectedParticipantIds, id]);
+  return <div className="encounter-dialog" role="dialog" aria-label="相遇事件"><div className="encounter-dialog-copy"><span className="eyebrow">有人可遇</span><strong>你在这里遇见了{names}</strong><p>{encounter.scope === 'formal' ? '地点正在开放，可以正式进入范围。' : '地点尚未开放，你们只能在附近外围短暂相遇。'}</p></div>{formalCandidates.length > 0 && <div className="encounter-participant-picker"><strong>选择要正式交谈的人</strong><span className="io-scope">本次选择确认后将固定到对话结束</span><div>{formalCandidates.map((candidate) => <label key={candidate.id}><input type="checkbox" checked={selectedParticipantIds.includes(candidate.id)} onChange={() => toggle(candidate.id)} /><span>{candidate.name}</span></label>)}</div></div>}<div className="encounter-options"><button onClick={onContinue} disabled={formalCandidates.length > 0 && !selectedParticipantIds.length}>留下并对话</button><button className="secondary" onClick={() => onOutcome('urgent_leave')}>离开</button></div></div>;
 }
 
 function PresenceList({ people, scope }: { people: ReturnType<typeof whoIsHere>; scope: string }) {
@@ -1506,6 +1530,7 @@ function ChatView(props: {
   world: SaveFile['world'];
   hiddenTopicStyle: SaveFile['config']['hiddenTopicStyle'];
   participantIds: string[];
+  participantsLocked: boolean;
   onParticipantIdsChange: (ids: string[]) => void;
   sceneBackground?: AssetRef;
   playerLabel: string;
@@ -1673,7 +1698,7 @@ function ChatView(props: {
   const endDialogueResize = () => { resizeStartRef.current = null; };
 
   return <section className="chat-screen vn-chat-screen">
-    <div className="character-picker"><div className="participant-picker" aria-label="本次对话角色">{props.characters.length > 1 && <span className="participant-label">本次对话</span>}{props.characters.map((item) => <label key={item.id} className="participant-option"><input type="checkbox" checked={participantIds.includes(item.id)} onChange={() => toggleParticipant(item.id)} /><span>{item.name}</span></label>)}</div><select aria-label="主要聊天角色" value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">当前地点无人</option>{participantCharacters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
+    {props.topicMode === 'manual' && !props.participantsLocked && <div className="character-picker"><div className="participant-picker" aria-label="本次对话角色">{props.characters.length > 1 && <span className="participant-label">本次对话</span>}{props.characters.map((item) => <label key={item.id} className="participant-option"><input type="checkbox" checked={participantIds.includes(item.id)} onChange={() => toggleParticipant(item.id)} /><span>{item.name}</span></label>)}</div><select aria-label="主要聊天角色" value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">当前地点无人</option>{participantCharacters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
     <div className="vn-stage" style={{ '--vn-accent': accentColor, ...(sceneBackgroundUrl ? { backgroundImage: `linear-gradient(180deg, #0002, #0003), url("${sceneBackgroundUrl}")` } : {}) } as CSSProperties}>
       <div className="vn-portrait-area" aria-label={`${activeSpeakerName}的立绘`}>
         {portraitUrl ? <img className="vn-portrait" style={activePortrait?.transform ? { transform: `translate(${activePortrait.transform.offsetX}px, ${activePortrait.transform.offsetY}px) scale(${activePortrait.transform.scale})` } : undefined} src={portraitUrl} alt={`${activeSpeakerName}的立绘`} /> : <div className="vn-portrait-empty" aria-label="暂无立绘" />}

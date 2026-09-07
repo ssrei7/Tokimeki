@@ -1,4 +1,4 @@
-import { getMockFixture, MOCK_FIXTURE_IDS } from '../mock/fixtures';
+import { adaptTopicTreeFixture, getMockFixture, MOCK_FIXTURE_IDS } from '../mock/fixtures';
 import type { ChatRequest, PreparedRequest, ProviderAdapter, ProviderConfig } from '../types';
 
 export const mockAdapter: ProviderAdapter = {
@@ -9,7 +9,9 @@ export const mockAdapter: ProviderAdapter = {
   extractText: (_config, payload) => typeof payload === 'string' ? payload : null,
   extractStreamText: (_config, chunk) => chunk,
   async *stream(config, request) {
-    const fixture = getMockFixture(request.taskId ?? 'narrate_main', config.model);
+    const taskId = request.taskId ?? 'narrate_main';
+    const baseFixture = getMockFixture(taskId, config.model);
+    const fixture = taskId === 'topic_tree' ? adaptTopicTreeFixture(baseFixture, request.messages) : baseFixture;
     for (const chunk of fixture.chunks) yield chunk;
     if (fixture.errorAfterChunks) throw new Error(fixture.errorAfterChunks);
   },

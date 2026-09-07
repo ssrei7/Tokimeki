@@ -88,3 +88,19 @@ export function getMockFixture(taskId: TaskId, fixtureId: string): MockFixture {
   if (!fixture) throw new Error(`Unknown mock fixture: ${taskId}/${fixtureId}`);
   return fixture;
 }
+
+export function adaptTopicTreeFixture(fixture: MockFixture, messages: readonly { role: string; content: string }[]): MockFixture {
+  const context = messages.at(-1)?.content;
+  if (!context) return fixture;
+  try {
+    const parsed = JSON.parse(context) as { day?: unknown; node?: { id?: unknown }; character?: { id?: unknown; name?: unknown } };
+    const charId = typeof parsed.character?.id === 'string' ? parsed.character.id : undefined;
+    const charName = typeof parsed.character?.name === 'string' ? parsed.character.name : undefined;
+    const nodeId = typeof parsed.node?.id === 'string' ? parsed.node.id : undefined;
+    const day = typeof parsed.day === 'number' ? parsed.day : undefined;
+    if (!charId || !charName || !nodeId || !day) return fixture;
+    return { ...fixture, chunks: fixture.chunks.map((chunk) => chunk.replaceAll('"seir"', JSON.stringify(charId)).replaceAll('"docks"', JSON.stringify(nodeId)).replaceAll('"generatedDay":3', `"generatedDay":${day}`).replaceAll('塞伊尔', charName)) };
+  } catch {
+    return fixture;
+  }
+}

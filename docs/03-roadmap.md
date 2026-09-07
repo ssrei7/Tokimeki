@@ -298,6 +298,7 @@
 
 **交付**
 - `TopicTree`：一次 `topic_tree` 调用生成 4–8 个 topic 及其 `response`，内联存储
+- 正式相遇前选择对话参与者；进入聊天后参与者集合固定，聊天页不再切换角色
 - `require`（隐藏或 `???`，设置可切）+ `unlock_topic` 双机制
 - `terminal` 区分纯聊天话题与推进型选项
 - 已用话题不置灰，返回 `usedResponse` 敷衍变体
@@ -331,6 +332,7 @@
 11. 角色提出要离开时，玩家可以用自由输入尝试挽留，也可以无视并放任离开；两条结果可追踪且不消耗行动点
 12. 话题树未结束时输入框不可见；话题树自然耗尽后手动输入才出现，terminal 话题仍按规则结束场景
 13. 手动对话的最新回复可填写要求并重新生成；重新生成不重复应用原回复的状态 ops，TopicTree 固定回应不受影响
+14. 相遇中先选择 1–3 位正式角色；未选角色不进入本次 TopicTree，进入聊天后不能切换参与者
 
 **schema**：v8 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `relations` 全字段 / `characters[].giftPrefs`
 

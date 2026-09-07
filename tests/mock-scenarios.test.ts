@@ -29,6 +29,14 @@ describe('mock provider', () => {
     await expect(listProviderModels(provider, fetchImpl)).resolves.toEqual([...MOCK_FIXTURE_IDS]);
   });
 
+  it('adapts topic tree fixture identity to the selected conversation character', async () => {
+    const deltas: string[] = [];
+    await streamChat(createMockProviderConfig('perfect'), [{ role: 'user', content: JSON.stringify({ day: 3, node: { id: 'docks' }, character: { id: 'rin', name: '凛' } }) }], (delta) => deltas.push(delta), { taskId: 'topic_tree' });
+    const result = deltas.join('');
+    expect(result).toContain('"charId":"rin"');
+    expect(result).toContain('[说话人:凛]');
+  });
+
   it('reproduces an interrupted stream after emitting partial text', async () => {
     const deltas: string[] = [];
     const statuses: string[] = [];
