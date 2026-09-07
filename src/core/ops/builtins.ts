@@ -6,6 +6,7 @@ import { advanceTime } from '../time';
 import { movePlayer, revealNode } from '../map';
 import { moveNpc, triggerEncounter } from '../encounter';
 import { canUnlockTopic, topicTreeKey } from '../topics';
+import { resolveRelationshipStageId } from '../relationship';
 
 const StatTargetSchema = z.enum(['player', 'world']);
 const AddStatSchema = z.object({ op: z.literal('add_stat'), target: StatTargetSchema, key: z.string().min(1), delta: z.number().finite() });
@@ -22,6 +23,7 @@ const MoveNpcSchema = z.object({ op: z.literal('move_npc'), target: z.string().m
 const UnlockTopicSchema = z.object({ op: z.literal('unlock_topic'), id: z.string().min(1) });
 const MarkTopicUsedSchema = z.object({ op: z.literal('mark_topic_used'), id: z.string().min(1) });
 const SetMoodSchema = z.object({ op: z.literal('set_mood'), target: z.string().min(1), word: z.string().min(1).max(80), decayDays: z.number().int().nonnegative().max(365) });
+const AdjustRelationAxisSchema = z.object({ op: z.literal('adjust_relation_axis'), target: z.string().min(1), key: z.string().min(1), delta: z.number().finite() });
 
 export function createDefaultOpRegistry(): OpRegistry {
   const registry = new OpRegistry();
@@ -144,6 +146,12 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     describe: (payload) => `set mood for ${payload.target}: ${payload.word}`,
     apply: (payload, context) => setMood(payload, context),
   });
+  registry.register({
+    op: 'adjust_relation_axis', schema: AdjustRelationAxisSchema, clamp: { numeric: { delta: { min: -1_000_000, max: 1_000_000 } } },
+    promptDoc: 'adjust_relation_axis: {"op":"adjust_relation_axis","target":"current-character-id","key":"axis-id","delta":number}; applies the configured axis clamp and refreshes the relationship stage.',
+    describe: (payload) => `adjust ${payload.target}.${payload.key} by ${payload.delta}`,
+    apply: (payload, context) => adjustRelationAxis(payload, context),
+  });
 }
 
 function statsFor(world: WorldState, target: z.infer<typeof StatTargetSchema>): Record<string, number> {
@@ -240,6 +248,25 @@ function setMood(payload: z.infer<typeof SetMoodSchema>, context: OpContext): Op
   relation.mood = { word, setDay: context.day, decayDays: payload.decayDays };
   context.world.relations[payload.target] = relation;
   return changed(`relations.${payload.target}.mood`, before, relation.mood, `Set mood for ${payload.target}.`);
+}
+
+function adjustRelationAxis(payload: z.infer<typeof AdjustRelationAxisSchema>, context: OpContext): OpResult {
+  if (!context.actorId || payload.target !== context.actorId) return rejected('Relation axis target must be the current actor.');
+  const axisDef = context.axisDefs?.find((axis) => axis.id === payload.key);
+  if (!axisDef) return rejected(`Unknown relation axis: ${payload.key}.`);
+  const relation = context.world.relations[payload.target] ?? { axes: {}, knots: [], memories: [] };
+  const before = relation.axes[payload.key] ?? axisDef.initial;
+  const signedLimit = axisDef.clampPerTurn;
+  const boundedDelta = Math.min(signedLimit, Math.max(axisDef.monotonic ? 0 : -signedLimit, payload.delta));
+  const after = Math.min(axisDef.max, Math.max(axisDef.min, before + boundedDelta));
+  relation.axes[payload.key] = after;
+  const stageId = resolveRelationshipStageId(relation.axes, context.world, context.stageRules ?? []);
+  const previousStageId = relation.stageId;
+  if (stageId) relation.stageId = stageId;
+  context.world.relations[payload.target] = relation;
+  const changes = [...changed(`relations.${payload.target}.axes.${payload.key}`, before, after, `Adjusted relation axis ${payload.key} by ${boundedDelta}.`).changes];
+  if (stageId && stageId !== previousStageId) changes.push(...changed(`relations.${payload.target}.stageId`, previousStageId, stageId, `Relationship stage changed to ${stageId}.`).changes);
+  return { ok: true, changes };
 }
 
 function itemCount(world: WorldState, itemId: string): number {

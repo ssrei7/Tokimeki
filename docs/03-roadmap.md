@@ -314,7 +314,7 @@
 - 拒绝判定：忙 / 心情差 / 阶段不到位则互动失败
 - `Appointment` 四元组 + 守约 / 迟到 / 失约（`onDaySettle` 判定）
 - 结算页关系变化改为散文，`showNumbers` 默认关
-- op：`unlock_topic` `mark_topic_used` `set_mood` `make_appointment`
+- op：`unlock_topic` `mark_topic_used` `set_mood` `adjust_relation_axis` `make_appointment`
 - block：`relationship_state`
 - 无头统计：话题枯竭速度、daily 树刷新覆盖率与可选话题数量分布
 

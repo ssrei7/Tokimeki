@@ -432,4 +432,5 @@ export type CalendarConfig = z.infer<typeof CalendarConfigSchema>;
 export type ActionCostTable = z.infer<typeof ActionCostTableSchema>;
 export type DailySettlement = z.infer<typeof DailySettlementSchema>;
 export type StageRule = z.infer<typeof StageRuleSchema>;
+export type AxisDef = z.infer<typeof AxisDefSchema>;
 export type RelationState = z.infer<typeof RelationStateSchema>;

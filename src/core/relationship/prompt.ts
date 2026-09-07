@@ -30,20 +30,24 @@ export function deriveRelationshipPromptState(world: WorldState, charId: string,
     ? Object.fromEntries(Object.entries(relation.axes).filter(([, value]) => typeof value === 'number')) as Record<string, number>
     : {};
   const stageId = typeof relation.stageId === 'string' ? relation.stageId : undefined;
-  const matchedRule = [...stageRules].sort((a, b) => a.order - b.order).find((rule) => {
-    try {
-      return evaluateCondition(rule.when, { axes, stats: world.stats, flags: world.flags, playerStats: world.player.stats, playerFlags: world.player.flags } as unknown as ConditionScope);
-    } catch {
-      return false;
-    }
-  });
-  const stageName = matchedRule?.name ?? (stageId ? stageRules.find((rule) => rule.id === stageId)?.name ?? stageId : undefined);
+  const resolvedStageId = resolveRelationshipStageId(axes, world, stageRules);
+  const stageName = stageRules.find((rule) => rule.id === (resolvedStageId ?? stageId))?.name ?? resolvedStageId ?? stageId;
   const mood = isRecord(relation.mood) && typeof relation.mood.word === 'string' && typeof relation.mood.setDay === 'number' && typeof relation.mood.decayDays === 'number'
     ? { word: relation.mood.word, setDay: relation.mood.setDay, decayDays: relation.mood.decayDays }
     : undefined;
   const situation = typeof relation.situation === 'string' ? relation.situation : undefined;
   const lastSeenDay = typeof relation.lastSeenDay === 'number' ? relation.lastSeenDay : undefined;
   return { axes, stageName, mood, situation, lastSeenDay, today: world.clock.day, showNumbers };
+}
+
+export function resolveRelationshipStageId(axes: Record<string, number>, world: WorldState, stageRules: StageRule[]): string | undefined {
+  return [...stageRules].sort((a, b) => a.order - b.order).find((rule) => {
+    try {
+      return evaluateCondition(rule.when, { axes, stats: world.stats, flags: world.flags, playerStats: world.player.stats, playerFlags: world.player.flags } as unknown as ConditionScope);
+    } catch {
+      return false;
+    }
+  })?.id;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

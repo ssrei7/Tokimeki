@@ -903,6 +903,8 @@ export function App() {
       calendar: nextSave.config.calendar,
       actionCosts: nextSave.config.actionCosts,
       encounterConfig: nextSave.config.encounter,
+      axisDefs: nextSave.config.axisDefs,
+      stageRules: nextSave.config.stageRules,
       events: promptEvents,
       log: (message) => logs.push(message),
     }, nextSave.config.opsLimitPerTurn);

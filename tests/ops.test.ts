@@ -101,6 +101,23 @@ describe('op registry and built-ins', () => {
     expect(state.world.relations.rin).toBeUndefined();
   });
 
+  it('clamps relation axes and refreshes the derived stage', () => {
+    const state = setup();
+    state.context.axisDefs = [{ id: 'affection', name: '亲密', min: 0, max: 100, initial: 10, clampPerTurn: 5 }];
+    state.context.stageRules = [
+      { id: 'stranger', name: '陌生人', when: 'axes.affection < 50', order: 0 },
+      { id: 'acquaintance', name: '熟人', when: 'axes.affection >= 50', order: 1 },
+    ];
+    const first = state.registry.applyAll([{ op: 'adjust_relation_axis', target: 'seir', key: 'affection', delta: 20 }], state.context, 12);
+    expect(first.applied).toBe(1);
+    expect(state.world.relations.seir.axes.affection).toBe(15);
+    expect(state.world.relations.seir.stageId).toBe('stranger');
+    const second = state.registry.applyAll([{ op: 'adjust_relation_axis', target: 'seir', key: 'affection', delta: 100 }], state.context, 12);
+    expect(state.world.relations.seir.axes.affection).toBe(20);
+    expect(second.warnings).toHaveLength(0);
+    expect(state.registry.applyAll([{ op: 'adjust_relation_axis', target: 'seir', key: 'missing', delta: 1 }], state.context, 12).rejected).toHaveLength(1);
+  });
+
   it('records current-node memories, validates participants, and keeps five entries', () => {
     const state = setup();
     state.context.nodeId = 'start';
