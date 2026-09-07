@@ -12,12 +12,12 @@
 | 2 | 有一天 | 2.5 | v3 |
 | 3 | 有地方去 | 2.5 | v4 |
 | 4 | 有人可遇 | 2.5 | v7 |
-| 5 | 有事可做 | 3 | v8 |
-| 6 | 有方向 | 3 | v9 |
-| 7 | 有故事 | 3.5 | v10 |
-| 8 | 有生活 | 2.5 | v11 |
-| 9 | 有终端 | 2 | v12 |
-| 10 | 有生态 | 2.5 | v13 |
+| 5 | 有事可做 | 3 | v9 |
+| 6 | 有方向 | 3 | v10 |
+| 7 | 有故事 | 3.5 | v11 |
+| 8 | 有生活 | 2.5 | v12 |
+| 9 | 有终端 | 2 | v13 |
+| 10 | 有生态 | 2.5 | v14 |
 
 依赖链上有一条容易搞错：**时间先于地图，地图先于相遇**。没有时间系统支撑的地图只是一张死背景板。
 
@@ -334,7 +334,7 @@
 13. 手动对话的最新回复可填写要求并重新生成；重新生成不重复应用原回复的状态 ops，TopicTree 固定回应不受影响
 14. 相遇中先选择 1–3 位正式角色；未选角色不进入本次 TopicTree，进入聊天后不能切换参与者
 
-**schema**：v8 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `relations` 全字段 / `characters[].giftPrefs`
+**schema**：v9 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `relations` 全字段 / `characters[].giftPrefs`；v8 → v9 自动补齐关系状态字段，保留旧 memories
 
 **交互与记忆备忘（2026-09-07）**
 

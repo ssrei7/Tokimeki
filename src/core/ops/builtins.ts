@@ -21,6 +21,7 @@ const RevealNodeSchema = z.object({ op: z.literal('reveal_node'), nodeId: z.stri
 const MoveNpcSchema = z.object({ op: z.literal('move_npc'), target: z.string().min(1), nodeId: z.string().min(1), slotId: z.string().min(1).optional(), activity: z.string().min(1).max(200).optional() });
 const UnlockTopicSchema = z.object({ op: z.literal('unlock_topic'), id: z.string().min(1) });
 const MarkTopicUsedSchema = z.object({ op: z.literal('mark_topic_used'), id: z.string().min(1) });
+const SetMoodSchema = z.object({ op: z.literal('set_mood'), target: z.string().min(1), word: z.string().min(1).max(80), decayDays: z.number().int().nonnegative().max(365) });
 
 export function createDefaultOpRegistry(): OpRegistry {
   const registry = new OpRegistry();
@@ -137,6 +138,12 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     describe: (payload) => `mark topic ${payload.id} used`,
     apply: (payload, context) => markTopicUsed(payload.id, context),
   });
+  registry.register({
+    op: 'set_mood', schema: SetMoodSchema, clamp: {},
+    promptDoc: 'set_mood: {"op":"set_mood","target":"current-character-id","word":"心情词","decayDays":number}; writes a decaying mood for the current relationship.',
+    describe: (payload) => `set mood for ${payload.target}: ${payload.word}`,
+    apply: (payload, context) => setMood(payload, context),
+  });
 }
 
 function statsFor(world: WorldState, target: z.infer<typeof StatTargetSchema>): Record<string, number> {
@@ -222,6 +229,17 @@ function markTopicUsed(topicId: string, context: OpContext): OpResult {
   const before = context.world.usedTopics[topicId];
   context.world.usedTopics[topicId] = context.day;
   return changed(`world.usedTopics.${topicId}`, before, context.day, `Marked topic ${topicId} as used.`);
+}
+
+function setMood(payload: z.infer<typeof SetMoodSchema>, context: OpContext): OpResult {
+  if (!context.actorId || payload.target !== context.actorId) return rejected('Mood target must be the current actor.');
+  const word = payload.word.trim();
+  if (!word) return rejected('Mood word cannot be blank.');
+  const relation = context.world.relations[payload.target] ?? { axes: {}, knots: [], memories: [] };
+  const before = relation.mood;
+  relation.mood = { word, setDay: context.day, decayDays: payload.decayDays };
+  context.world.relations[payload.target] = relation;
+  return changed(`relations.${payload.target}.mood`, before, relation.mood, `Set mood for ${payload.target}.`);
 }
 
 function itemCount(world: WorldState, itemId: string): number {

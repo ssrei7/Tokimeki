@@ -91,6 +91,16 @@ describe('op registry and built-ins', () => {
     expect(state.world.relations.seir.memories[0]).toEqual({ id: 'memory-seir-3-1', text: '在码头交谈', day: 3, nodeId: 'docks' });
   });
 
+  it('sets a decaying mood only for the current actor', () => {
+    const state = setup();
+    const applied = state.registry.applyAll([{ op: 'set_mood', target: 'seir', word: '放松', decayDays: 2 }], state.context, 12);
+    expect(applied.applied).toBe(1);
+    expect(state.world.relations.seir.mood).toEqual({ word: '放松', setDay: 3, decayDays: 2 });
+    const rejected = state.registry.applyAll([{ op: 'set_mood', target: 'rin', word: '忙碌', decayDays: 1 }], state.context, 12);
+    expect(rejected.rejected).toHaveLength(1);
+    expect(state.world.relations.rin).toBeUndefined();
+  });
+
   it('records current-node memories, validates participants, and keeps five entries', () => {
     const state = setup();
     state.context.nodeId = 'start';

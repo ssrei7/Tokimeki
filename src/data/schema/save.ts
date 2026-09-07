@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 8;
+export const CURRENT_SCHEMA_VERSION = 9;
 
 const IdSchema = z.string().min(1);
 
@@ -259,6 +259,19 @@ export const RelationMemoryStateSchema = z.object({
   memories: z.array(MemoryEntrySchema),
 });
 
+export const MoodSchema = z.object({ word: z.string().min(1), setDay: z.number().int().positive(), decayDays: z.number().int().nonnegative() });
+export const KnotSchema = z.object({ id: IdSchema, text: z.string().min(1), sinceDay: z.number().int().positive(), resolveCondition: z.string().min(1).optional() });
+export const RelationStateSchema = z.object({
+  axes: z.record(z.string(), z.number()).default({}),
+  stageId: IdSchema.optional(),
+  mood: MoodSchema.optional(),
+  situation: z.string().optional(),
+  lastSeenDay: z.number().int().positive().optional(),
+  metDay: z.number().int().positive().optional(),
+  knots: z.array(KnotSchema).default([]),
+  memories: z.array(MemoryEntrySchema),
+});
+
 export const RegionSchema = z.object({
   id: IdSchema,
   name: z.string().min(1),
@@ -351,6 +364,13 @@ export const WorldV8Schema = WorldV5Schema.extend({
   appointments: z.array(AppointmentSchema).default([]),
 });
 
+export const WorldV9Schema = WorldV5Schema.extend({
+  topicTrees: z.record(z.string(), TopicTreeSchema).default({}),
+  usedTopics: z.record(z.string(), z.number().int().positive()).default({}),
+  appointments: z.array(AppointmentSchema).default([]),
+  relations: z.record(z.string(), RelationStateSchema),
+});
+
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
   triggerOnLeave: z.boolean(),
@@ -385,12 +405,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV8Schema,
+  world: WorldV9Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV8Schema>;
+export type WorldState = z.infer<typeof WorldV9Schema>;
 export type WorldV5State = z.infer<typeof WorldV5Schema>;
 export type Topic = z.infer<typeof TopicSchema>;
 export type TopicTree = z.infer<typeof TopicTreeSchema>;
@@ -412,3 +432,4 @@ export type CalendarConfig = z.infer<typeof CalendarConfigSchema>;
 export type ActionCostTable = z.infer<typeof ActionCostTableSchema>;
 export type DailySettlement = z.infer<typeof DailySettlementSchema>;
 export type StageRule = z.infer<typeof StageRuleSchema>;
+export type RelationState = z.infer<typeof RelationStateSchema>;

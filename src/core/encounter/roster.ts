@@ -22,5 +22,6 @@ export function addCharacterToWorld(world: WorldState, card: CharacterCard, home
     ? FormalCharacterSchema.parse({ ...existing, name: card.name, card: { ...existing.card, description: card.description, personality: card.personality, scenario: card.scenario, firstMes: card.firstMes, exampleDialogue: card.exampleDialogue } })
     : formalCharacterFromCard(card, homeNodeId);
   world.characters[card.id] = character;
+  if (!world.relations[card.id]) world.relations[card.id] = { axes: {}, knots: [], memories: [] };
   return { ok: true, character };
 }
