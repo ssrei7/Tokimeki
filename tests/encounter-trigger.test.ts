@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { EventBus } from '../src/core/events/bus';
-import { triggerEncounter, updateEncounterOutcome } from '../src/core/encounter';
+import { proposeDeparture, resolveDeparture, triggerEncounter, updateEncounterOutcome } from '../src/core/encounter';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 function setup() {
@@ -51,6 +51,23 @@ describe('encounter trigger and log', () => {
     const beforeClock = structuredClone(save.world.clock);
     const updated = updateEncounterOutcome(save.world, result.entry!.id, 'urgent_leave');
     expect(updated.ok).toBe(true);
+    expect(save.world.encounterLog[0].outcome).toBe('urgent_leave');
+    expect(save.world.clock).toEqual(beforeClock);
+  });
+
+  it('tracks character departure requests and player farewell outcomes', () => {
+    const save = setup();
+    const result = triggerEncounter(save.world, config, { nodeId: 'start', trigger: 'enter' });
+    const entryId = result.entry!.id;
+    const beforeClock = structuredClone(save.world.clock);
+    expect(proposeDeparture(save.world, entryId, 'character_request', 'seir', '天色晚了')).toMatchObject({ ok: true });
+    expect(save.world.encounterLog[0].departure).toMatchObject({ kind: 'character_request', status: 'pending', speakerId: 'seir' });
+    expect(resolveDeparture(save.world, entryId, 'stayed').ok).toBe(true);
+    expect(save.world.encounterLog[0].departure?.status).toBe('stayed');
+    expect(save.world.encounterLog[0].outcome).toBe('continued');
+    expect(proposeDeparture(save.world, entryId, 'player_farewell')).toMatchObject({ ok: true });
+    expect(resolveDeparture(save.world, entryId, 'left').ok).toBe(true);
+    expect(save.world.encounterLog[0].departure?.status).toBe('left');
     expect(save.world.encounterLog[0].outcome).toBe('urgent_leave');
     expect(save.world.clock).toEqual(beforeClock);
   });

@@ -334,12 +334,13 @@
 13. 手动对话的最新回复可填写要求并重新生成；重新生成不重复应用原回复的状态 ops，TopicTree 固定回应不受影响
 14. 相遇中先选择 1–3 位正式角色；未选角色不进入本次 TopicTree，进入聊天后不能切换参与者
 
-**schema**：v9 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `relations` 全字段 / `characters[].giftPrefs`；v8 → v9 自动补齐关系状态字段，保留旧 memories
+**schema**：v10 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `relations` 全字段 / `characters[].giftPrefs` / `encounterLog[].departure`；v8 → v9 自动补齐关系状态字段，v9 → v10 为相遇日志补充可选告别状态，均保留旧字段
 
 **交互与记忆备忘（2026-09-07）**
 
 - 面对面场景先处于话题树模式，输入框隐藏；只有树自然耗尽且没有待解锁话题时才进入手动输入模式。
 - `terminal` 话题是推进型选项，点击后结束场景；它不会绕过规则自动开放手动输入。
+- 告别状态由相遇日志的可选 `departure` 字段追踪：角色提出离开或玩家主动告别先进入 `pending`，随后由明确的 `stayed` / `left` 结果收束；不消耗行动点。
 - 手动模式的重新生成是用户主动触发的单次调用，可附带重新生成要求；第一版只替换/追加叙述文字，不回滚或重复应用原回复 ops。
 - TopicTree 的按钮与 response 固定保存。记忆库只管理由对话产生并写入的长期记忆；删除记忆不会删除 TopicTree 或历史对话正文。
 - 记忆管理默认采用“归档/停用”，永久删除需显式确认；删除只影响未来 prompt，不回滚关系、物品、事件或聊天事实。

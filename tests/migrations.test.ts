@@ -3,6 +3,7 @@ import { CURRENT_SCHEMA_VERSION, SaveFileSchema } from '../src/data/schema/save'
 import { migrateSave } from '../src/data/migrations';
 import { UnsupportedSchemaVersionError } from '../src/data/migrations/types';
 import fixtureV1 from './fixtures/save-v1.json';
+import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 const fixtureV0 = {
   schemaVersion: 0,
@@ -120,5 +121,13 @@ describe('save migrations', () => {
     });
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.relations.rin).toMatchObject({ axes: {}, knots: [], memories: [{ id: 'm1', text: '旧记忆', day: 1 }] });
+  });
+
+  it('migrates v9 encounter logs without changing existing entries', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v9-departure', title: 'v9 departure' }));
+    const entry = { id: 'encounter-1', day: 1, slotId: 'morning', nodeId: 'start', characterIds: [], trigger: 'enter' as const, scope: 'formal' as const, outcome: 'continued' as const };
+    const migrated = migrateSave({ ...source, schemaVersion: 9, world: { ...source.world, encounterLog: [entry] } });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.encounterLog[0]).toEqual(entry);
   });
 });

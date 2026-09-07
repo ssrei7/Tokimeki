@@ -4,7 +4,7 @@ import { OpRegistry } from './registry';
 import type { OpContext, OpResult } from './types';
 import { advanceTime } from '../time';
 import { movePlayer, revealNode } from '../map';
-import { moveNpc, triggerEncounter } from '../encounter';
+import { moveNpc, proposeDeparture, resolveDeparture, triggerEncounter } from '../encounter';
 import { canUnlockTopic, topicTreeKey } from '../topics';
 import { evaluateGift, resolveRelationshipStageId } from '../relationship';
 import { evaluateCondition, type ConditionScope } from '../expr';
@@ -30,6 +30,8 @@ const AddKnotSchema = z.object({ op: z.literal('add_knot'), target: z.string().m
 const ResolveKnotSchema = z.object({ op: z.literal('resolve_knot'), target: z.string().min(1), id: z.string().min(1) });
 const OfferGiftSchema = z.object({ op: z.literal('offer_gift'), target: z.string().min(1), itemId: z.string().min(1) });
 const MakeAppointmentSchema = z.object({ op: z.literal('make_appointment'), id: z.string().min(1), charId: z.string().min(1), day: z.number().int().positive(), slotId: z.string().min(1), nodeId: z.string().min(1), note: z.string().min(1).max(200).optional() });
+const ProposeDepartureSchema = z.object({ op: z.literal('propose_departure'), entryId: z.string().min(1), kind: z.enum(['player_farewell', 'character_request']), speakerId: z.string().min(1).optional(), reason: z.string().min(1).max(300).optional() });
+const ResolveDepartureSchema = z.object({ op: z.literal('resolve_departure'), entryId: z.string().min(1), outcome: z.enum(['stayed', 'left']) });
 
 export function createDefaultOpRegistry(): OpRegistry {
   const registry = new OpRegistry();
@@ -181,6 +183,18 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     promptDoc: 'make_appointment: {"op":"make_appointment","id":"appointment-id","charId":"character-id","day":future-day,"slotId":"calendar-slot-id","nodeId":"known-node-id","note":"optional reminder"}; creates a pending appointment without consuming time.',
     describe: (payload) => `make appointment ${payload.id} with ${payload.charId} on day ${payload.day}`,
     apply: (payload, context) => makeAppointment(payload, context),
+  });
+  registry.register({
+    op: 'propose_departure', schema: ProposeDepartureSchema, clamp: {},
+    promptDoc: 'propose_departure: {"op":"propose_departure","entryId":"encounter-log-id","kind":"character_request|player_farewell","speakerId":"participant-id","reason":"optional reason"}; records a pending goodbye signal without changing time.',
+    describe: (payload) => `propose ${payload.kind} for encounter ${payload.entryId}`,
+    apply: (payload, context) => proposeDeparture(context.world, payload.entryId, payload.kind, payload.speakerId, payload.reason),
+  });
+  registry.register({
+    op: 'resolve_departure', schema: ResolveDepartureSchema, clamp: {},
+    promptDoc: 'resolve_departure: {"op":"resolve_departure","entryId":"encounter-log-id","outcome":"stayed|left"}; resolves a pending goodbye signal and records whether the scene continued or ended.',
+    describe: (payload) => `resolve departure for encounter ${payload.entryId} as ${payload.outcome}`,
+    apply: (payload, context) => resolveDeparture(context.world, payload.entryId, payload.outcome),
   });
 }
 

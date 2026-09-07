@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 9;
+export const CURRENT_SCHEMA_VERSION = 10;
 
 const IdSchema = z.string().min(1);
 
@@ -150,6 +150,14 @@ export const EncounterLogEntrySchema = z.object({
   trigger: z.enum(['enter', 'leave', 'character_move']),
   scope: z.enum(['formal', 'peripheral']),
   outcome: z.enum(['continued', 'urgent_leave']),
+  departure: z.object({
+    kind: z.enum(['player_farewell', 'character_request']),
+    status: z.enum(['pending', 'stayed', 'left']),
+    speakerId: IdSchema.optional(),
+    reason: z.string().max(300).optional(),
+    requestedDay: z.number().int().positive(),
+    resolvedDay: z.number().int().positive().optional(),
+  }).optional(),
 });
 
 export const TopicSchema = z.object({
@@ -371,6 +379,8 @@ export const WorldV9Schema = WorldV5Schema.extend({
   relations: z.record(z.string(), RelationStateSchema),
 });
 
+export const WorldV10Schema = WorldV9Schema;
+
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
   triggerOnLeave: z.boolean(),
@@ -405,12 +415,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV9Schema,
+  world: WorldV10Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV9Schema>;
+export type WorldState = z.infer<typeof WorldV10Schema>;
 export type WorldV5State = z.infer<typeof WorldV5Schema>;
 export type Topic = z.infer<typeof TopicSchema>;
 export type TopicTree = z.infer<typeof TopicTreeSchema>;
@@ -421,6 +431,7 @@ export type FormalCharacter = z.infer<typeof FormalCharacterSchema>;
 export type NpcLite = z.infer<typeof NpcLiteSchema>;
 export type NpcTemplate = z.infer<typeof NpcTemplateSchema>;
 export type EncounterLogEntry = z.infer<typeof EncounterLogEntrySchema>;
+export type EncounterDeparture = NonNullable<EncounterLogEntry['departure']>;
 export type EncounterConfig = z.infer<typeof EncounterConfigSchema>;
 export type MapState = z.infer<typeof MapSchema>;
 export type Region = z.infer<typeof RegionSchema>;

@@ -8,6 +8,8 @@ export { selectEncounterCandidates } from './selection';
 export type { EncounterCandidate, EncounterSelectionOptions } from './selection';
 export { triggerEncounter, updateEncounterOutcome } from './trigger';
 export type { EncounterOutcomeResult, EncounterTriggerOptions, EncounterTriggerResult } from './trigger';
+export { proposeDeparture, resolveDeparture } from './departure';
+export type { DepartureResult } from './departure';
 export { addCharacterToWorld, formalCharacterFromCard } from './roster';
 export type { RosterResult } from './roster';
 export { recentEncounterTraces } from './traces';
