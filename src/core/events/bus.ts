@@ -3,16 +3,16 @@ export const HOOKS = [
 ] as const;
 export type Hook = typeof HOOKS[number];
 
-import type { DailySettlement } from '../../data/schema/save';
+import type { DailySettlement, WorldState } from '../../data/schema/save';
 
 export interface HookPayloadMap {
   onDayStart: { day: number };
-  onEnterNode: { fromNodeId?: string; toNodeId: string };
+  onEnterNode: { fromNodeId?: string; toNodeId: string; world?: WorldState };
   onEncounter: { characterIds: string[]; nodeId: string };
-  onTimeAdvance: { day: number; fromSlotId: string; toSlotId: string };
+  onTimeAdvance: { day: number; fromSlotId: string; toSlotId: string; world?: WorldState };
   onDialogueEnd: { characterIds: string[]; nodeId: string };
   onOpsApply: { changes: unknown[] };
-  onDaySettle: { day: number; settlement?: DailySettlement };
+  onDaySettle: { day: number; settlement?: DailySettlement; world?: WorldState };
   beforePromptAssemble: { facts: Record<string, unknown>; task?: string };
 }
 

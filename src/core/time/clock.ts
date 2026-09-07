@@ -53,7 +53,9 @@ export function advanceTime(world: WorldState, calendar: CalendarConfig, slots: 
     advanced += 1;
     changes.push({ path: 'world.clock.slotId', before: fromSlotId, after: world.clock.slotId, description: `Time advanced from ${fromSlotId} to ${world.clock.slotId}.` });
     changes.push({ path: 'world.slotsUsedToday', before: world.slotsUsedToday - 1, after: world.slotsUsedToday, description: 'Consumed one time slot.' });
-    events?.emit('onTimeAdvance', { day: fromDay, fromSlotId, toSlotId: world.clock.slotId });
+    const timePayload = { day: fromDay, fromSlotId, toSlotId: world.clock.slotId };
+    Object.defineProperty(timePayload, 'world', { value: world, enumerable: false });
+    events?.emit('onTimeAdvance', timePayload);
     if (world.slotsUsedToday >= availableSlots(calendar)) {
       const settled = settleDay(world, calendar, events);
       settledDays.push(settled.day);
@@ -75,7 +77,9 @@ export function settleDay(world: WorldState, _calendar: CalendarConfig, events?:
   const settlement: DailySettlement = { ...facts, diary: buildLocalDiary(facts) };
   world.settlements.push(settlement);
   if (!world.diary.some((entry) => entry.day === day)) world.diary.push({ day, text: settlement.diary });
-  events?.emit('onDaySettle', { day, settlement });
+  const settlePayload = { day, settlement };
+  Object.defineProperty(settlePayload, 'world', { value: world, enumerable: false });
+  events?.emit('onDaySettle', settlePayload);
   return settlement;
 }
 

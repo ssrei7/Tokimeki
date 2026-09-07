@@ -8,6 +8,7 @@ import { moveNpc, triggerEncounter } from '../encounter';
 import { canUnlockTopic, topicTreeKey } from '../topics';
 import { evaluateGift, resolveRelationshipStageId } from '../relationship';
 import { evaluateCondition, type ConditionScope } from '../expr';
+import { makeAppointment } from '../appointments/op';
 
 const StatTargetSchema = z.enum(['player', 'world']);
 const AddStatSchema = z.object({ op: z.literal('add_stat'), target: StatTargetSchema, key: z.string().min(1), delta: z.number().finite() });
@@ -28,6 +29,7 @@ const AdjustRelationAxisSchema = z.object({ op: z.literal('adjust_relation_axis'
 const AddKnotSchema = z.object({ op: z.literal('add_knot'), target: z.string().min(1), id: z.string().min(1), text: z.string().min(1).max(300), resolveCondition: z.string().min(1).optional() });
 const ResolveKnotSchema = z.object({ op: z.literal('resolve_knot'), target: z.string().min(1), id: z.string().min(1) });
 const OfferGiftSchema = z.object({ op: z.literal('offer_gift'), target: z.string().min(1), itemId: z.string().min(1) });
+const MakeAppointmentSchema = z.object({ op: z.literal('make_appointment'), id: z.string().min(1), charId: z.string().min(1), day: z.number().int().positive(), slotId: z.string().min(1), nodeId: z.string().min(1), note: z.string().min(1).max(200).optional() });
 
 export function createDefaultOpRegistry(): OpRegistry {
   const registry = new OpRegistry();
@@ -173,6 +175,12 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     promptDoc: 'offer_gift: {"op":"offer_gift","target":"current-character-id","itemId":"owned-giftable-item-id"}; the core evaluates tags, specialItems, current stage and mood context before consuming one item.',
     describe: (payload) => `offer gift ${payload.itemId} to ${payload.target}`,
     apply: (payload, context) => offerGift(payload, context),
+  });
+  registry.register({
+    op: 'make_appointment', schema: MakeAppointmentSchema, clamp: {},
+    promptDoc: 'make_appointment: {"op":"make_appointment","id":"appointment-id","charId":"character-id","day":future-day,"slotId":"calendar-slot-id","nodeId":"known-node-id","note":"optional reminder"}; creates a pending appointment without consuming time.',
+    describe: (payload) => `make appointment ${payload.id} with ${payload.charId} on day ${payload.day}`,
+    apply: (payload, context) => makeAppointment(payload, context),
   });
 }
 

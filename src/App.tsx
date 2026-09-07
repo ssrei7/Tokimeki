@@ -31,6 +31,7 @@ import { ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TAS
 import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from './ui/chat-state';
 import { latestDialogueSpeakerId, splitDialogueMessage } from './ui/dialogue';
 import { deriveRelationshipPromptState } from './core/relationship';
+import { markAppointmentOnEnter, markAppointmentOnTimeAdvance, settleAppointments } from './core/appointments';
 import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
 import { PLAYER_ACCENT_COLOR, resolveCharacterAccentColors, resolveSpeakerAccentColor } from './ui/character-color';
 import './ui/theme/app.css';
@@ -274,6 +275,21 @@ export function App() {
   useEffect(() => promptEvents.subscribe('onDaySettle', ({ day }) => {
     if (!pendingDiaryDaysRef.current.includes(day)) pendingDiaryDaysRef.current.push(day);
   }), [promptEvents]);
+
+  useEffect(() => {
+    const unsubscribeEnter = promptEvents.subscribe('onEnterNode', ({ toNodeId, world }) => {
+      const currentWorld = world ?? saveRef.current.world;
+      markAppointmentOnEnter(currentWorld, saveRef.current.config.calendar, toNodeId);
+    });
+    const unsubscribeTime = promptEvents.subscribe('onTimeAdvance', ({ day, toSlotId, world }) => {
+      const currentWorld = world ?? saveRef.current.world;
+      markAppointmentOnTimeAdvance(currentWorld, saveRef.current.config.calendar, day, toSlotId);
+    });
+    const unsubscribeSettle = promptEvents.subscribe('onDaySettle', ({ day, settlement, world }) => {
+      settleAppointments(world ?? saveRef.current.world, day, settlement);
+    });
+    return () => { unsubscribeEnter(); unsubscribeTime(); unsubscribeSettle(); };
+  }, [promptEvents]);
 
   function commitSave(next: SaveFile): void {
     const parsed = SaveFileSchema.parse({ ...next, meta: { ...next.meta, updatedAt: now() } });

@@ -22,7 +22,7 @@ function setup() {
 describe('op registry and built-ins', () => {
   it('registers complete prompt documentation for all stage 1 ops', () => {
     const docs = createDefaultOpRegistry().promptDocs();
-    for (const op of ['add_stat', 'set_stat', 'set_flag', 'give_item', 'take_item', 'add_memory', 'add_node_memory', 'move_player', 'reveal_node', 'move_npc']) expect(docs).toContain(op);
+    for (const op of ['add_stat', 'set_stat', 'set_flag', 'give_item', 'take_item', 'add_memory', 'add_node_memory', 'move_player', 'reveal_node', 'move_npc', 'make_appointment']) expect(docs).toContain(op);
   });
 
   it('clamps stat deltas and records a diff without hard-coded stat keys', () => {

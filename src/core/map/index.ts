@@ -138,7 +138,9 @@ export function movePlayer(world: WorldState, calendar: CalendarConfig, targetNo
   target.visitCount += 1;
   changes.push({ path: 'world.player.nodeId', before: beforeNodeId, after: targetNodeId, description: `Moved from ${fromNodeId} to ${targetNodeId}.` });
   changes.push({ path: `world.map.nodes.${targetNodeId}.visitCount`, before: beforeVisitCount, after: target.visitCount, description: `Visited ${target.name}.` });
-  events?.emit('onEnterNode', { fromNodeId, toNodeId: targetNodeId });
+  const enterPayload = { fromNodeId, toNodeId: targetNodeId };
+  Object.defineProperty(enterPayload, 'world', { value: world, enumerable: false });
+  events?.emit('onEnterNode', enterPayload);
   return { ok: true, changes, cost, fromNodeId, toNodeId: targetNodeId };
 }
 
