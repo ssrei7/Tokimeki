@@ -7,6 +7,7 @@ import { movePlayer, revealNode } from '../map';
 import { moveNpc, triggerEncounter } from '../encounter';
 import { canUnlockTopic, topicTreeKey } from '../topics';
 import { resolveRelationshipStageId } from '../relationship';
+import { evaluateCondition, type ConditionScope } from '../expr';
 
 const StatTargetSchema = z.enum(['player', 'world']);
 const AddStatSchema = z.object({ op: z.literal('add_stat'), target: StatTargetSchema, key: z.string().min(1), delta: z.number().finite() });
@@ -24,6 +25,8 @@ const UnlockTopicSchema = z.object({ op: z.literal('unlock_topic'), id: z.string
 const MarkTopicUsedSchema = z.object({ op: z.literal('mark_topic_used'), id: z.string().min(1) });
 const SetMoodSchema = z.object({ op: z.literal('set_mood'), target: z.string().min(1), word: z.string().min(1).max(80), decayDays: z.number().int().nonnegative().max(365) });
 const AdjustRelationAxisSchema = z.object({ op: z.literal('adjust_relation_axis'), target: z.string().min(1), key: z.string().min(1), delta: z.number().finite() });
+const AddKnotSchema = z.object({ op: z.literal('add_knot'), target: z.string().min(1), id: z.string().min(1), text: z.string().min(1).max(300), resolveCondition: z.string().min(1).optional() });
+const ResolveKnotSchema = z.object({ op: z.literal('resolve_knot'), target: z.string().min(1), id: z.string().min(1) });
 
 export function createDefaultOpRegistry(): OpRegistry {
   const registry = new OpRegistry();
@@ -152,6 +155,18 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     describe: (payload) => `adjust ${payload.target}.${payload.key} by ${payload.delta}`,
     apply: (payload, context) => adjustRelationAxis(payload, context),
   });
+  registry.register({
+    op: 'add_knot', schema: AddKnotSchema, clamp: {},
+    promptDoc: 'add_knot: {"op":"add_knot","target":"current-character-id","id":"knot-id","text":"持续存在的心结","resolveCondition":"条件表达式"}; adds a relationship knot owned by the deterministic core.',
+    describe: (payload) => `add knot ${payload.target}.${payload.id}`,
+    apply: (payload, context) => addKnot(payload, context),
+  });
+  registry.register({
+    op: 'resolve_knot', schema: ResolveKnotSchema, clamp: {},
+    promptDoc: 'resolve_knot: {"op":"resolve_knot","target":"current-character-id","id":"knot-id"}; resolves a knot only when its stored condition is true.',
+    describe: (payload) => `resolve knot ${payload.target}.${payload.id}`,
+    apply: (payload, context) => resolveKnot(payload, context),
+  });
 }
 
 function statsFor(world: WorldState, target: z.infer<typeof StatTargetSchema>): Record<string, number> {
@@ -267,6 +282,33 @@ function adjustRelationAxis(payload: z.infer<typeof AdjustRelationAxisSchema>, c
   const changes = [...changed(`relations.${payload.target}.axes.${payload.key}`, before, after, `Adjusted relation axis ${payload.key} by ${boundedDelta}.`).changes];
   if (stageId && stageId !== previousStageId) changes.push(...changed(`relations.${payload.target}.stageId`, previousStageId, stageId, `Relationship stage changed to ${stageId}.`).changes);
   return { ok: true, changes };
+}
+
+function addKnot(payload: z.infer<typeof AddKnotSchema>, context: OpContext): OpResult {
+  if (!context.actorId || payload.target !== context.actorId) return rejected('Knot target must be the current actor.');
+  const relation = context.world.relations[payload.target] ?? { axes: {}, knots: [], memories: [] };
+  if (relation.knots.some((knot) => knot.id === payload.id)) return rejected(`Knot already exists: ${payload.id}.`);
+  const knot = { id: payload.id, text: payload.text.trim(), sinceDay: context.day, ...(payload.resolveCondition ? { resolveCondition: payload.resolveCondition } : {}) };
+  relation.knots.push(knot);
+  context.world.relations[payload.target] = relation;
+  return changed(`relations.${payload.target}.knots`, relation.knots.length - 1, relation.knots.length, `Added knot ${payload.id}.`);
+}
+
+function resolveKnot(payload: z.infer<typeof ResolveKnotSchema>, context: OpContext): OpResult {
+  if (!context.actorId || payload.target !== context.actorId) return rejected('Knot target must be the current actor.');
+  const relation = context.world.relations[payload.target];
+  const knot = relation?.knots.find((item) => item.id === payload.id);
+  if (!relation || !knot) return rejected(`Unknown knot: ${payload.id}.`);
+  if (!knot.resolveCondition) return rejected(`Knot ${payload.id} has no resolve condition.`);
+  try {
+    const allowed = evaluateCondition(knot.resolveCondition, { axes: relation.axes, stats: context.world.stats, flags: context.world.flags, playerStats: context.world.player.stats, playerFlags: context.world.player.flags } as unknown as ConditionScope);
+    if (!allowed) return rejected(`Knot ${payload.id} resolve condition is not satisfied.`);
+  } catch (error) {
+    return rejected(`Knot ${payload.id} resolve condition is invalid: ${error instanceof Error ? error.message : String(error)}.`);
+  }
+  const before = structuredClone(relation.knots);
+  relation.knots = relation.knots.filter((item) => item.id !== payload.id);
+  return changed(`relations.${payload.target}.knots`, before, relation.knots, `Resolved knot ${payload.id}.`);
 }
 
 function itemCount(world: WorldState, itemId: string): number {

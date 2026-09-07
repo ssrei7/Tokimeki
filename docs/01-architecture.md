@@ -130,6 +130,7 @@ registerOp(def: OpDefinition<any>): void;
 | `move_npc` | 4 | 临时覆盖 NPC 位置（当日有效） |
 | `set_mood` | 5 | 情绪词 + 衰减天数 |
 | `adjust_relation_axis` | 5 | 按 AxisDef 限幅并刷新关系阶段 |
+| `add_knot` / `resolve_knot` | 5 | 创建心结并按条件解决 |
 | `unlock_topic` / `mark_topic_used` | 5 | 话题树 |
 | `add_node_memory` | 5 | 地点痕迹 |
 | `make_appointment` | 5 | 约定四元组 |

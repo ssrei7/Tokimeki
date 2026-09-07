@@ -118,6 +118,19 @@ describe('op registry and built-ins', () => {
     expect(state.registry.applyAll([{ op: 'adjust_relation_axis', target: 'seir', key: 'missing', delta: 1 }], state.context, 12).rejected).toHaveLength(1);
   });
 
+  it('keeps knots until their deterministic resolve condition is satisfied', () => {
+    const state = setup();
+    state.context.axisDefs = [{ id: 'trust', name: '信任', min: 0, max: 100, initial: 0, clampPerTurn: 100 }];
+    const added = state.registry.applyAll([{ op: 'add_knot', target: 'seir', id: 'old-promise', text: '还没有兑现的约定。', resolveCondition: 'axes.trust >= 50' }], state.context, 12);
+    expect(added.applied).toBe(1);
+    expect(state.world.relations.seir.knots).toHaveLength(1);
+    expect(state.registry.applyAll([{ op: 'resolve_knot', target: 'seir', id: 'old-promise' }], state.context, 12).rejected).toHaveLength(1);
+    state.registry.applyAll([{ op: 'adjust_relation_axis', target: 'seir', key: 'trust', delta: 50 }], state.context, 12);
+    const resolved = state.registry.applyAll([{ op: 'resolve_knot', target: 'seir', id: 'old-promise' }], state.context, 12);
+    expect(resolved.applied).toBe(1);
+    expect(state.world.relations.seir.knots).toEqual([]);
+  });
+
   it('records current-node memories, validates participants, and keeps five entries', () => {
     const state = setup();
     state.context.nodeId = 'start';
