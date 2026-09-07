@@ -1124,7 +1124,7 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
   const [detailSheetProgress, setDetailSheetProgress] = useState(1);
   const [sheetDraggingKind, setSheetDraggingKind] = useState<'tool' | 'detail' | null>(null);
   const dragRef = useRef({ pointerId: -1, startX: 0, startY: 0, originX: 0, originY: 0, moved: false });
-  const sheetDragRef = useRef({ pointerId: -1, kind: 'tool' as 'tool' | 'detail', startY: 0, startProgress: 0, currentProgress: 0, moved: false, lastY: 0, lastTime: 0 });
+  const sheetDragRef = useRef({ pointerId: -1, kind: 'tool' as 'tool' | 'detail', startY: 0, startProgress: 0, currentProgress: 0, moved: false, startTime: 0, lastY: 0, lastTime: 0, lastVelocity: 0 });
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef({ distance: 0, zoom: 1, contentX: 0, contentY: 0 });
   const graphSurfaceRef = useRef<SVGSVGElement>(null);
@@ -1281,7 +1281,8 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
   const beginSheetDrag = (event: PointerEvent<HTMLElement>) => {
     const kind = event.currentTarget.closest('.map-detail-sheet') ? 'detail' : 'tool';
     const progress = kind === 'detail' ? detailSheetProgress : toolSheetProgress;
-    sheetDragRef.current = { pointerId: event.pointerId, kind, startY: event.clientY, startProgress: progress, currentProgress: progress, moved: false, lastY: event.clientY, lastTime: performance.now() };
+    const now = performance.now();
+    sheetDragRef.current = { pointerId: event.pointerId, kind, startY: event.clientY, startProgress: progress, currentProgress: progress, moved: false, startTime: now, lastY: event.clientY, lastTime: now, lastVelocity: 0 };
     setSheetDraggingKind(kind);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -1292,6 +1293,8 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
     const dragDistance = Math.max(180, Math.min(window.innerHeight * 0.58, 520));
     const next = drag.startProgress + (drag.startY - event.clientY) / dragDistance;
     if (Math.abs(event.clientY - drag.startY) > 6) drag.moved = true;
+    const elapsed = Math.max(1, now - drag.lastTime);
+    drag.lastVelocity = (event.clientY - drag.lastY) / elapsed;
     drag.currentProgress = Math.max(0, Math.min(1, next));
     drag.lastY = event.clientY;
     drag.lastTime = now;
@@ -1307,15 +1310,15 @@ function MapView({ save, worldbooks, activeEncounter, onEncounterOutcome, onCont
     const drag = sheetDragRef.current;
     if (drag.pointerId !== event.pointerId) return;
     const moved = drag.moved;
-    const elapsed = Math.max(1, performance.now() - drag.lastTime);
-    const velocity = (event.clientY - drag.lastY) / elapsed;
+    const elapsed = Math.max(1, performance.now() - drag.startTime);
+    const velocity = Math.abs(drag.lastVelocity) > 0 ? drag.lastVelocity : (event.clientY - drag.startY) / elapsed;
     const kind = drag.kind;
     const currentProgress = drag.currentProgress;
     drag.pointerId = -1;
     setSheetDraggingKind(null);
     if (!moved) return;
     event.preventDefault();
-    const target = Math.abs(velocity) > 0.75 ? (velocity < 0 ? 1 : 0) : currentProgress;
+    const target = Math.abs(velocity) > 0.28 ? (velocity < 0 ? 1 : 0) : currentProgress;
     setSheetProgress(kind, target);
     if (kind === 'detail' && target <= 0.04) setSelectedMapNodeId(null);
   };
