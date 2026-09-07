@@ -6,7 +6,7 @@ import { advanceTime } from '../time';
 import { movePlayer, revealNode } from '../map';
 import { moveNpc, triggerEncounter } from '../encounter';
 import { canUnlockTopic, topicTreeKey } from '../topics';
-import { resolveRelationshipStageId } from '../relationship';
+import { evaluateGift, resolveRelationshipStageId } from '../relationship';
 import { evaluateCondition, type ConditionScope } from '../expr';
 
 const StatTargetSchema = z.enum(['player', 'world']);
@@ -27,6 +27,7 @@ const SetMoodSchema = z.object({ op: z.literal('set_mood'), target: z.string().m
 const AdjustRelationAxisSchema = z.object({ op: z.literal('adjust_relation_axis'), target: z.string().min(1), key: z.string().min(1), delta: z.number().finite() });
 const AddKnotSchema = z.object({ op: z.literal('add_knot'), target: z.string().min(1), id: z.string().min(1), text: z.string().min(1).max(300), resolveCondition: z.string().min(1).optional() });
 const ResolveKnotSchema = z.object({ op: z.literal('resolve_knot'), target: z.string().min(1), id: z.string().min(1) });
+const OfferGiftSchema = z.object({ op: z.literal('offer_gift'), target: z.string().min(1), itemId: z.string().min(1) });
 
 export function createDefaultOpRegistry(): OpRegistry {
   const registry = new OpRegistry();
@@ -166,6 +167,12 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     promptDoc: 'resolve_knot: {"op":"resolve_knot","target":"current-character-id","id":"knot-id"}; resolves a knot only when its stored condition is true.',
     describe: (payload) => `resolve knot ${payload.target}.${payload.id}`,
     apply: (payload, context) => resolveKnot(payload, context),
+  });
+  registry.register({
+    op: 'offer_gift', schema: OfferGiftSchema, clamp: {},
+    promptDoc: 'offer_gift: {"op":"offer_gift","target":"current-character-id","itemId":"owned-giftable-item-id"}; the core evaluates tags, specialItems, current stage and mood context before consuming one item.',
+    describe: (payload) => `offer gift ${payload.itemId} to ${payload.target}`,
+    apply: (payload, context) => offerGift(payload, context),
   });
 }
 
@@ -309,6 +316,21 @@ function resolveKnot(payload: z.infer<typeof ResolveKnotSchema>, context: OpCont
   const before = structuredClone(relation.knots);
   relation.knots = relation.knots.filter((item) => item.id !== payload.id);
   return changed(`relations.${payload.target}.knots`, before, relation.knots, `Resolved knot ${payload.id}.`);
+}
+
+function offerGift(payload: z.infer<typeof OfferGiftSchema>, context: OpContext): OpResult {
+  if (!context.actorId || payload.target !== context.actorId) return rejected('Gift target must be the current actor.');
+  const character = context.world.characters[payload.target];
+  const item = context.world.items[payload.itemId];
+  if (!character) return rejected(`Unknown gift target: ${payload.target}.`);
+  if (!item || item.giftable === false) return rejected(`Item is not a giftable known item: ${payload.itemId}.`);
+  const entry = context.world.player.inventory.find((candidate) => candidate.itemId === payload.itemId);
+  if (!entry || entry.count < 1) return rejected(`Gift item is not owned: ${payload.itemId}.`);
+  const evaluation = evaluateGift(item, character, context.world.relations[payload.target]);
+  const before = entry.count;
+  entry.count -= 1;
+  context.world.player.inventory = context.world.player.inventory.filter((candidate) => candidate.count > 0);
+  return changed(`player.inventory.${payload.itemId}`, before, before - 1, `Gift to ${character.name}: ${evaluation.reaction}.`);
 }
 
 function itemCount(world: WorldState, itemId: string): number {

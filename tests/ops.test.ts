@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultOpRegistry, type OpContext } from '../src/core/ops';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
+import { evaluateGift } from '../src/core/relationship';
 
 function setup() {
   const save = seedScenario(createCurrentSaveScenario({ id: 'ops-test', title: 'Ops Test', stats: { custom: 1 } }));
@@ -129,6 +130,20 @@ describe('op registry and built-ins', () => {
     const resolved = state.registry.applyAll([{ op: 'resolve_knot', target: 'seir', id: 'old-promise' }], state.context, 12);
     expect(resolved.applied).toBe(1);
     expect(state.world.relations.seir.knots).toEqual([]);
+  });
+
+  it('evaluates and consumes gifts deterministically without AI-provided outcomes', () => {
+    const state = setup();
+    state.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '测试角色', personality: '安静' }, visuals: { portraits: [] }, schedule: { grid: {}, overrides: {} } };
+    state.world.relations.seir = { axes: {}, knots: [], memories: [] };
+    state.world.characters.seir.giftPrefs = { likeTags: ['flower'], dislikeTags: ['metal'], specialItems: { 'flower-item': 3 } };
+    state.world.items['flower-item'] = { id: 'flower-item', name: '花束', tags: ['flower'], giftable: true };
+    state.world.player.inventory.push({ itemId: 'flower-item', count: 1, gotDay: 3 });
+    const evaluation = evaluateGift(state.world.items['flower-item'], state.world.characters.seir, state.world.relations.seir);
+    expect(evaluation).toMatchObject({ reaction: 'special', specialItem: true, stageId: undefined });
+    const applied = state.registry.applyAll([{ op: 'offer_gift', target: 'seir', itemId: 'flower-item' }], state.context, 12);
+    expect(applied.applied).toBe(1);
+    expect(state.world.player.inventory.some((entry) => entry.itemId === 'flower-item')).toBe(false);
   });
 
   it('records current-node memories, validates participants, and keeps five entries', () => {
