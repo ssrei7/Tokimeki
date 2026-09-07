@@ -285,6 +285,11 @@ button.danger { background: #fee4e2; color: #b42318; }
 .diary-archive summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: #344054; font-weight: 600; }
 .diary-archive .diary-editor { padding-bottom: 4px; }
 .bottom-nav { position: fixed; z-index: 5; bottom: 0; left: 50%; transform: translateX(-50%); width: min(760px, 100%); display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; padding: 4px 8px calc(4px + env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid #e4e8ef; }
+.topic-tree-panel { margin: 10px 0; padding: 12px; border: 1px solid #dce3ef; border-radius: 14px; background: #fff; }
+.topic-choice-list { display: grid; gap: 8px; }
+.topic-choice { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border: 1px solid #cfd8e8; border-radius: 10px; background: #f8faff; color: #26364f; text-align: left; }
+.topic-choice:disabled { opacity: .58; cursor: not-allowed; }
+.topic-choice small { color: #6c7a90; white-space: nowrap; }
 .bottom-nav button { min-height: 36px; background: transparent; color: #667085; font-size: 12px; }
 .bottom-nav button.selected { background: #e9efff; color: #315efb; }
 @media (min-width: 761px) { .app-shell { min-height: 100vh; box-shadow: 0 0 30px #34405414; } }

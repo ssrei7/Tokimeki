@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 8;
 
 const IdSchema = z.string().min(1);
 
@@ -150,6 +150,36 @@ export const EncounterLogEntrySchema = z.object({
   trigger: z.enum(['enter', 'leave', 'character_move']),
   scope: z.enum(['formal', 'peripheral']),
   outcome: z.enum(['continued', 'urgent_leave']),
+});
+
+export const TopicSchema = z.object({
+  id: IdSchema,
+  label: z.string().min(1),
+  kind: z.enum(['daily', 'story']),
+  terminal: z.boolean(),
+  require: z.string().min(1).optional(),
+  response: z.string(),
+  usedResponse: z.string().optional(),
+  ops: z.array(z.unknown()).optional(),
+  unlocks: z.array(IdSchema).optional(),
+  generatedDay: z.number().int().positive(),
+});
+
+export const TopicTreeSchema = z.object({
+  charId: IdSchema,
+  nodeId: IdSchema,
+  topics: z.array(TopicSchema).min(1).max(8),
+  generatedDay: z.number().int().positive(),
+});
+
+export const AppointmentSchema = z.object({
+  id: IdSchema,
+  charId: IdSchema,
+  day: z.number().int().positive(),
+  slotId: IdSchema,
+  nodeId: IdSchema,
+  status: z.enum(['pending', 'kept', 'late', 'missed']),
+  note: z.string().optional(),
 });
 
 export const InventoryEntrySchema = z.object({
@@ -315,6 +345,12 @@ export const WorldV5Schema = WorldV4Schema.extend({
   encounterLog: z.array(EncounterLogEntrySchema),
 });
 
+export const WorldV8Schema = WorldV5Schema.extend({
+  topicTrees: z.record(z.string(), TopicTreeSchema).default({}),
+  usedTopics: z.record(z.string(), z.number().int().positive()).default({}),
+  appointments: z.array(AppointmentSchema).default([]),
+});
+
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
   triggerOnLeave: z.boolean(),
@@ -349,13 +385,16 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV5Schema,
+  world: WorldV8Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV5Schema>;
+export type WorldState = z.infer<typeof WorldV8Schema>;
 export type WorldV5State = z.infer<typeof WorldV5Schema>;
+export type Topic = z.infer<typeof TopicSchema>;
+export type TopicTree = z.infer<typeof TopicTreeSchema>;
+export type Appointment = z.infer<typeof AppointmentSchema>;
 export type ScheduleCell = z.infer<typeof ScheduleCellSchema>;
 export type Schedule = z.infer<typeof ScheduleSchema>;
 export type FormalCharacter = z.infer<typeof FormalCharacterSchema>;

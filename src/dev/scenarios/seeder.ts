@@ -75,6 +75,9 @@ export function createCurrentSaveScenario(options: CurrentSaveScenarioOptions): 
           npcs: {},
           npcTemplates: {},
           encounterLog: [],
+          topicTrees: {},
+          usedTopics: {},
+          appointments: [],
       },
     }),
   };

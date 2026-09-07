@@ -5,6 +5,7 @@ import type { OpContext, OpResult } from './types';
 import { advanceTime } from '../time';
 import { movePlayer, revealNode } from '../map';
 import { moveNpc, triggerEncounter } from '../encounter';
+import { canUnlockTopic, topicTreeKey } from '../topics';
 
 const StatTargetSchema = z.enum(['player', 'world']);
 const AddStatSchema = z.object({ op: z.literal('add_stat'), target: StatTargetSchema, key: z.string().min(1), delta: z.number().finite() });
@@ -18,6 +19,8 @@ const AdvanceTimeSchema = z.object({ op: z.literal('advance_time'), kind: z.stri
 const MovePlayerSchema = z.object({ op: z.literal('move_player'), nodeId: z.string().min(1) });
 const RevealNodeSchema = z.object({ op: z.literal('reveal_node'), nodeId: z.string().min(1) });
 const MoveNpcSchema = z.object({ op: z.literal('move_npc'), target: z.string().min(1), nodeId: z.string().min(1), slotId: z.string().min(1).optional(), activity: z.string().min(1).max(200).optional() });
+const UnlockTopicSchema = z.object({ op: z.literal('unlock_topic'), id: z.string().min(1) });
+const MarkTopicUsedSchema = z.object({ op: z.literal('mark_topic_used'), id: z.string().min(1) });
 
 export function createDefaultOpRegistry(): OpRegistry {
   const registry = new OpRegistry();
@@ -122,6 +125,18 @@ export function registerBuiltInOps(registry: OpRegistry): void {
       return { ok: true, changes: [...result.changes, ...(encounter?.changes ?? [])], warning: result.warning };
     },
   });
+  registry.register({
+    op: 'unlock_topic', schema: UnlockTopicSchema, clamp: {},
+    promptDoc: 'unlock_topic: {"op":"unlock_topic","id":"topic-id"}; unlocks a topic already present in the current topic tree.',
+    describe: (payload) => `unlock topic ${payload.id}`,
+    apply: (payload, context) => unlockTopic(payload.id, context),
+  });
+  registry.register({
+    op: 'mark_topic_used', schema: MarkTopicUsedSchema, clamp: {},
+    promptDoc: 'mark_topic_used: {"op":"mark_topic_used","id":"topic-id"}; records that the current topic was used today.',
+    describe: (payload) => `mark topic ${payload.id} used`,
+    apply: (payload, context) => markTopicUsed(payload.id, context),
+  });
 }
 
 function statsFor(world: WorldState, target: z.infer<typeof StatTargetSchema>): Record<string, number> {
@@ -190,6 +205,23 @@ function addNodeMemory(payload: z.infer<typeof AddNodeMemorySchema>, context: Op
   }
   node.memories.push(memory);
   return changed(`world.map.nodes.${nodeId}.memories`, before, structuredClone(node.memories), `Added a memory to ${nodeId}.`);
+}
+
+function unlockTopic(topicId: string, context: OpContext): OpResult {
+  if (!canUnlockTopic(context.world, context.actorId, context.nodeId, topicId)) return rejected(`Unknown topic in current tree: ${topicId}.`);
+  const tree = context.world.topicTrees[topicTreeKey(context.actorId!, context.nodeId)]!;
+  const topic = tree.topics.find((item) => item.id === topicId)!;
+  if (!topic.require) return { ok: true, changes: [], warning: `Topic ${topicId} is already unlocked.` };
+  const before = topic.require;
+  delete topic.require;
+  return changed(`world.topicTrees.${topicTreeKey(context.actorId!, context.nodeId)}.topics.${topicId}.require`, before, undefined, `Unlocked topic ${topicId}.`);
+}
+
+function markTopicUsed(topicId: string, context: OpContext): OpResult {
+  if (!canUnlockTopic(context.world, context.actorId, context.nodeId, topicId)) return rejected(`Unknown topic in current tree: ${topicId}.`);
+  const before = context.world.usedTopics[topicId];
+  context.world.usedTopics[topicId] = context.day;
+  return changed(`world.usedTopics.${topicId}`, before, context.day, `Marked topic ${topicId} as used.`);
 }
 
 function itemCount(world: WorldState, itemId: string): number {

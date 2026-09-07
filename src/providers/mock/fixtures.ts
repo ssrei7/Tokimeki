@@ -20,6 +20,7 @@ export interface MockFixture {
 
 function repliesForTask(taskId: TaskId): Record<MockFixtureId, MockFixture> {
   const prefix = `[mock:${taskId}]`;
+  if (taskId === 'topic_tree') return topicTreeFixtures();
   return {
     perfect: {
       id: 'perfect',
@@ -54,6 +55,27 @@ function repliesForTask(taskId: TaskId): Record<MockFixtureId, MockFixture> {
       chunks: [`${prefix} 流式正文已经开始`, '，但连接在结束前中断。'],
       errorAfterChunks: `Mock stream interrupted for ${taskId}`,
     },
+  };
+}
+
+function topicTreeFixtures(): Record<MockFixtureId, MockFixture> {
+  const tree = {
+    charId: 'seir', nodeId: 'docks', generatedDay: 3,
+    topics: [
+      { id: 'weather', label: '聊聊天气', kind: 'daily', terminal: false, response: '[说话人:塞伊尔] 今天的风比昨天温柔。', usedResponse: '[说话人:塞伊尔] 嗯，还是老样子。', generatedDay: 3 },
+      { id: 'music', label: '问他的音乐', kind: 'daily', terminal: false, response: '[说话人:塞伊尔] 我最近在练一段新的旋律。', usedResponse: '[说话人:塞伊尔] 之前说过了。', generatedDay: 3 },
+      { id: 'past', label: '问起过去', kind: 'story', terminal: false, require: 'flags.met_docks', response: '[说话人:塞伊尔] 那是很久以前的事了。', usedResponse: '[说话人:塞伊尔] 这件事我们已经聊过。', unlocks: ['promise'], generatedDay: 3 },
+      { id: 'promise', label: '约下次见面', kind: 'story', terminal: true, require: 'flags.met_docks', response: '[说话人:塞伊尔] 好，下次还在这里见。', generatedDay: 3 },
+    ],
+  };
+  return {
+    perfect: { id: 'perfect', chunks: [JSON.stringify(tree)] },
+    malformed: { id: 'malformed', chunks: ['{"topics": ['] },
+    fenced: { id: 'fenced', chunks: [`\`\`\`json\n${JSON.stringify(tree)}\n\`\`\``] },
+    'unregistered-op': { id: 'unregistered-op', chunks: [JSON.stringify(tree)] },
+    'clamp-exceeded': { id: 'clamp-exceeded', chunks: [JSON.stringify(tree)] },
+    'empty-ops': { id: 'empty-ops', chunks: [JSON.stringify(tree)] },
+    'interrupted-stream': { id: 'interrupted-stream', chunks: ['{"charId":"seir","topics":'], errorAfterChunks: 'Mock topic tree interrupted' },
   };
 }
 
