@@ -8,3 +8,11 @@ export function deleteRelationshipMemory(world: WorldState, charId: string, memo
   relation.memories.splice(index, 1);
   return { ok: true };
 }
+
+export function removeRelationshipMemoriesFromMessage(world: WorldState, charId: string, messageIndex: number): number {
+  const relation = world.relations[charId];
+  if (!relation) return 0;
+  const before = relation.memories.length;
+  relation.memories = relation.memories.filter((memory) => memory.sourceChatMessageIndex === undefined || memory.sourceChatMessageIndex < messageIndex);
+  return before - relation.memories.length;
+}

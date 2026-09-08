@@ -152,4 +152,12 @@ describe('save migrations', () => {
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.collection[0]).toMatchObject({ itemId: 'keepsake', title: '旧车票', description: '褪色的车票', tags: ['memory'], day: 2, nodeId: 'start' });
   });
+
+  it('migrates v13 saves to v14 without dropping existing memories', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'migration-v13', title: 'Migration v13' }));
+    const legacy = { ...save, schemaVersion: 13, world: { ...save.world, relations: { ...save.world.relations, seir: { ...save.world.relations.seir, memories: [{ id: 'memory-1', text: '保留', day: 1 }] } } } };
+    const migrated = migrateSave(legacy);
+    expect(migrated.schemaVersion).toBe(14);
+    expect(migrated.world.relations.seir.memories[0]).toMatchObject({ id: 'memory-1', text: '保留' });
+  });
 });

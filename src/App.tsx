@@ -31,7 +31,8 @@ import { seedScenario } from './dev/scenarios/seeder';
 import { ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, type ProviderBinding, type ProviderConfig, type TaskId } from './providers/types';
 import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from './ui/chat-state';
 import { latestDialogueSpeakerId, splitDialogueMessage } from './ui/dialogue';
-import { deleteRelationshipMemory, deriveRelationshipPromptState } from './core/relationship';
+import { deleteChatMessage, isEditableChatMessage, updateChatMessage } from './ui/chat-history';
+import { deleteRelationshipMemory, deriveRelationshipPromptState, removeRelationshipMemoriesFromMessage } from './core/relationship';
 import { markAppointmentOnEnter, markAppointmentOnTimeAdvance, settleAppointments } from './core/appointments';
 import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
 import { PLAYER_ACCENT_COLOR, resolveCharacterAccentColors, resolveSpeakerAccentColor } from './ui/character-color';
@@ -43,7 +44,7 @@ type ContentKind = 'character' | 'worldbook' | 'preset' | 'memory';
 type RequestStatus = 'idle' | StreamStatus;
 type Feedback = { tone: 'info' | 'success' | 'error'; text: string } | null;
 type DebugState = { prompt: AssembledPrompt | null; raw: string; ops: string; state: string };
-type PendingOpsRecovery = { raw: string; actorId?: string; streamError?: string };
+type PendingOpsRecovery = { raw: string; actorId?: string; messageIndex?: number; streamError?: string };
 type GiftGenerationContext = { giftId: string; itemId: string; itemName: string; charId: string; charName: string };
 type CollectionGenerationContext = { entryId: string; itemId: string; title: string; description: string; tags: string[] };
 type TopicRetryContext = { charId: string; nodeId: string; participantIds: string[]; entryId?: string };
@@ -781,7 +782,8 @@ export function App() {
     const ops = repeated ? [] : [ ...(topic.ops ?? []), { op: 'mark_topic_used', id: topic.id }, ...(topic.unlocks ?? []).map((id) => ({ op: 'unlock_topic', id })) ];
     const applied = opRegistry.applyAll(ops, {
       world: next.world, actorId: selectedCharacterId, day: next.world.clock.day, slotId: next.world.clock.slotId, nodeId: next.world.player.nodeId,
-      calendar: next.config.calendar, actionCosts: next.config.actionCosts, encounterConfig: next.config.encounter, events: promptEvents, log: () => {},
+      calendar: next.config.calendar, actionCosts: next.config.actionCosts, encounterConfig: next.config.encounter, events: promptEvents,
+      memorySource: { chatCharacterId: selectedCharacterId, messageIndex: messages.length }, log: () => {},
     }, next.config.opsLimitPerTurn);
     commitSave(next);
     if (applied.changes.length) promptEvents.emit('onOpsApply', { changes: applied.changes });
@@ -917,6 +919,32 @@ export function App() {
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
   }
 
+  async function editChatHistoryMessage(index: number, content: string): Promise<void> {
+    if (!selectedCharacterId || !messages[index] || !isEditableChatMessage(messages[index])) return;
+    const next = updateChatMessage(messages, index, content);
+    if (next === messages) return;
+    const nextSave = structuredClone(saveRef.current);
+    const removedMemories = removeRelationshipMemoriesFromMessage(nextSave.world, selectedCharacterId, index);
+    if (removedMemories) commitSave(nextSave);
+    if (pendingOps?.messageIndex !== undefined && index <= pendingOps.messageIndex) { setPendingOps(null); setManualOps('[]'); }
+    setMessages(next);
+    setFeedback({ tone: 'success', text: `台词已修改。${removedMemories ? `已移除 ${removedMemories} 条由原聊天产生的旧记忆；` : ''}下一次生成会使用编辑后的上下文，不会回滚其他状态变化。` });
+    await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
+  }
+
+  async function deleteChatHistoryMessage(index: number): Promise<void> {
+    if (!selectedCharacterId || !messages[index] || !isEditableChatMessage(messages[index])) return;
+    const next = deleteChatMessage(messages, index);
+    if (next === messages) return;
+    const nextSave = structuredClone(saveRef.current);
+    const removedMemories = removeRelationshipMemoriesFromMessage(nextSave.world, selectedCharacterId, index);
+    if (removedMemories) commitSave(nextSave);
+    if (pendingOps?.messageIndex !== undefined && index <= pendingOps.messageIndex) { setPendingOps(null); setManualOps('[]'); }
+    setMessages(next);
+    setFeedback({ tone: 'success', text: `台词已从聊天记录中删除。${removedMemories ? `已移除 ${removedMemories} 条受影响的旧记忆；` : ''}不会回滚其他状态变化。` });
+    await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
+  }
+
   async function generateReply(giftContext?: GiftGenerationContext, providedMessages?: ChatMessage[], suppressItemGains = false, collectionContext?: CollectionGenerationContext) {
     if (busy) return;
     if (!selectedCharacterId) { setFeedback({ tone: 'error', text: '请先选择聊天角色。' }); return; }
@@ -963,7 +991,7 @@ export function App() {
       const safeReply = suppressItemGains
         ? { ...reply, ops: reply.ops.filter((op) => !itemGainOps.includes(op)), warnings: [...reply.warnings, ...(itemGainOps.length ? ['出示收藏的回应中检测到 give_item，已忽略以避免把出示误记为再次获得物品。'] : [])] }
         : reply;
-      applyReplyOps(safeReply, generationCharacterId, giftContext?.giftId);
+      applyReplyOps(safeReply, generationCharacterId, giftContext?.giftId, completed.length - 1);
     } catch (error) {
       const message = errorMessage(error, '请求失败');
       const finished = splitter.finish();
@@ -976,7 +1004,7 @@ export function App() {
         setMessages(next);
       }
       setRequestStatus('error'); setFeedback({ tone: 'error', text: message });
-      if (finished.raw) setPendingOps({ raw: finished.raw, actorId: generationCharacterId, streamError: message });
+      if (finished.raw) setPendingOps({ raw: finished.raw, actorId: generationCharacterId, messageIndex: narrative ? next.length : undefined, streamError: message });
       setDebug((current) => ({
         ...current,
         raw: finished.raw || message,
@@ -1022,6 +1050,9 @@ export function App() {
       if (!narrative.trim()) throw new Error('Provider 未返回可读正文。');
       const completed = [...baseMessages, { role: 'assistant' as const, content: narrative }];
       setMessages(completed);
+      const nextSave = structuredClone(saveRef.current);
+      const removedMemories = removeRelationshipMemoriesFromMessage(nextSave.world, selectedCharacterId, latestAssistantIndex);
+      if (removedMemories) commitSave(nextSave);
       await saveChat({ characterId: selectedCharacterId, messages: completed, updatedAt: now() });
       const parsedReply = await parseReply(finished.raw);
       const discardedOps = parsedReply.ops.length;
@@ -1029,7 +1060,7 @@ export function App() {
       markResponseSource('manual');
       setRegenerateInput('');
       setDebug((current) => ({ ...current, raw: finished.raw, ops: JSON.stringify({ stage: parsedReply.stage, parsedOps: discardedOps ? parsedReply.ops : [], discardedOps, warnings: [...parsedReply.warnings, ...(hadOpsBlock ? ['重生成响应中的 ops 已丢弃，未应用任何状态变化。'] : [])], message: '重生成只替换叙述正文。' }, null, 2) }));
-      setFeedback({ tone: 'success', text: hadOpsBlock ? '已重新生成正文，响应中的状态操作已丢弃。' : '已重新生成正文。' });
+      setFeedback({ tone: 'success', text: `${hadOpsBlock ? '已重新生成正文，响应中的状态操作已丢弃。' : '已重新生成正文。'}${removedMemories ? ` 已移除 ${removedMemories} 条旧记忆，后续生成将基于新文本。` : ''}` });
     } catch (error) {
       splitter.finish();
       setMessages(originalMessages);
@@ -1051,9 +1082,9 @@ export function App() {
     return extracted;
   }
 
-  function applyReplyOps(reply: ParsedReply, actorId?: string, giftId?: string): void {
+  function applyReplyOps(reply: ParsedReply, actorId?: string, giftId?: string, messageIndex?: number): void {
     if (reply.opsFailed) {
-      setPendingOps({ raw: reply.raw, actorId });
+      setPendingOps({ raw: reply.raw, actorId, ...(messageIndex === undefined ? {} : { messageIndex }) });
       setManualOps('[]');
       setDebug((current) => ({ ...current, raw: reply.raw, ops: JSON.stringify({ stage: reply.stage, opsFailed: true, warnings: reply.warnings, message: '本回合未产生状态变更。' }, null, 2) }));
       setFeedback({ tone: 'info', text: '回复正文已保留，但状态变化解析失败；本回合未产生状态变更。' });
@@ -1075,6 +1106,7 @@ export function App() {
       axisDefs: nextSave.config.axisDefs,
       stageRules: nextSave.config.stageRules,
       events: promptEvents,
+      ...(actorId && messageIndex !== undefined ? { memorySource: { chatCharacterId: actorId, messageIndex } } : {}),
       log: (message) => logs.push(message),
     }, nextSave.config.opsLimitPerTurn);
     commitSave(nextSave);
@@ -1098,7 +1130,7 @@ export function App() {
     setBusy(true); setRequestStatus('requesting'); setFeedback({ tone: 'info', text: '正在重新提取状态变化…' });
     try {
       const reply = await parseReply(pendingOps.raw, extractOps);
-      applyReplyOps(reply, pendingOps.actorId);
+      applyReplyOps(reply, pendingOps.actorId, undefined, pendingOps.messageIndex);
       setRequestStatus('success');
     } catch (error) {
       setRequestStatus('error');
@@ -1113,7 +1145,7 @@ export function App() {
       setFeedback({ tone: 'error', text: '手动 ops 不是有效的 JSON 数组。' });
       return;
     }
-    applyReplyOps({ ...reply, raw: pendingOps.raw }, pendingOps.actorId);
+    applyReplyOps({ ...reply, raw: pendingOps.raw }, pendingOps.actorId, undefined, pendingOps.messageIndex);
   }
 
   function addItemDefinition(): void {
@@ -1450,7 +1482,7 @@ export function App() {
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
+      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} />}
       {tab === 'library' && <MemoryLibraryView save={save} onDeleteMemory={deleteMemory} />}
       {tab === 'library' && <CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} />}
@@ -1821,6 +1853,8 @@ function ChatView(props: {
   setInput: (value: string) => void;
   onAppend: () => Promise<void>;
   onGenerate: () => Promise<void>;
+  onEditMessage: (index: number, content: string) => Promise<void>;
+  onDeleteMessage: (index: number) => Promise<void>;
   regenerateInput: string;
   setRegenerateInput: (value: string) => void;
   onRegenerate: () => Promise<void>;
@@ -1859,8 +1893,12 @@ function ChatView(props: {
   const [selectedCollectionId, setSelectedCollectionId] = useState('');
   const [showGiftPanel, setShowGiftPanel] = useState(false);
   const [showCollectionPanel, setShowCollectionPanel] = useState(false);
+  const [messageMenuIndex, setMessageMenuIndex] = useState<number | null>(null);
+  const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
+  const [editingMessageText, setEditingMessageText] = useState('');
   const [revealedLineCount, setRevealedLineCount] = useState(1);
   const [revealedAssistantKey, setRevealedAssistantKey] = useState('');
+  const messagePressTimerRef = useRef<number | null>(null);
   const [dialogueBoxHeight, setDialogueBoxHeight] = useState(() => {
     if (typeof window === 'undefined') return 150;
     try {
@@ -2003,6 +2041,30 @@ function ChatView(props: {
     setDialogueBoxHeight(Math.min(360, Math.max(80, start.height + start.y - event.clientY)));
   };
   const endDialogueResize = () => { resizeStartRef.current = null; };
+  const clearMessagePress = () => {
+    if (messagePressTimerRef.current !== null) {
+      window.clearTimeout(messagePressTimerRef.current);
+      messagePressTimerRef.current = null;
+    }
+  };
+  const openMessageMenu = (index: number) => {
+    const message = props.messages[index];
+    if (!message || !isEditableChatMessage(message)) return;
+    setMessageMenuIndex(index);
+    setEditingMessageIndex(null);
+  };
+  const beginMessagePress = (event: PointerEvent<HTMLDivElement>, index: number) => {
+    if (!isEditableChatMessage(props.messages[index])) return;
+    clearMessagePress();
+    messagePressTimerRef.current = window.setTimeout(() => openMessageMenu(index), 550);
+  };
+  const startMessageEdit = (index: number) => {
+    const message = props.messages[index];
+    if (!message || !isEditableChatMessage(message)) return;
+    setEditingMessageIndex(index);
+    setEditingMessageText(message.content);
+  };
+  const cancelMessageMenu = () => { setMessageMenuIndex(null); setEditingMessageIndex(null); setEditingMessageText(''); };
 
   return <section className="chat-screen vn-chat-screen">
     {props.topicMode === 'manual' && !props.participantsLocked && <div className="character-picker"><div className="participant-picker" aria-label="本次对话角色">{props.characters.length > 1 && <span className="participant-label">本次对话</span>}{props.characters.map((item) => <label key={item.id} className="participant-option"><input type="checkbox" checked={participantIds.includes(item.id)} onChange={() => toggleParticipant(item.id)} /><span>{item.name}</span></label>)}</div><select aria-label="主要聊天角色" value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">当前地点无人</option>{participantCharacters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
@@ -2012,7 +2074,7 @@ function ChatView(props: {
       </div>
       <div className="vn-dialogue-box" style={{ height: `${dialogueBoxHeight}px` }}>
         <div className="vn-dialogue-resize-handle" role="separator" tabIndex={0} aria-label="调整对话框高度" aria-orientation="horizontal" aria-valuemin={80} aria-valuemax={360} aria-valuenow={dialogueBoxHeight} onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); setDialogueBoxHeight((height) => Math.min(360, Math.max(80, height + (event.key === 'ArrowUp' ? 10 : -10)))); } }} onPointerDown={beginDialogueResize} onPointerMove={moveDialogueResize} onPointerUp={endDialogueResize} onPointerCancel={endDialogueResize} />
-        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.flatMap((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, speakerLabelsById); const isLatestCollapsible = latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, effectiveRevealedLineCount)) : lines; return displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} style={line.kind === 'dialogue' ? { '--vn-line-accent': lineAccentColor(line.speaker) } as CSSProperties : undefined} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>); })}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > effectiveRevealedLineCount ? <button className="vn-next-line" onClick={() => { followLatestRef.current = true; setRevealedAssistantKey(latestAssistantKey); setRevealedLineCount(Math.min(latestAssistantLines.length, effectiveRevealedLineCount + 1)); }}>下一段 · {effectiveRevealedLineCount}/{latestAssistantLines.length}</button> : replyProgress && <div className="vn-generation-progress" role="status" aria-live="polite"><span>{replyProgress === 'first-line' ? '正在生成第一段' : '后续内容生成中'}</span><span className="vn-generation-dots" aria-hidden="true"><i /><i /><i /></span></div>}</div>
+        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.map((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, speakerLabelsById); const isLatestCollapsible = latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, effectiveRevealedLineCount)) : lines; const editable = isEditableChatMessage(message); const menuOpen = messageMenuIndex === messageIndex; const editing = editingMessageIndex === messageIndex; return <div className={`vn-message-group ${message.role}`} key={`${message.role}-${messageIndex}`} onPointerDown={(event) => beginMessagePress(event, messageIndex)} onPointerUp={clearMessagePress} onPointerCancel={clearMessagePress} onPointerLeave={clearMessagePress} onContextMenu={(event) => { event.preventDefault(); openMessageMenu(messageIndex); }}>{displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} style={line.kind === 'dialogue' ? { '--vn-line-accent': lineAccentColor(line.speaker) } as CSSProperties : undefined} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>)}{editable && menuOpen && !editing && <div className="message-action-menu" role="menu"><button type="button" onClick={() => startMessageEdit(messageIndex)}>编辑</button><button type="button" className="danger" onClick={() => { if (window.confirm('删除这条台词？只会删除聊天记录，不会回滚已执行的状态变化。')) { void props.onDeleteMessage(messageIndex); cancelMessageMenu(); } }}>删除</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div>}{editing && <div className="message-edit-panel"><textarea aria-label="编辑台词" value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} autoFocus /><div className="button-row"><button type="button" onClick={() => { void props.onEditMessage(messageIndex, editingMessageText); cancelMessageMenu(); }} disabled={!editingMessageText.trim()}>保存</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}</div>; })}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > effectiveRevealedLineCount ? <button className="vn-next-line" onClick={() => { followLatestRef.current = true; setRevealedAssistantKey(latestAssistantKey); setRevealedLineCount(Math.min(latestAssistantLines.length, effectiveRevealedLineCount + 1)); }}>下一段 · {effectiveRevealedLineCount}/{latestAssistantLines.length}</button> : replyProgress && <div className="vn-generation-progress" role="status" aria-live="polite"><span>{replyProgress === 'first-line' ? '正在生成第一段' : '后续内容生成中'}</span><span className="vn-generation-dots" aria-hidden="true"><i /><i /><i /></span></div>}</div>
       </div>
     </div>
     {props.topicMode === 'topics' && <div className="topic-tree-panel" aria-label="话题树">

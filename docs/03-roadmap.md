@@ -306,6 +306,7 @@
 - TopicTree 生成优先使用 Provider 支持的 Structured Outputs；OpenAI-compatible 中转站不支持 JSON Schema 时可切换 JSON mode，最终仍经本地 schema 校验与失败重试
 - 话题树结束前隐藏自由输入；当前可选话题耗尽且没有待解锁话题后，才解锁手动输入；允许 AI 反向 `unlock_topic`
 - 手动输入模式支持用户填写要求后显式重新生成；固定 TopicTree response 不参与重生成
+- 已发送的玩家台词与角色回复支持触摸长按/桌面右键后的编辑、删除；仅修改聊天记录，不回滚已执行的状态 ops；送礼与收藏出示等系统生成台词保持不可编辑
 - 告别与挽留：玩家可以主动告别；角色也可基于当前处境提出离开，玩家可在输入框自由编辑挽留、转移话题或无视并放任对方离开；结果由内核记录，不消耗行动点
 - 多轴关系 `AxisDef` + `StageRule` + 阶段标签派生
 - `mood`（词 + 衰减天数）+ `situation` + `lastSeenDay` → "已 N 天未见"
@@ -335,8 +336,9 @@
 13. 手动对话的最新回复可填写要求并重新生成；重新生成不重复应用原回复的状态 ops，TopicTree 固定回应不受影响
 14. 相遇中先选择 1–3 位正式角色；未选角色不进入本次 TopicTree，进入聊天后不能切换参与者
 15. 默认预设下角色会主动提问、邀约或留下后续空间；关闭或编辑“角色主动性”预设后，可塑造疏离、对抗或其他氛围，且状态事实与 ops 边界不受影响
+16. 长按或右键玩家台词、角色回复可编辑/删除；保存后只影响聊天记录，系统生成的送礼/收藏台词不可被改写
 
-**schema**：v13 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `world.giftHistory` / `world.collection` / `relations` 全字段 / `characters[].giftPrefs` / `encounterLog[].departure`；v10 → v11 补齐礼物结果历史，v11 → v12 将礼物结果扩展为 pending/resolved，v12 → v13 补齐收藏记录，均保留旧字段
+**schema**：v14 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `world.giftHistory` / `world.collection` / `relations` 全字段 / `characters[].giftPrefs` / `encounterLog[].departure` / 关系记忆来源聊天索引；v10 → v11 补齐礼物结果历史，v11 → v12 将礼物结果扩展为 pending/resolved，v12 → v13 补齐收藏记录，v13 → v14 为关系记忆补充可选来源索引，均保留旧字段
 
 **交互与记忆备忘（2026-09-07）**
 
@@ -356,11 +358,12 @@
 
 **阶段 5 自动验收记录（2026-09-09）**
 
-- 自动验证：25 个测试文件、155 项测试通过。`tests/topics.test.ts` 覆盖 TopicTree 解析、require/unlock、已用话题变体和 daily 刷新；`tests/providers.test.ts` / `tests/prompt-zip.test.ts` 覆盖 Structured Outputs、JSON mode 降级、预设控制、关系/收藏上下文与重生成约束；`tests/ops.test.ts` 覆盖关系轴、mood、Knot、礼物及记忆 op；`tests/appointments.test.ts` 覆盖 kept / late / missed；`tests/settlement-view.test.ts` 覆盖散文结算与 `showNumbers`；`tests/encounter-selection.test.ts`、`tests/encounter-trigger.test.ts` 覆盖参与者上限、离开结果和固定 seed 分布；`tests/topic-simulator.test.ts` 覆盖话题枯竭与 daily 刷新统计；`tests/relationship-memory.test.ts` 覆盖最小记忆库逐条删除。
+- 自动验证：26 个测试文件、161 项测试通过。`tests/topics.test.ts` 覆盖 TopicTree 解析、require/unlock、已用话题变体和 daily 刷新；`tests/providers.test.ts` / `tests/prompt-zip.test.ts` 覆盖 Structured Outputs、JSON mode 降级、预设控制、关系/收藏上下文与重生成约束；`tests/ops.test.ts` 覆盖关系轴、mood、Knot、礼物、记忆 op 与记忆来源索引；`tests/appointments.test.ts` 覆盖 kept / late / missed；`tests/settlement-view.test.ts` 覆盖散文结算与 `showNumbers`；`tests/encounter-selection.test.ts`、`tests/encounter-trigger.test.ts` 覆盖参与者上限、离开结果和固定 seed 分布；`tests/topic-simulator.test.ts` 覆盖话题枯竭与 daily 刷新统计；`tests/relationship-memory.test.ts` 覆盖最小记忆库逐条删除及编辑后旧记忆清理；`tests/chat-history.test.ts` 覆盖玩家/角色台词编辑删除和系统生成台词保护；`tests/migrations.test.ts` 覆盖 v13 → v14 兼容迁移。
 - 构建验证：`npm run build` 通过；`git diff --check` 通过；`core/` Node 边界测试通过。
 - 状态边界复核：TopicTree、关系、时间、地点、库存、礼物 pending/resolved、收藏和预约事实均由内核保存；Provider 只负责叙述与 ops 提议。点击已生成话题、读取记忆/收藏/结算仍为本地零 API。
 - 手测清单：仍建议在真实移动端完成一次端到端冒烟，确认输入框解锁、多人参与者锁定、礼物目标选择、收藏出示、重生成入口和相遇窗口层级；这些检查不改变本次自动验收结论。
 - 阶段 5 代码交付可视为完成，下一阶段只处理上述冒烟反馈或阻塞性缺陷；记忆库增强与外部向量 API 按阶段 6/7 计划执行。
+- 聊天记录增强（2026-09-09）：玩家台词与角色回复支持长按/右键菜单编辑与删除；删除需二次确认，编辑不允许保存空白内容，送礼与收藏出示记录保持不可编辑，且不会回滚已经应用的状态变化。
 
 **做完**相遇从一次性对话变成可经营的关系。
 

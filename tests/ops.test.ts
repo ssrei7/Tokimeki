@@ -94,6 +94,13 @@ describe('op registry and built-ins', () => {
     expect(state.world.relations.seir.memories[0]).toEqual({ id: 'memory-seir-3-1', text: '在码头交谈', day: 3, nodeId: 'docks' });
   });
 
+  it('records the source chat message index for generated memories', () => {
+    const state = setup();
+    const applied = state.registry.applyAll([{ op: 'add_memory', target: 'seir', text: '可追踪记忆' }], { ...state.context, memorySource: { chatCharacterId: 'seir', messageIndex: 4 } }, 12);
+    expect(applied.applied).toBe(1);
+    expect(state.world.relations.seir.memories.at(-1)?.sourceChatMessageIndex).toBe(4);
+  });
+
   it('sets a decaying mood only for the current actor', () => {
     const state = setup();
     const applied = state.registry.applyAll([{ op: 'set_mood', target: 'seir', word: '放松', decayDays: 2 }], state.context, 12);

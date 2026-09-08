@@ -249,7 +249,7 @@ function addMemory(payload: z.infer<typeof AddMemorySchema>, context: OpContext)
   if (!context.actorId || payload.target !== context.actorId) return rejected('Memory target must be the current actor.');
   const relation = context.world.relations[payload.target] ?? { memories: [] };
   context.world.relations[payload.target] = relation;
-  const memory = { id: `memory-${payload.target}-${context.day}-${relation.memories.length + 1}`, text: payload.text, day: context.day, nodeId: context.nodeId };
+  const memory = { id: `memory-${payload.target}-${context.day}-${relation.memories.length + 1}`, text: payload.text, day: context.day, nodeId: context.nodeId, ...(context.memorySource?.chatCharacterId === payload.target ? { sourceChatMessageIndex: context.memorySource.messageIndex } : {}) };
   relation.memories.push(memory);
   return changed(`relations.${payload.target}.memories`, relation.memories.length - 1, relation.memories.length, `Added memory for ${payload.target}.`);
 }

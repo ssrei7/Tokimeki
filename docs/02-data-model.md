@@ -107,6 +107,7 @@ interface MemoryEntry {
   day: number;
   nodeId?: NodeId;
   weight?: number;               // 压缩时保留优先级
+  sourceChatMessageIndex?: number; // v14：由该角色聊天记录中的哪条回复产生
 }
 
 interface RelationState {

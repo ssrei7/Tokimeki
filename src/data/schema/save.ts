@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 13;
+export const CURRENT_SCHEMA_VERSION = 14;
 
 const IdSchema = z.string().min(1);
 
@@ -277,6 +277,7 @@ export const MemoryEntrySchema = z.object({
   day: z.number().int().positive(),
   nodeId: IdSchema.optional(),
   weight: z.number().optional(),
+  sourceChatMessageIndex: z.number().int().nonnegative().optional(),
 });
 
 export const CollectionEntrySchema = z.object({
@@ -410,6 +411,7 @@ export const WorldV10Schema = WorldV9Schema;
 export const WorldV11Schema = WorldV10Schema.extend({ giftHistory: z.array(GiftHistoryEntrySchema).default([]) });
 export const WorldV12Schema = WorldV11Schema;
 export const WorldV13Schema = WorldV12Schema.extend({ collection: z.array(CollectionEntrySchema).default([]) });
+export const WorldV14Schema = WorldV13Schema;
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -445,12 +447,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV13Schema,
+  world: WorldV14Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV13Schema>;
+export type WorldState = z.infer<typeof WorldV14Schema>;
 export type WorldV5State = z.infer<typeof WorldV5Schema>;
 export type Topic = z.infer<typeof TopicSchema>;
 export type TopicTree = z.infer<typeof TopicTreeSchema>;

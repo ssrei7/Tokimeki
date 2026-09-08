@@ -16,6 +16,7 @@ export interface OpContext {
   axisDefs?: AxisDef[];
   stageRules?: StageRule[];
   events?: EventBus;
+  memorySource?: { chatCharacterId: string; messageIndex: number };
 }
 
 export interface Change {
