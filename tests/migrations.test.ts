@@ -144,4 +144,12 @@ describe('save migrations', () => {
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.giftHistory[0]).toMatchObject({ status: 'resolved', reaction: 'liked', accepted: true });
   });
+
+  it('migrates legacy inventory entries into collection records', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v12-collection', title: 'v12 collection' }));
+    const { collection: _collection, ...legacyWorld } = source.world;
+    const migrated = migrateSave({ ...source, schemaVersion: 12, world: { ...legacyWorld, items: { keepsake: { id: 'keepsake', name: '旧车票', tags: ['memory'], description: '褪色的车票' } }, player: { ...legacyWorld.player, inventory: [{ itemId: 'keepsake', count: 1, gotDay: 2, gotNodeId: 'start' }] }, collection: undefined } });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.collection[0]).toMatchObject({ itemId: 'keepsake', title: '旧车票', description: '褪色的车票', tags: ['memory'], day: 2, nodeId: 'start' });
+  });
 });

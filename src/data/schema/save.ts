@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 12;
+export const CURRENT_SCHEMA_VERSION = 13;
 
 const IdSchema = z.string().min(1);
 
@@ -279,6 +279,17 @@ export const MemoryEntrySchema = z.object({
   weight: z.number().optional(),
 });
 
+export const CollectionEntrySchema = z.object({
+  id: IdSchema,
+  itemId: IdSchema,
+  title: z.string().min(1),
+  description: z.string(),
+  tags: z.array(z.string()),
+  day: z.number().int().positive(),
+  nodeId: IdSchema.optional(),
+  sourceCharId: IdSchema.optional(),
+});
+
 export const RelationMemoryStateSchema = z.object({
   memories: z.array(MemoryEntrySchema),
 });
@@ -398,6 +409,7 @@ export const WorldV9Schema = WorldV5Schema.extend({
 export const WorldV10Schema = WorldV9Schema;
 export const WorldV11Schema = WorldV10Schema.extend({ giftHistory: z.array(GiftHistoryEntrySchema).default([]) });
 export const WorldV12Schema = WorldV11Schema;
+export const WorldV13Schema = WorldV12Schema.extend({ collection: z.array(CollectionEntrySchema).default([]) });
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -433,12 +445,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV12Schema,
+  world: WorldV13Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV12Schema>;
+export type WorldState = z.infer<typeof WorldV13Schema>;
 export type WorldV5State = z.infer<typeof WorldV5Schema>;
 export type Topic = z.infer<typeof TopicSchema>;
 export type TopicTree = z.infer<typeof TopicTreeSchema>;
@@ -458,6 +470,7 @@ export type MapNode = z.infer<typeof MapNodeSchema>;
 export type MapEdge = z.infer<typeof MapEdgeSchema>;
 export type MapView = z.infer<typeof MapViewSchema>;
 export type ItemDef = z.infer<typeof ItemDefSchema>;
+export type CollectionEntry = z.infer<typeof CollectionEntrySchema>;
 export type CalendarConfig = z.infer<typeof CalendarConfigSchema>;
 export type ActionCostTable = z.infer<typeof ActionCostTableSchema>;
 export type DailySettlement = z.infer<typeof DailySettlementSchema>;

@@ -70,6 +70,8 @@ describe('op registry and built-ins', () => {
     const given = state.registry.applyAll([{ op: 'give_item', id: 'flower', count: 2, from: 'seir' }], state.context, 12);
     expect(given.applied).toBe(1);
     expect(state.world.player.inventory[0]).toEqual({ itemId: 'flower', count: 2, gotDay: 3, gotNodeId: 'docks', fromCharId: 'seir' });
+    expect(state.world.collection).toHaveLength(2);
+    expect(state.world.collection[0]).toMatchObject({ itemId: 'flower', title: '花', day: 3, nodeId: 'docks', sourceCharId: 'seir' });
     const rejected = state.registry.applyAll([
       { op: 'give_item', id: 'invented-item' },
       { op: 'give_item', id: 'flower', from: 'someone-else' },

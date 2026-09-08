@@ -221,7 +221,16 @@ function giveItem(payload: z.infer<typeof GiveItemSchema>, context: OpContext): 
   const existing = context.world.player.inventory.find((entry) => entry.itemId === payload.id);
   if (existing) existing.count += payload.count;
   else context.world.player.inventory.push({ itemId: payload.id, count: payload.count, gotDay: context.day, gotNodeId: context.nodeId, ...(payload.from ? { fromCharId: payload.from } : {}) });
-  return changed(`player.inventory.${payload.id}`, before, before + payload.count, `Received ${payload.id} x${payload.count}.`);
+  const item = context.world.items[payload.id];
+  const collectionBefore = context.world.collection.length;
+  for (let index = 0; index < payload.count; index += 1) context.world.collection.push({ id: `collection-${payload.id}-${context.day}-${collectionBefore + index + 1}`, itemId: item.id, title: item.name, description: item.description ?? '', tags: [...item.tags], day: context.day, nodeId: context.nodeId, ...(payload.from ? { sourceCharId: payload.from } : {}) });
+  return {
+    ok: true,
+    changes: [
+      ...changed(`player.inventory.${payload.id}`, before, before + payload.count, `Received ${payload.id} x${payload.count}.`).changes,
+      ...changed('world.collection', collectionBefore, context.world.collection.length, `Recorded ${payload.id} in collection.`).changes,
+    ],
+  };
 }
 
 function takeItem(payload: z.infer<typeof TakeItemSchema>, context: OpContext): OpResult {

@@ -17,7 +17,7 @@ import { deleteAsset, loadAsset, saveAsset } from './data/db/assets';
 import { listSnapshots, loadCurrentSave, loadSnapshot, saveCurrentSave, saveDailySnapshot, type SaveSnapshot } from './data/db/save';
 import { downsampleImage } from './data/assets/image';
 import { exportPresetBundle, exportSaveZip, importPresetBundle, importSaveZip } from './data/io/zip';
-import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_SLOT_DEFS, SaveFileSchema, type AssetRef, type EncounterDeparture, type GiftHistoryEntry, type SaveFile, type Topic, type TopicTree } from './data/schema/save';
+import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_SLOT_DEFS, SaveFileSchema, type AssetRef, type CollectionEntry, type EncounterDeparture, type GiftHistoryEntry, type SaveFile, type Topic, type TopicTree } from './data/schema/save';
 import { testProviderConnection } from './providers/connection-test';
 import { providerDb } from './providers/db';
 import { listProviderModels } from './providers/models';
@@ -120,7 +120,7 @@ const defaultSave: SaveFile = SaveFileSchema.parse({
     player: { name: '旅人', nodeId: 'start', stats: { 'custom-reputation': 0 }, flags: {}, inventory: [] },
     stats: {}, flags: {},
     items: { 'white-flower': { id: 'white-flower', name: '白色小花', tags: ['flower'], description: '一朵可用于 Mock 验收的白色小花。', stackable: true, giftable: true } },
-    relations: {}, characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [], topicTrees: {}, usedTopics: {}, appointments: [],
+    relations: {}, characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [], topicTrees: {}, usedTopics: {}, appointments: [], collection: [],
     map: createDefaultMap(),
     diary: [], settlements: [],
   },
@@ -637,6 +637,27 @@ export function App() {
     if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '无法删除记忆。' }); return; }
     commitSave(next);
     setFeedback({ tone: 'success', text: '这条记忆已从记忆库删除，之后不会再注入角色上下文。' });
+  }
+
+  function updateCollectionEntry(id: string, title: string, description: string): void {
+    const next = structuredClone(saveRef.current);
+    const entry = next.world.collection.find((item) => item.id === id);
+    if (!entry) { setFeedback({ tone: 'error', text: '找不到这条收藏条目。' }); return; }
+    const nextTitle = title.trim();
+    if (!nextTitle) { setFeedback({ tone: 'error', text: '收藏标题不能为空。' }); return; }
+    entry.title = nextTitle;
+    entry.description = description.trim();
+    commitSave(next);
+    setFeedback({ tone: 'success', text: '收藏条目已保存。' });
+  }
+
+  function deleteCollectionEntry(id: string): void {
+    const next = structuredClone(saveRef.current);
+    const index = next.world.collection.findIndex((item) => item.id === id);
+    if (index < 0) { setFeedback({ tone: 'error', text: '找不到这条收藏条目。' }); return; }
+    next.world.collection.splice(index, 1);
+    commitSave(next);
+    setFeedback({ tone: 'success', text: '收藏条目已删除。' });
   }
 
   function setCalendarPreset(preset: SaveFile['config']['calendar']['preset']): void {
@@ -1386,6 +1407,7 @@ export function App() {
       {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} />}
       {tab === 'library' && <MemoryLibraryView save={save} onDeleteMemory={deleteMemory} />}
+      {tab === 'library' && <CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} />}
       {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} />}
     </main>
     <nav className="bottom-nav">{([['map', '地图'], ['day', '日程'], ['chat', '聊天'], ['library', '资料'], ['settings', '设置']] as const).map(([id, label]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
@@ -2069,6 +2091,15 @@ function PresetBundleView(props: { presetBundles: PresetBundle[]; selectedPreset
 function MemoryLibraryView(props: { save: SaveFile; onDeleteMemory: (charId: string, memoryId: string) => void }) {
   const characters = Object.values(props.save.world.characters);
   return <section className="memory-library-section"><div className="section-heading"><div><span className="eyebrow">长期上下文</span><h2>记忆库</h2><p className="io-scope">这些记忆会在未来对话中作为角色上下文使用；删除后不会改写历史对话。</p></div></div><div className="list-card memory-library-card">{characters.length === 0 ? <p className="empty">当前世界还没有角色。</p> : characters.map((character) => { const memories = props.save.world.relations[character.id]?.memories ?? []; return <details className="memory-character" key={character.id}><summary>{character.name} · {memories.length} 条记忆</summary><div className="memory-list">{memories.length === 0 ? <p className="empty">暂无长期记忆。</p> : memories.map((memory) => <div className="list-row" key={memory.id}><span>{memory.text}<small>第 {memory.day} 天{memory.nodeId ? ` · 地点 ${memory.nodeId}` : ''}</small></span><button className="danger" onClick={() => props.onDeleteMemory(character.id, memory.id)}>删除</button></div>)}</div></details>; })}</div></section>;
+}
+
+function CollectionLibraryView(props: { save: SaveFile; onUpdate: (id: string, title: string, description: string) => void; onDelete: (id: string) => void }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const beginEdit = (entry: CollectionEntry) => { setEditing(entry.id); setTitle(entry.title); setDescription(entry.description); };
+  const entries = props.save.world.collection;
+  return <section className="collection-library-section"><div className="section-heading"><div><span className="eyebrow">获得记录</span><h2>收藏</h2><p className="io-scope">收藏条目由实际获得的物品生成；可编辑展示文字，不改变物品、库存或获得事实。</p></div></div><div className="list-card collection-library-card">{entries.length === 0 ? <p className="empty">暂无收藏。获得物品后会自动记录在这里。</p> : entries.map((entry) => <div className="collection-entry" key={entry.id}>{editing === entry.id ? <div className="collection-editor"><input aria-label="收藏标题" value={title} onChange={(event) => setTitle(event.target.value)} /><textarea aria-label="收藏描述" value={description} onChange={(event) => setDescription(event.target.value)} /><div className="button-row"><button onClick={() => { props.onUpdate(entry.id, title, description); setEditing(null); }}>保存</button><button className="secondary" onClick={() => setEditing(null)}>取消</button></div></div> : <><div className="list-heading"><div><strong>{entry.title}</strong><small>第 {entry.day} 天{entry.nodeId ? ` · 地点 ${entry.nodeId}` : ''}{entry.sourceCharId ? ` · 来自 ${props.save.world.characters[entry.sourceCharId]?.name ?? entry.sourceCharId}` : ''}</small></div><div className="button-row"><button onClick={() => beginEdit(entry)}>编辑</button><button className="danger" onClick={() => props.onDelete(entry.id)}>删除</button></div></div>{entry.description && <p>{entry.description}</p>}{entry.tags.length > 0 && <div className="tag-row">{entry.tags.map((tag) => <span className="tag" key={tag}>{tag}</span>)}</div>}</>}</div>)}</div></section>;
 }
 
 function LibraryView(props: { characters: CharacterCard[]; worldbooks: WorldbookEntry[]; presets: Preset[]; presetBundles: PresetBundle[]; selectedPresetBundleId: string; setSelectedPresetBundleId: (value: string) => void; presetBundleName: string; setPresetBundleName: (value: string) => void; onCreatePresetBundle: () => Promise<void>; onRenamePresetBundle: () => Promise<void>; onDeletePresetBundle: (id: string) => Promise<void>; onSetPresetEntryEnabled: (bundleId: string, entryId: string, enabled: boolean) => Promise<void>; onMovePresetEntry: (bundleId: string, entryId: string, direction: -1 | 1) => Promise<void>; save: SaveFile; name: string; setName: (value: string) => void; draftText: string; setDraftText: (value: string) => void; editing: { kind: ContentKind; id: string } | null; setEditing: (editing: { kind: ContentKind; id: string } | null) => void; addContent: (kind: ContentKind) => Promise<void>; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void>; onExportSave: () => Promise<void>; onImportSave: (file?: File) => Promise<void>; onExportPresetBundle: () => Promise<void>; onImportPresetBundle: (file?: File) => Promise<void>; includeChatsOnExport: boolean; setIncludeChatsOnExport: (value: boolean) => void; onClearChats: () => Promise<void>; itemName: string; setItemName: (value: string) => void; itemTags: string; setItemTags: (value: string) => void; itemDescription: string; setItemDescription: (value: string) => void; onAddItem: () => void; onAddCharacterToWorld: (id: string) => void; visualCharacterId: string; setVisualCharacterId: (value: string) => void; onImportCharacterVisual: (characterId: string, kind: 'avatar' | 'portrait', file?: File) => Promise<void>; onRemoveCharacterVisual: (characterId: string, kind: 'avatar' | 'portrait') => Promise<void>; onUpdateCharacterAccentColor: (characterId: string, color?: string) => void; selectedPresetId?: string; setSelectedPresetId?: (value: string) => void }) {

@@ -206,6 +206,13 @@ button.danger { background: #fee4e2; color: #b42318; }
 .memory-character { border-top: 1px solid #edf0f5; padding-top: 8px; }
 .memory-character summary { cursor: pointer; font-weight: 600; }
 .memory-list { display: grid; gap: 6px; margin-top: 8px; }
+.collection-library-card { display: grid; gap: 10px; }
+.collection-entry { border-top: 1px solid #edf0f5; padding-top: 10px; }
+.collection-entry small { display: block; color: #667085; font-size: 12px; margin-top: 3px; }
+.collection-entry p { margin: 8px 0; white-space: pre-wrap; }
+.collection-editor { display: grid; gap: 8px; }
+.tag-row { display: flex; flex-wrap: wrap; gap: 5px; }
+.tag { border-radius: 999px; padding: 3px 8px; background: #eef2ff; color: #3b4cca; font-size: 12px; }
 .list-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid #eef0f3; }
 .list-row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .list-row button { min-height: 36px; padding: 0 10px; background: #eef2f6; color: #475467; font-size: 12px; }
