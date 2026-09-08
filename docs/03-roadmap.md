@@ -314,7 +314,7 @@
 - 拒绝判定：忙 / 心情差 / 阶段不到位则互动失败
 - `Appointment` 四元组 + 守约 / 迟到 / 失约（`onDaySettle` 判定）
 - 结算页关系变化改为散文，`showNumbers` 默认关
-- op：`unlock_topic` `mark_topic_used` `set_mood` `adjust_relation_axis` `add_knot` `resolve_knot` `offer_gift` `make_appointment`
+- op：`unlock_topic` `mark_topic_used` `set_mood` `adjust_relation_axis` `add_knot` `resolve_knot` `offer_gift` `resolve_gift` `make_appointment`
 - block：`relationship_state`
 - 无头统计：话题枯竭速度、daily 树刷新覆盖率与可选话题数量分布
 
@@ -341,6 +341,7 @@
 - 面对面场景先处于话题树模式，输入框隐藏；只有树自然耗尽且没有待解锁话题时才进入手动输入模式。
 - 送礼入口只在话题树自然结束、进入自由对话后显示；话题树固定内容不被送礼操作打断。
 - 送礼点击后只触发一次普通叙述调用；模型返回正文和 `resolve_gift` 提议，内核校验后才完成礼物反应。请求失败时保留 pending 礼物并允许重试，不静默丢失。
+- 多人相遇的自由环节显示收礼角色选择器；一件礼物一次只送给一位已锁定参与者，TopicTree 的主要角色与送礼目标可以不同。
 - `terminal` 话题是推进型选项，点击后结束场景；它不会绕过规则自动开放手动输入。
 - 告别状态由相遇日志的可选 `departure` 字段追踪：角色提出离开或玩家主动告别先进入 `pending`，随后由明确的 `stayed` / `left` 结果收束；不消耗行动点。
 - 手动模式的重新生成是用户主动触发的单次调用，可附带重新生成要求；第一版只替换/追加叙述文字，不回滚或重复应用原回复 ops。

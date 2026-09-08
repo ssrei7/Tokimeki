@@ -788,11 +788,11 @@ export function App() {
     setFeedback({ tone: 'info', text: '你主动结束了这次相遇。' });
   }
 
-  function offerGiftToCurrent(itemId: string): void {
-    if (!selectedCharacterId || !chatEncounterEntryId || busy) return;
+  function offerGiftToCurrent(itemId: string, targetId = selectedCharacterId): void {
+    if (!selectedCharacterId || !targetId || !chatEncounterEntryId || busy) return;
     const next = structuredClone(saveRef.current);
-    const applied = opRegistry.applyAll([{ op: 'offer_gift', target: selectedCharacterId, itemId }], {
-      world: next.world, actorId: selectedCharacterId, day: next.world.clock.day, slotId: next.world.clock.slotId, nodeId: next.world.player.nodeId,
+    const applied = opRegistry.applyAll([{ op: 'offer_gift', target: targetId, itemId }], {
+      world: next.world, actorId: targetId, day: next.world.clock.day, slotId: next.world.clock.slotId, nodeId: next.world.player.nodeId,
       calendar: next.config.calendar, actionCosts: next.config.actionCosts, encounterConfig: next.config.encounter, axisDefs: next.config.axisDefs, stageRules: next.config.stageRules, events: promptEvents, log: () => {},
     }, next.config.opsLimitPerTurn);
     if (!applied.applied) { setFeedback({ tone: 'error', text: applied.warnings[0] ?? applied.rejected[0]?.reason ?? '无法送出这件礼物。' }); return; }
@@ -801,23 +801,23 @@ export function App() {
     const gift = next.world.giftHistory.at(-1);
     if (!gift) return;
     const item = next.world.items[itemId];
-    const character = next.world.characters[selectedCharacterId];
-    const giftContext: GiftGenerationContext = { giftId: gift.id, itemId, itemName: item?.name ?? itemId, charId: selectedCharacterId, charName: character?.name ?? selectedCharacterId };
+    const character = next.world.characters[targetId];
+    const giftContext: GiftGenerationContext = { giftId: gift.id, itemId, itemName: item?.name ?? itemId, charId: targetId, charName: character?.name ?? targetId };
     const giftMessage: ChatMessage = { role: 'user', content: `（你送出了${item?.name ?? itemId}。）`, kind: 'dialogue', speakerId: 'player' };
     const nextMessages = [...messages, giftMessage];
     setMessages(nextMessages);
     void saveChat({ characterId: selectedCharacterId, messages: nextMessages, updatedAt: now() });
-    setFeedback({ tone: 'info', text: `你送出了${item?.name ?? itemId}，正在等待${character?.name ?? selectedCharacterId}的回应。` });
+    setFeedback({ tone: 'info', text: `你送出了${item?.name ?? itemId}，正在等待${character?.name ?? targetId}的回应。` });
     void generateReply(giftContext, nextMessages);
   }
 
   function retryPendingGift(giftId: string): void {
     if (busy || !selectedCharacterId) return;
-    const gift = saveRef.current.world.giftHistory.find((entry) => entry.id === giftId && entry.status === 'pending' && entry.charId === selectedCharacterId);
+    const gift = saveRef.current.world.giftHistory.find((entry) => entry.id === giftId && entry.status === 'pending' && chatParticipantIds.includes(entry.charId));
     if (!gift) { setFeedback({ tone: 'error', text: '这件礼物已经完成回应，或不再属于当前角色。' }); return; }
     const item = saveRef.current.world.items[gift.itemId];
-    const character = saveRef.current.world.characters[selectedCharacterId];
-    void generateReply({ giftId, itemId: gift.itemId, itemName: item?.name ?? gift.itemId, charId: selectedCharacterId, charName: character?.name ?? selectedCharacterId }, messages);
+    const character = saveRef.current.world.characters[gift.charId];
+    void generateReply({ giftId, itemId: gift.itemId, itemName: item?.name ?? gift.itemId, charId: gift.charId, charName: character?.name ?? gift.charId }, messages);
   }
 
   function updateChatParticipants(ids: string[]): void {
@@ -861,8 +861,10 @@ export function App() {
     const activePresetBundle = presetBundles.find((item) => item.id === selectedPresetBundleId);
     const participantIds = chatParticipantIds.length ? chatParticipantIds : [selectedCharacterId];
     const participants = participantIds.map((id) => characters.find((item) => item.id === id)).filter((character): character is CharacterCard => Boolean(character));
-    const relationshipState = activeCharacter ? deriveRelationshipPromptState(saveRef.current.world, activeCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
-    const promptFacts = { input: latestInput, character: activeCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, giftContext: giftContext ? { ...giftContext, description: saveRef.current.world.items[giftContext.itemId]?.description, tags: saveRef.current.world.items[giftContext.itemId]?.tags ?? [] } : undefined, worldbooks, history: next, world: saveRef.current.world };
+    const generationCharacterId = giftContext?.charId ?? selectedCharacterId;
+    const generationCharacter = characters.find((item) => item.id === generationCharacterId);
+    const relationshipState = generationCharacter ? deriveRelationshipPromptState(saveRef.current.world, generationCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
+    const promptFacts = { input: latestInput, character: generationCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, giftContext: giftContext ? { ...giftContext, description: saveRef.current.world.items[giftContext.itemId]?.description, tags: saveRef.current.world.items[giftContext.itemId]?.tags ?? [] } : undefined, worldbooks, history: next, world: saveRef.current.world };
     promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
     const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
     setDebug((current) => ({ ...current, prompt: assembled }));
@@ -878,7 +880,7 @@ export function App() {
       markResponseSource('manual');
       await saveChat({ characterId: selectedCharacterId, messages: completed, updatedAt: now() });
       const reply = await parseReply(finished.raw, extractOps);
-      applyReplyOps(reply, selectedCharacterId, giftContext?.giftId);
+      applyReplyOps(reply, generationCharacterId, giftContext?.giftId);
     } catch (error) {
       const message = errorMessage(error, '请求失败');
       const finished = splitter.finish();
@@ -891,7 +893,7 @@ export function App() {
         setMessages(next);
       }
       setRequestStatus('error'); setFeedback({ tone: 'error', text: message });
-      if (finished.raw) setPendingOps({ raw: finished.raw, actorId: selectedCharacterId, streamError: message });
+      if (finished.raw) setPendingOps({ raw: finished.raw, actorId: generationCharacterId, streamError: message });
       setDebug((current) => ({
         ...current,
         raw: finished.raw || message,
@@ -1360,7 +1362,7 @@ export function App() {
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftHistory={save.world.giftHistory.filter((entry) => entry.charId === selectedCharacterId).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} />}
+      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} />}
       {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} />}
     </main>
@@ -1750,8 +1752,9 @@ function ChatView(props: {
   onPlayerFarewell: () => void;
   onResolveDeparture: (outcome: 'stayed' | 'left') => void;
   giftItems: SaveFile['world']['items'][string][];
+  giftTargets: SaveFile['world']['characters'][string][];
   giftHistory: GiftHistoryEntry[];
-  onOfferGift: (itemId: string) => void;
+  onOfferGift: (itemId: string, targetId: string) => void;
   onRetryGift: (giftId: string) => void;
 }) {
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -1815,7 +1818,9 @@ function ChatView(props: {
   };
   const topicEntries = props.topicTree ? visibleTopics(props.topicTree, props.world, props.hiddenTopicStyle) : [];
   const [selectedGiftId, setSelectedGiftId] = useState('');
+  const [selectedGiftTargetId, setSelectedGiftTargetId] = useState(props.giftTargets[0]?.id ?? '');
   useEffect(() => { if (!props.giftItems.some((item) => item.id === selectedGiftId)) setSelectedGiftId(props.giftItems[0]?.id ?? ''); }, [props.giftItems, selectedGiftId]);
+  useEffect(() => { if (!props.giftTargets.some((character) => character.id === selectedGiftTargetId)) setSelectedGiftTargetId(props.giftTargets[0]?.id ?? ''); }, [props.giftTargets, selectedGiftTargetId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1917,7 +1922,7 @@ function ChatView(props: {
     </div>}
     {props.topicMode === 'ended' && <div className="topic-tree-panel"><p className="empty">本次面对面场景已经结束。</p></div>}
     {props.departure?.status === 'pending' && <div className="departure-panel" role="alert"><strong>{props.departure.kind === 'character_request' ? '对方似乎准备离开了。' : '你提出了告别。'}</strong>{props.departure.reason && <p>{props.departure.reason}</p>}<div className="button-row"><button onClick={() => props.onResolveDeparture('stayed')} disabled={props.busy}>挽留，继续聊聊</button><button className="secondary" onClick={() => props.onResolveDeparture('left')} disabled={props.busy}>就到这里吧</button></div></div>}
-    {props.canFarewell && props.topicMode === 'manual' && <div className="gift-panel" aria-label="送礼"><div className="list-heading"><strong>带来的礼物</strong><span className="io-scope">话题树结束后开放；角色反应通过一次普通对话生成</span></div>{props.giftItems.length ? <div className="gift-row"><select aria-label="选择礼物" value={selectedGiftId} onChange={(event) => setSelectedGiftId(event.target.value)}>{props.giftItems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="secondary" onClick={() => { if (selectedGiftId) props.onOfferGift(selectedGiftId); }} disabled={props.busy || !selectedGiftId}>送出</button></div> : <p className="empty">暂无可赠送物品。</p>}{props.giftHistory.length > 0 && <div className="gift-history"><strong>最近反应</strong>{props.giftHistory.map((entry) => <span key={entry.id}>第 {entry.day} 天 · {props.world.items[entry.itemId]?.name ?? entry.itemId}：{entry.status === 'pending' ? <><span>等待角色回应</span><button className="secondary" onClick={() => props.onRetryGift(entry.id)} disabled={props.busy}>重试回应</button></> : `${giftReactionLabel(entry.reaction)}${entry.accepted === false ? ' · 未接受' : ''}`}</span>)}</div>}</div>}
+    {props.canFarewell && props.topicMode === 'manual' && <div className="gift-panel" aria-label="送礼"><div className="list-heading"><strong>带来的礼物</strong><span className="io-scope">话题树结束后开放；角色反应通过一次普通对话生成</span></div>{props.giftItems.length ? <div className="gift-row">{props.giftTargets.length > 1 && <select aria-label="送给谁" value={selectedGiftTargetId} onChange={(event) => setSelectedGiftTargetId(event.target.value)}>{props.giftTargets.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}</select>}<select aria-label="选择礼物" value={selectedGiftId} onChange={(event) => setSelectedGiftId(event.target.value)}>{props.giftItems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="secondary" onClick={() => { if (selectedGiftId && selectedGiftTargetId) props.onOfferGift(selectedGiftId, selectedGiftTargetId); }} disabled={props.busy || !selectedGiftId || !selectedGiftTargetId}>送出</button></div> : <p className="empty">暂无可赠送物品。</p>}{props.giftHistory.length > 0 && <div className="gift-history"><strong>最近反应</strong>{props.giftHistory.map((entry) => <span key={entry.id}>第 {entry.day} 天 · {props.world.characters[entry.charId]?.name ?? entry.charId} · {props.world.items[entry.itemId]?.name ?? entry.itemId}：{entry.status === 'pending' ? <><span>等待角色回应</span><button className="secondary" onClick={() => props.onRetryGift(entry.id)} disabled={props.busy}>重试回应</button></> : `${giftReactionLabel(entry.reaction)}${entry.accepted === false ? ' · 未接受' : ''}`}</span>)}</div>}</div>}
     {props.topicMode === 'manual' && props.canRegenerate && latestRole === 'assistant' && <div className="regenerate-panel" aria-label="重新生成回复">
       <div className="list-heading"><strong>对这条回复不满意？</strong><span className="io-scope">只会替换叙述文字，不会重复应用状态变化</span></div>
       <textarea value={props.regenerateInput} onChange={(event) => props.setRegenerateInput(event.target.value)} placeholder="告诉角色换一种说法……" aria-label="重新生成要求" />
