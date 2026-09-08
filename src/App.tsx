@@ -866,7 +866,7 @@ export function App() {
     setMessages(nextMessages);
     void saveChat({ characterId: selectedCharacterId, messages: nextMessages, updatedAt: now() });
     setFeedback({ tone: 'info', text: `你出示了收藏《${entry.title}》，正在等待角色回应。` });
-    void generateReply(undefined, nextMessages);
+    void generateReply(undefined, nextMessages, true);
   }
 
   function updateChatParticipants(ids: string[]): void {
@@ -887,7 +887,7 @@ export function App() {
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
   }
 
-  async function generateReply(giftContext?: GiftGenerationContext, providedMessages?: ChatMessage[]) {
+  async function generateReply(giftContext?: GiftGenerationContext, providedMessages?: ChatMessage[], suppressItemGains = false) {
     if (busy) return;
     if (!selectedCharacterId) { setFeedback({ tone: 'error', text: '请先选择聊天角色。' }); return; }
     const text = input.trim();
@@ -929,7 +929,11 @@ export function App() {
       markResponseSource('manual');
       await saveChat({ characterId: selectedCharacterId, messages: completed, updatedAt: now() });
       const reply = await parseReply(finished.raw, extractOps);
-      applyReplyOps(reply, generationCharacterId, giftContext?.giftId);
+      const itemGainOps = reply.ops.filter((op) => Boolean(op && typeof op === 'object' && (op as { op?: unknown }).op === 'give_item'));
+      const safeReply = suppressItemGains
+        ? { ...reply, ops: reply.ops.filter((op) => !itemGainOps.includes(op)), warnings: [...reply.warnings, ...(itemGainOps.length ? ['出示收藏的回应中检测到 give_item，已忽略以避免把出示误记为再次获得物品。'] : [])] }
+        : reply;
+      applyReplyOps(safeReply, generationCharacterId, giftContext?.giftId);
     } catch (error) {
       const message = errorMessage(error, '请求失败');
       const finished = splitter.finish();
@@ -953,7 +957,7 @@ export function App() {
 
   async function regenerateReply(): Promise<void> {
     const requirement = regenerateInput.trim();
-    if (busy || topicMode !== 'manual' || lastResponseSource === 'topic' || !requirement || !selectedCharacterId) return;
+    if (busy || topicMode !== 'manual' || lastResponseSource === 'topic' || !selectedCharacterId) return;
     const latestAssistantIndex = [...messages].map((message, index) => message.role === 'assistant' ? index : -1).filter((index) => index >= 0).at(-1) ?? -1;
     if (latestAssistantIndex < 0) return;
     const originalMessages = messages;
@@ -1823,6 +1827,8 @@ function ChatView(props: {
   const [showOlderMessages, setShowOlderMessages] = useState(false);
   const [showRegeneratePanel, setShowRegeneratePanel] = useState(false);
   const [selectedCollectionId, setSelectedCollectionId] = useState('');
+  const [showGiftPanel, setShowGiftPanel] = useState(false);
+  const [showCollectionPanel, setShowCollectionPanel] = useState(false);
   const [revealedLineCount, setRevealedLineCount] = useState(1);
   const [revealedAssistantKey, setRevealedAssistantKey] = useState('');
   const [dialogueBoxHeight, setDialogueBoxHeight] = useState(() => {
@@ -1987,14 +1993,13 @@ function ChatView(props: {
     {props.topicMode === 'manual' && props.topicRetryAvailable && <div className="topic-retry-panel" aria-label="重试话题树"><span>话题树生成失败，但手动对话仍可继续。</span><button className="secondary" onClick={props.onRetryTopicTree} disabled={props.busy || props.topicLoading}>重试生成话题树</button></div>}
     {props.topicMode === 'ended' && <div className="topic-tree-panel"><p className="empty">本次面对面场景已经结束。</p></div>}
     {props.departure?.status === 'pending' && <div className="departure-panel" role="alert"><strong>{props.departure.kind === 'character_request' ? '对方似乎准备离开了。' : '你提出了告别。'}</strong>{props.departure.reason && <p>{props.departure.reason}</p>}<div className="button-row"><button onClick={() => props.onResolveDeparture('stayed')} disabled={props.busy}>挽留，继续聊聊</button><button className="secondary" onClick={() => props.onResolveDeparture('left')} disabled={props.busy}>就到这里吧</button></div></div>}
-    {props.canFarewell && props.topicMode === 'manual' && <div className="gift-panel" aria-label="送礼"><div className="list-heading"><strong>带来的礼物</strong><span className="io-scope">话题树结束后开放；角色反应通过一次普通对话生成</span></div>{props.giftItems.length ? <div className="gift-row">{props.giftTargets.length > 1 && <select aria-label="送给谁" value={selectedGiftTargetId} onChange={(event) => setSelectedGiftTargetId(event.target.value)}>{props.giftTargets.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}</select>}<select aria-label="选择礼物" value={selectedGiftId} onChange={(event) => setSelectedGiftId(event.target.value)}>{props.giftItems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="secondary" onClick={() => { if (selectedGiftId && selectedGiftTargetId) props.onOfferGift(selectedGiftId, selectedGiftTargetId); }} disabled={props.busy || !selectedGiftId || !selectedGiftTargetId}>送出</button></div> : <p className="empty">暂无可赠送物品。</p>}{props.giftHistory.length > 0 && <div className="gift-history"><strong>最近反应</strong>{props.giftHistory.map((entry) => <span key={entry.id}>第 {entry.day} 天 · {props.world.characters[entry.charId]?.name ?? entry.charId} · {props.world.items[entry.itemId]?.name ?? entry.itemId}：{entry.status === 'pending' ? <><span>等待角色回应</span><button className="secondary" onClick={() => props.onRetryGift(entry.id)} disabled={props.busy}>重试回应</button></> : `${giftReactionLabel(entry.reaction)}${entry.accepted === false ? ' · 未接受' : ''}`}</span>)}</div>}</div>}
-    {props.canFarewell && props.topicMode === 'manual' && <div className="collection-show-panel" aria-label="出示收藏"><div className="list-heading"><strong>出示收藏</strong><span className="io-scope">只发送一次普通对话请求，不改变收藏或世界事实</span></div>{props.collectionEntries.length ? <div className="gift-row"><select aria-label="选择收藏" value={selectedCollectionId} onChange={(event) => setSelectedCollectionId(event.target.value)}><option value="">选择一条收藏</option>{props.collectionEntries.map((entry) => <option key={entry.id} value={entry.id}>{entry.title}</option>)}</select><button className="secondary" onClick={() => { if (selectedCollectionId) props.onShowCollection(selectedCollectionId); }} disabled={props.busy || !selectedCollectionId}>出示</button></div> : <p className="empty">暂无可出示的收藏。</p>}</div>}
+    {props.canFarewell && props.topicMode === 'manual' && <div className="interaction-tools" aria-label="自由互动工具"><button type="button" className="interaction-icon" aria-label="打开送礼" title="送礼" onClick={() => setShowGiftPanel((value) => !value)}>🎁</button><button type="button" className="interaction-icon" aria-label="打开收藏" title="出示收藏" onClick={() => setShowCollectionPanel((value) => !value)}>🗂️</button>{showGiftPanel && <div className="interaction-popover gift-panel" aria-label="送礼"><div className="list-heading"><strong>带来的礼物</strong><button className="secondary" onClick={() => setShowGiftPanel(false)}>收起</button></div>{props.giftItems.length ? <div className="gift-row">{props.giftTargets.length > 1 && <select aria-label="送给谁" value={selectedGiftTargetId} onChange={(event) => setSelectedGiftTargetId(event.target.value)}>{props.giftTargets.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}</select>}<select aria-label="选择礼物" value={selectedGiftId} onChange={(event) => setSelectedGiftId(event.target.value)}>{props.giftItems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="secondary" onClick={() => { if (selectedGiftId && selectedGiftTargetId) { props.onOfferGift(selectedGiftId, selectedGiftTargetId); setShowGiftPanel(false); } }} disabled={props.busy || !selectedGiftId || !selectedGiftTargetId}>送出</button></div> : <p className="empty">暂无可赠送物品。</p>}{props.giftHistory.length > 0 && <div className="gift-history"><strong>最近反应</strong>{props.giftHistory.map((entry) => <span key={entry.id}>第 {entry.day} 天 · {props.world.characters[entry.charId]?.name ?? entry.charId} · {props.world.items[entry.itemId]?.name ?? entry.itemId}：{entry.status === 'pending' ? <><span>等待角色回应</span><button className="secondary" onClick={() => props.onRetryGift(entry.id)} disabled={props.busy}>重试回应</button></> : `${giftReactionLabel(entry.reaction)}${entry.accepted === false ? ' · 未接受' : ''}`}</span>)}</div>}</div>}{showCollectionPanel && <div className="interaction-popover collection-show-panel" aria-label="出示收藏"><div className="list-heading"><strong>出示收藏</strong><button className="secondary" onClick={() => setShowCollectionPanel(false)}>收起</button></div>{props.collectionEntries.length ? <div className="gift-row"><select aria-label="选择收藏" value={selectedCollectionId} onChange={(event) => setSelectedCollectionId(event.target.value)}><option value="">选择一条收藏</option>{props.collectionEntries.map((entry) => <option key={entry.id} value={entry.id}>{entry.title}</option>)}</select><button className="secondary" onClick={() => { if (selectedCollectionId) { props.onShowCollection(selectedCollectionId); setShowCollectionPanel(false); } }} disabled={props.busy || !selectedCollectionId}>出示</button></div> : <p className="empty">暂无可出示的收藏。</p>}</div>}</div>}
     {props.topicMode === 'manual' && props.canRegenerate && latestRole === 'assistant' && !showRegeneratePanel && <button className="secondary regenerate-toggle" onClick={() => setShowRegeneratePanel(true)}>重新生成回复</button>}
     {props.topicMode === 'manual' && props.canRegenerate && latestRole === 'assistant' && showRegeneratePanel && <div className="regenerate-panel" aria-label="重新生成回复">
       <div className="list-heading"><strong>对这条回复不满意？</strong><button className="secondary" onClick={() => setShowRegeneratePanel(false)}>收起</button></div>
       <span className="io-scope">只会替换叙述文字，不会重复应用状态变化</span>
       <textarea value={props.regenerateInput} onChange={(event) => props.setRegenerateInput(event.target.value)} placeholder="告诉角色换一种说法……" aria-label="重新生成要求" />
-      <button className="secondary" onClick={() => void props.onRegenerate()} disabled={props.busy || !props.regenerateInput.trim()}>按要求重新生成</button>
+      <button className="secondary" onClick={() => void props.onRegenerate()} disabled={props.busy}>重新生成</button>
     </div>}
     {props.pendingOps && <div className="ops-recovery" role="alert">
       <strong>本回合未产生状态变更</strong>
