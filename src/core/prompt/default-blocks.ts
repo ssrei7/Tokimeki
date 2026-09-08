@@ -6,6 +6,7 @@ import { buildRelationshipStatePrompt, type RelationshipPromptState } from '../r
 export const DEFAULT_PROMPT_BLOCK_IDS = [
   'preset_bundle', 'format_contract', 'encounter_participants', 'character_core', 'relationship_state', 'scene_now', 'node_worldbook', 'node_memory',
   'char_memory', 'recent_diary', 'milestones', 'worldbook_keyword', 'chapter_summary', 'raw_history', 'regeneration_request',
+  'gift_context',
 ] as const;
 
 export interface DefaultPromptFacts extends PromptFacts {
@@ -18,6 +19,15 @@ export interface DefaultPromptFacts extends PromptFacts {
   playerPersona?: Persona;
   regenerationRequest?: string;
   relationshipState?: RelationshipPromptState;
+  giftContext?: {
+    giftId: string;
+    charId: string;
+    charName: string;
+    itemId: string;
+    itemName: string;
+    description?: string;
+    tags: string[];
+  };
   world: SaveFile['world'];
 }
 
@@ -102,6 +112,11 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
       const request = factsOf(facts).regenerationRequest?.trim();
       if (!request) return null;
       return `[重生成上一条角色回复]\n用户要求：${request}\n请只输出替代上一条回复的自然语言正文。不要输出或提议任何 <ops> 状态操作。`;
+    } },
+    { id: 'gift_context', role: 'system', priority: 89, order: 15, tasks: ['narrate_main'], build: (facts) => {
+      const gift = factsOf(facts).giftContext;
+      if (!gift) return null;
+      return `[送礼回应上下文]\n玩家刚刚将「${gift.itemName}」送给${gift.charName}（礼物 id：${gift.giftId}）。礼物描述：${gift.description ?? '无'}。标签：${gift.tags.length ? gift.tags.join('、') : '无'}。\n请像普通面对面聊天一样先输出${gift.charName}自然、具体的反应。然后必须提出一个仅针对该 giftId 的 resolve_gift op，reaction 只能是 special、liked、disliked、neutral 四者之一。不要输出 offer_gift，不要重复送礼，不要声称库存、关系数值、时间或其他状态已经改变；除 resolve_gift 外不要提出任何状态操作。`;
     } },
   ];
 }

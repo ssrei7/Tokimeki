@@ -137,4 +137,11 @@ describe('save migrations', () => {
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.giftHistory).toEqual([]);
   });
+
+  it('migrates v11 gift history entries to resolved status', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v11-gifts', title: 'v11 gifts' }));
+    const migrated = migrateSave({ ...source, schemaVersion: 11, world: { ...source.world, giftHistory: [{ id: 'gift-1', day: 1, slotId: 'morning', nodeId: 'start', charId: 'seir', itemId: 'flower', reaction: 'liked', accepted: true, score: 1, specialItem: false, matchedLikeTags: ['flower'], matchedDislikeTags: [] }] } });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.giftHistory[0]).toMatchObject({ status: 'resolved', reaction: 'liked', accepted: true });
+  });
 });

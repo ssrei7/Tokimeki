@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 11;
+export const CURRENT_SCHEMA_VERSION = 12;
 
 const IdSchema = z.string().min(1);
 
@@ -197,8 +197,9 @@ export const GiftHistoryEntrySchema = z.object({
   nodeId: IdSchema,
   charId: IdSchema,
   itemId: IdSchema,
-  reaction: z.enum(['special', 'liked', 'disliked', 'neutral']),
-  accepted: z.boolean(),
+  status: z.enum(['pending', 'resolved']),
+  reaction: z.enum(['special', 'liked', 'disliked', 'neutral']).optional(),
+  accepted: z.boolean().optional(),
   score: z.number().finite(),
   specialItem: z.boolean(),
   matchedLikeTags: z.array(z.string()),
@@ -396,6 +397,7 @@ export const WorldV9Schema = WorldV5Schema.extend({
 
 export const WorldV10Schema = WorldV9Schema;
 export const WorldV11Schema = WorldV10Schema.extend({ giftHistory: z.array(GiftHistoryEntrySchema).default([]) });
+export const WorldV12Schema = WorldV11Schema;
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -431,12 +433,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV11Schema,
+  world: WorldV12Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV11Schema>;
+export type WorldState = z.infer<typeof WorldV12Schema>;
 export type WorldV5State = z.infer<typeof WorldV5Schema>;
 export type Topic = z.infer<typeof TopicSchema>;
 export type TopicTree = z.infer<typeof TopicTreeSchema>;

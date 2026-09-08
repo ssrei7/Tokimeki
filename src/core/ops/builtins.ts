@@ -29,6 +29,7 @@ const AdjustRelationAxisSchema = z.object({ op: z.literal('adjust_relation_axis'
 const AddKnotSchema = z.object({ op: z.literal('add_knot'), target: z.string().min(1), id: z.string().min(1), text: z.string().min(1).max(300), resolveCondition: z.string().min(1).optional() });
 const ResolveKnotSchema = z.object({ op: z.literal('resolve_knot'), target: z.string().min(1), id: z.string().min(1) });
 const OfferGiftSchema = z.object({ op: z.literal('offer_gift'), target: z.string().min(1), itemId: z.string().min(1) });
+const ResolveGiftSchema = z.object({ op: z.literal('resolve_gift'), giftId: z.string().min(1), reaction: z.enum(['special', 'liked', 'disliked', 'neutral']) });
 const MakeAppointmentSchema = z.object({ op: z.literal('make_appointment'), id: z.string().min(1), charId: z.string().min(1), day: z.number().int().positive(), slotId: z.string().min(1), nodeId: z.string().min(1), note: z.string().min(1).max(200).optional() });
 const ProposeDepartureSchema = z.object({ op: z.literal('propose_departure'), entryId: z.string().min(1), kind: z.enum(['player_farewell', 'character_request']), speakerId: z.string().min(1).optional(), reason: z.string().min(1).max(300).optional() });
 const ResolveDepartureSchema = z.object({ op: z.literal('resolve_departure'), entryId: z.string().min(1), outcome: z.enum(['stayed', 'left']) });
@@ -174,9 +175,15 @@ export function registerBuiltInOps(registry: OpRegistry): void {
   });
   registry.register({
     op: 'offer_gift', schema: OfferGiftSchema, clamp: {},
-    promptDoc: 'offer_gift: {"op":"offer_gift","target":"current-character-id","itemId":"owned-giftable-item-id"}; the core evaluates tags, specialItems, current stage and mood context before consuming one item.',
+    promptDoc: 'offer_gift: {"op":"offer_gift","target":"current-character-id","itemId":"owned-giftable-item-id"}; consumes one owned gift and creates a pending gift reaction for the current character.',
     describe: (payload) => `offer gift ${payload.itemId} to ${payload.target}`,
     apply: (payload, context) => offerGift(payload, context),
+  });
+  registry.register({
+    op: 'resolve_gift', schema: ResolveGiftSchema, clamp: {},
+    promptDoc: 'resolve_gift: {"op":"resolve_gift","giftId":"pending-gift-id","reaction":"special|liked|disliked|neutral"}; confirms the current character\'s reaction to one pending gift. Do not use this for other state changes.',
+    describe: (payload) => `resolve gift ${payload.giftId} as ${payload.reaction}`,
+    apply: (payload, context) => resolveGift(payload, context),
   });
   registry.register({
     op: 'make_appointment', schema: MakeAppointmentSchema, clamp: {},
@@ -360,17 +367,29 @@ function offerGift(payload: z.infer<typeof OfferGiftSchema>, context: OpContext)
     nodeId: context.nodeId,
     charId: payload.target,
     itemId: payload.itemId,
-    reaction: evaluation.reaction,
-    accepted: evaluation.reaction !== 'disliked',
+    status: 'pending',
     score: evaluation.score,
     specialItem: evaluation.specialItem,
     matchedLikeTags: evaluation.matchedLikeTags,
     matchedDislikeTags: evaluation.matchedDislikeTags,
   });
   return { ok: true, changes: [
-    ...changed(`player.inventory.${payload.itemId}`, before, before - 1, `Gift to ${character.name}: ${evaluation.reaction}.`).changes,
-    ...changed('world.giftHistory', historyBefore, context.world.giftHistory.length, `Recorded gift reaction for ${character.name}.`).changes,
+    ...changed(`player.inventory.${payload.itemId}`, before, before - 1, `Gift to ${character.name}; awaiting reaction.`).changes,
+    ...changed('world.giftHistory', historyBefore, context.world.giftHistory.length, `Recorded pending gift for ${character.name}.`).changes,
   ] };
+}
+
+function resolveGift(payload: z.infer<typeof ResolveGiftSchema>, context: OpContext): OpResult {
+  if (!context.actorId) return rejected('Gift reaction requires a current actor.');
+  const entry = context.world.giftHistory.find((candidate) => candidate.id === payload.giftId);
+  if (!entry) return rejected(`Unknown gift: ${payload.giftId}.`);
+  if (entry.status !== 'pending') return rejected(`Gift ${payload.giftId} is already resolved.`);
+  if (entry.charId !== context.actorId) return rejected('Gift reaction must target the current actor.');
+  const before = structuredClone(entry);
+  entry.status = 'resolved';
+  entry.reaction = payload.reaction;
+  entry.accepted = payload.reaction !== 'disliked';
+  return changed(`world.giftHistory.${entry.id}`, before, structuredClone(entry), `Recorded ${payload.reaction} reaction for ${entry.charId}.`);
 }
 
 function itemCount(world: WorldState, itemId: string): number {

@@ -132,7 +132,7 @@ describe('op registry and built-ins', () => {
     expect(state.world.relations.seir.knots).toEqual([]);
   });
 
-  it('evaluates and consumes gifts deterministically without AI-provided outcomes', () => {
+  it('creates a pending gift and resolves it only through an explicit reaction op', () => {
     const state = setup();
     state.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '测试角色', personality: '安静' }, visuals: { portraits: [] }, schedule: { grid: {}, overrides: {} } };
     state.world.relations.seir = { axes: {}, knots: [], memories: [] };
@@ -145,17 +145,35 @@ describe('op registry and built-ins', () => {
     expect(applied.applied).toBe(1);
     expect(state.world.player.inventory.some((entry) => entry.itemId === 'flower-item')).toBe(false);
     expect(state.world.giftHistory).toHaveLength(1);
-    expect(state.world.giftHistory[0]).toMatchObject({ charId: 'seir', itemId: 'flower-item', reaction: 'special', accepted: true, specialItem: true, day: 3, slotId: 'evening', nodeId: 'docks' });
+    expect(state.world.giftHistory[0]).toMatchObject({ charId: 'seir', itemId: 'flower-item', status: 'pending', specialItem: true, day: 3, slotId: 'evening', nodeId: 'docks' });
+    const resolved = state.registry.applyAll([{ op: 'resolve_gift', giftId: state.world.giftHistory[0].id, reaction: 'special' }], state.context, 12);
+    expect(resolved.applied).toBe(1);
+    expect(state.world.giftHistory[0]).toMatchObject({ status: 'resolved', reaction: 'special', accepted: true });
   });
 
-  it('records a deterministic refusal for a disliked gift', () => {
+  it('allows the model reaction to record a refusal for a disliked gift', () => {
     const state = setup();
     state.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '测试角色', personality: '安静' }, visuals: { portraits: [] }, schedule: { grid: {}, overrides: {} }, giftPrefs: { likeTags: [], dislikeTags: ['metal'], specialItems: {} } };
     state.world.items.metal = { id: 'metal', name: '金属摆件', tags: ['metal'], giftable: true };
     state.world.player.inventory.push({ itemId: 'metal', count: 1, gotDay: 3 });
     const applied = state.registry.applyAll([{ op: 'offer_gift', target: 'seir', itemId: 'metal' }], state.context, 12);
     expect(applied.applied).toBe(1);
-    expect(state.world.giftHistory[0]).toMatchObject({ reaction: 'disliked', accepted: false });
+    const giftId = state.world.giftHistory[0].id;
+    expect(state.registry.applyAll([{ op: 'resolve_gift', giftId, reaction: 'disliked' }], state.context, 12).applied).toBe(1);
+    expect(state.world.giftHistory[0]).toMatchObject({ status: 'resolved', reaction: 'disliked', accepted: false });
+  });
+
+  it('rejects gift reactions for unknown, resolved, or other-character gifts', () => {
+    const state = setup();
+    state.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '测试角色', personality: '安静' }, visuals: { portraits: [] }, schedule: { grid: {}, overrides: {} } };
+    state.world.items.flower = { id: 'flower', name: '花', tags: ['flower'], giftable: true };
+    state.world.player.inventory.push({ itemId: 'flower', count: 1, gotDay: 3 });
+    state.registry.applyAll([{ op: 'offer_gift', target: 'seir', itemId: 'flower' }], state.context, 12);
+    const giftId = state.world.giftHistory[0].id;
+    expect(state.registry.applyAll([{ op: 'resolve_gift', giftId: 'missing', reaction: 'liked' }], state.context, 12).rejected).toHaveLength(1);
+    expect(state.registry.applyAll([{ op: 'resolve_gift', giftId, reaction: 'liked' }], { ...state.context, actorId: 'other' }, 12).rejected).toHaveLength(1);
+    expect(state.registry.applyAll([{ op: 'resolve_gift', giftId, reaction: 'liked' }], state.context, 12).applied).toBe(1);
+    expect(state.registry.applyAll([{ op: 'resolve_gift', giftId, reaction: 'liked' }], state.context, 12).rejected).toHaveLength(1);
   });
 
   it('records current-node memories, validates participants, and keeps five entries', () => {

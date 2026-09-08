@@ -309,7 +309,7 @@
 - 多轴关系 `AxisDef` + `StageRule` + 阶段标签派生
 - `mood`（词 + 衰减天数）+ `situation` + `lastSeenDay` → "已 N 天未见"
 - `Knot` 心结，不处理则持续存在
-- 礼物：tag 匹配 + `specialItems` + 阶段 + mood，代码算结果，AI 只写反应；每次赠送写入 `giftHistory`，资料页可回看最近反应
+- 礼物：自由环节送出后复用普通 `narrate_main` 单次调用，由模型提出角色反应与 `resolve_gift` ops；内核校验并写入 `giftHistory`，送礼事实、库存和 pending 状态仍由代码持有
 - 收藏条目：根据实际获得来源生成标题、描述、tags 和时间地点；用户可编辑展示文字并纠错，收藏条目可在互动中出示
 - 拒绝判定：忙 / 心情差 / 阶段不到位则互动失败
 - `Appointment` 四元组 + 守约 / 迟到 / 失约（`onDaySettle` 判定）
@@ -334,12 +334,13 @@
 13. 手动对话的最新回复可填写要求并重新生成；重新生成不重复应用原回复的状态 ops，TopicTree 固定回应不受影响
 14. 相遇中先选择 1–3 位正式角色；未选角色不进入本次 TopicTree，进入聊天后不能切换参与者
 
-**schema**：v11 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `world.giftHistory` / `relations` 全字段 / `characters[].giftPrefs` / `encounterLog[].departure`；v8 → v9 自动补齐关系状态字段，v9 → v10 为相遇日志补充可选告别状态，v10 → v11 补齐礼物结果历史，均保留旧字段
+**schema**：v12 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `world.giftHistory` / `relations` 全字段 / `characters[].giftPrefs` / `encounterLog[].departure`；v10 → v11 补齐礼物结果历史，v11 → v12 将礼物结果扩展为 pending/resolved，均保留旧字段
 
 **交互与记忆备忘（2026-09-07）**
 
 - 面对面场景先处于话题树模式，输入框隐藏；只有树自然耗尽且没有待解锁话题时才进入手动输入模式。
 - 送礼入口只在话题树自然结束、进入自由对话后显示；话题树固定内容不被送礼操作打断。
+- 送礼点击后只触发一次普通叙述调用；模型返回正文和 `resolve_gift` 提议，内核校验后才完成礼物反应。请求失败时保留 pending 礼物并允许重试，不静默丢失。
 - `terminal` 话题是推进型选项，点击后结束场景；它不会绕过规则自动开放手动输入。
 - 告别状态由相遇日志的可选 `departure` 字段追踪：角色提出离开或玩家主动告别先进入 `pending`，随后由明确的 `stayed` / `left` 结果收束；不消耗行动点。
 - 手动模式的重新生成是用户主动触发的单次调用，可附带重新生成要求；第一版只替换/追加叙述文字，不回滚或重复应用原回复 ops。

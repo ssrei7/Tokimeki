@@ -8,6 +8,7 @@ export const MOCK_FIXTURE_IDS = [
   'clamp-exceeded',
   'empty-ops',
   'interrupted-stream',
+  'gift-reaction',
 ] as const;
 
 export type MockFixtureId = typeof MOCK_FIXTURE_IDS[number];
@@ -55,6 +56,10 @@ function repliesForTask(taskId: TaskId): Record<MockFixtureId, MockFixture> {
       chunks: [`${prefix} 流式正文已经开始`, '，但连接在结束前中断。'],
       errorAfterChunks: `Mock stream interrupted for ${taskId}`,
     },
+    'gift-reaction': {
+      id: 'gift-reaction',
+      chunks: [`${prefix} [说话人:塞伊尔] 谢谢你送来的礼物，我会好好珍惜。\n<ops>\n[{"op":"resolve_gift","giftId":"gift-placeholder","reaction":"liked"}]\n</ops>`],
+    },
   };
 }
 
@@ -76,6 +81,7 @@ function topicTreeFixtures(): Record<MockFixtureId, MockFixture> {
     'clamp-exceeded': { id: 'clamp-exceeded', chunks: [JSON.stringify(tree)] },
     'empty-ops': { id: 'empty-ops', chunks: [JSON.stringify(tree)] },
     'interrupted-stream': { id: 'interrupted-stream', chunks: ['{"charId":"seir","topics":'], errorAfterChunks: 'Mock topic tree interrupted' },
+    'gift-reaction': { id: 'gift-reaction', chunks: [JSON.stringify(tree)] },
   };
 }
 

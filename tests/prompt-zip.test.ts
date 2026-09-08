@@ -42,7 +42,7 @@ describe('prompt assembler', () => {
     for (const block of createDefaultPromptBlocks()) assembler.register(block);
     expect(assembler.listBlocks().map((block) => block.id)).toEqual([...DEFAULT_PROMPT_BLOCK_IDS]);
     const result = assembler.assemble({ input: '', worldbooks: [], history: [], world: undefined }, { budget: 200, task: 'narrate_main' });
-    expect(result.blocks).toHaveLength(15);
+    expect(result.blocks).toHaveLength(16);
     expect(result.blocks.find((block) => block.id === 'relationship_state')?.skipped).toBe(true);
     expect(result.messages.some((message) => message.content.includes('开放世界叙事游戏'))).toBe(true);
   });
@@ -53,6 +53,16 @@ describe('prompt assembler', () => {
     const result = assembler.assemble({ input: '上一句', worldbooks: [], history: [{ role: 'assistant', content: '原回复' }], regenerationRequest: '更温柔一些，并缩短为两句。', world: undefined }, { budget: 500, task: 'narrate_main' });
     expect(result.messages.at(-1)).toEqual({ role: 'user', content: '[重生成上一条角色回复]\n用户要求：更温柔一些，并缩短为两句。\n请只输出替代上一条回复的自然语言正文。不要输出或提议任何 <ops> 状态操作。' });
     expect(result.blocks.find((block) => block.id === 'regeneration_request')?.skipped).toBe(false);
+  });
+
+  it('adds gift context only for a gift reaction request', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks('- resolve_gift: confirm gift reaction')) assembler.register(block);
+    const result = assembler.assemble({ input: '（你送出了白色小花。）', worldbooks: [], history: [], world: undefined, giftContext: { giftId: 'gift-3-1', charId: 'seir', charName: '塞伊尔', itemId: 'white-flower', itemName: '白色小花', tags: ['flower'] } }, { budget: 4096, task: 'narrate_main' });
+    const gift = result.blocks.find((block) => block.id === 'gift_context');
+    expect(gift?.text).toContain('gift-3-1');
+    expect(gift?.text).toContain('resolve_gift');
+    expect(gift?.text).toContain('不要输出 offer_gift');
   });
 
   it('injects deterministic relationship labels without exposing axes by default', () => {

@@ -10,6 +10,7 @@ import { migrateV7ToV8 } from './v7-to-v8';
 import { migrateV8ToV9 } from './v8-to-v9';
 import { migrateV9ToV10 } from './v9-to-v10';
 import { migrateV10ToV11 } from './v10-to-v11';
+import { migrateV11ToV12 } from './v11-to-v12';
 import { MigrationError, UnsupportedSchemaVersionError, type Migration } from './types';
 
 export const migrations: Record<number, Migration> = {
@@ -24,6 +25,7 @@ export const migrations: Record<number, Migration> = {
   9: migrateV8ToV9,
   10: migrateV9ToV10,
   11: migrateV10ToV11,
+  12: migrateV11ToV12,
 };
 
 export function migrateSave(input: unknown): SaveFile {
