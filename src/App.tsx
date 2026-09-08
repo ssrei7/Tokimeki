@@ -1761,6 +1761,7 @@ function ChatView(props: {
   const followLatestRef = useRef(true);
   const previousCharacterIdRef = useRef(props.selectedCharacterId);
   const [showOlderMessages, setShowOlderMessages] = useState(false);
+  const [showRegeneratePanel, setShowRegeneratePanel] = useState(false);
   const [revealedLineCount, setRevealedLineCount] = useState(1);
   const [revealedAssistantKey, setRevealedAssistantKey] = useState('');
   const [dialogueBoxHeight, setDialogueBoxHeight] = useState(() => {
@@ -1887,6 +1888,8 @@ function ChatView(props: {
     }
   }, [latestAssistantKey, latestRole, props.busy]);
 
+  useEffect(() => { setShowRegeneratePanel(false); }, [latestAssistantKey]);
+
   useEffect(() => {
     try { window.localStorage.setItem('tokimeki.dialogueBoxHeight', String(dialogueBoxHeight)); }
     catch { /* The current browser may block local UI preferences. */ }
@@ -1923,8 +1926,10 @@ function ChatView(props: {
     {props.topicMode === 'ended' && <div className="topic-tree-panel"><p className="empty">本次面对面场景已经结束。</p></div>}
     {props.departure?.status === 'pending' && <div className="departure-panel" role="alert"><strong>{props.departure.kind === 'character_request' ? '对方似乎准备离开了。' : '你提出了告别。'}</strong>{props.departure.reason && <p>{props.departure.reason}</p>}<div className="button-row"><button onClick={() => props.onResolveDeparture('stayed')} disabled={props.busy}>挽留，继续聊聊</button><button className="secondary" onClick={() => props.onResolveDeparture('left')} disabled={props.busy}>就到这里吧</button></div></div>}
     {props.canFarewell && props.topicMode === 'manual' && <div className="gift-panel" aria-label="送礼"><div className="list-heading"><strong>带来的礼物</strong><span className="io-scope">话题树结束后开放；角色反应通过一次普通对话生成</span></div>{props.giftItems.length ? <div className="gift-row">{props.giftTargets.length > 1 && <select aria-label="送给谁" value={selectedGiftTargetId} onChange={(event) => setSelectedGiftTargetId(event.target.value)}>{props.giftTargets.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}</select>}<select aria-label="选择礼物" value={selectedGiftId} onChange={(event) => setSelectedGiftId(event.target.value)}>{props.giftItems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="secondary" onClick={() => { if (selectedGiftId && selectedGiftTargetId) props.onOfferGift(selectedGiftId, selectedGiftTargetId); }} disabled={props.busy || !selectedGiftId || !selectedGiftTargetId}>送出</button></div> : <p className="empty">暂无可赠送物品。</p>}{props.giftHistory.length > 0 && <div className="gift-history"><strong>最近反应</strong>{props.giftHistory.map((entry) => <span key={entry.id}>第 {entry.day} 天 · {props.world.characters[entry.charId]?.name ?? entry.charId} · {props.world.items[entry.itemId]?.name ?? entry.itemId}：{entry.status === 'pending' ? <><span>等待角色回应</span><button className="secondary" onClick={() => props.onRetryGift(entry.id)} disabled={props.busy}>重试回应</button></> : `${giftReactionLabel(entry.reaction)}${entry.accepted === false ? ' · 未接受' : ''}`}</span>)}</div>}</div>}
-    {props.topicMode === 'manual' && props.canRegenerate && latestRole === 'assistant' && <div className="regenerate-panel" aria-label="重新生成回复">
-      <div className="list-heading"><strong>对这条回复不满意？</strong><span className="io-scope">只会替换叙述文字，不会重复应用状态变化</span></div>
+    {props.topicMode === 'manual' && props.canRegenerate && latestRole === 'assistant' && !showRegeneratePanel && <button className="secondary regenerate-toggle" onClick={() => setShowRegeneratePanel(true)}>重新生成回复</button>}
+    {props.topicMode === 'manual' && props.canRegenerate && latestRole === 'assistant' && showRegeneratePanel && <div className="regenerate-panel" aria-label="重新生成回复">
+      <div className="list-heading"><strong>对这条回复不满意？</strong><button className="secondary" onClick={() => setShowRegeneratePanel(false)}>收起</button></div>
+      <span className="io-scope">只会替换叙述文字，不会重复应用状态变化</span>
       <textarea value={props.regenerateInput} onChange={(event) => props.setRegenerateInput(event.target.value)} placeholder="告诉角色换一种说法……" aria-label="重新生成要求" />
       <button className="secondary" onClick={() => void props.onRegenerate()} disabled={props.busy || !props.regenerateInput.trim()}>按要求重新生成</button>
     </div>}
