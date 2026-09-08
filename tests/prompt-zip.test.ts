@@ -155,6 +155,29 @@ describe('prompt assembler', () => {
     expect(result.blocks.find((block) => block.id === 'recent_diary')?.text).toContain('用户编辑后的日记');
   });
 
+  it('injects only the current participants’ recent relationship memories', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks()) assembler.register(block);
+    const memories = Array.from({ length: 6 }, (_, index) => ({ id: `m-${index}`, text: `记忆 ${index}`, day: index + 1, nodeId: 'start' }));
+    const result = assembler.assemble({
+      input: '', worldbooks: [], history: [],
+      participants: [
+        { id: 'rin', name: '凛', description: '花店店员', personality: '爽朗。', updatedAt: '2026-01-01T00:00:00.000Z' },
+      ],
+      world: {
+        clock: { day: 8, slotId: 'morning' }, slotsUsedToday: 0,
+        player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {},
+        relations: { rin: { axes: {}, knots: [], memories } }, settlements: [], characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [],
+        map: createDefaultMap(), diary: [],
+      },
+    }, { budget: 4096, task: 'narrate_main' });
+    const memory = result.blocks.find((block) => block.id === 'char_memory');
+    expect(memory?.text).toContain('角色长期记忆');
+    expect(memory?.text).toContain('记忆 5');
+    expect(memory?.text).not.toContain('记忆 0');
+    expect(memory?.text).toContain('第 6 天');
+  });
+
   it('injects recent node memories with local character names', () => {
     const assembler = new PromptAssembler();
     for (const block of createDefaultPromptBlocks()) assembler.register(block);

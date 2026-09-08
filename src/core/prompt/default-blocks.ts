@@ -86,7 +86,20 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
       for (const npc of Object.values(world.npcs)) names.set(npc.id, npc.name);
       return `地点记忆（最近 ${node.memories.length} 条）：\n${node.memories.slice(-5).map((memory) => `- 第 ${memory.day} 天${memory.charIds.length ? `（${memory.charIds.map((id) => names.get(id) ?? id).join('、')}）` : ''}：${memory.text}`).join('\n')}`;
     } },
-    { id: 'char_memory', role: 'system', priority: 65, order: 8, build: missing },
+    { id: 'char_memory', role: 'system', priority: 65, order: 8, build: (facts) => {
+      const { world, character, participants } = factsOf(facts);
+      if (!world) return null;
+      const selected = participants?.length ? participants : character ? [character] : [];
+      const characterNames = new Map(Object.values(world.characters).map((item) => [item.id, item.name]));
+      for (const participant of selected) characterNames.set(participant.id, participant.name);
+      const sections = [...new Set(selected.map((item) => item.id))].flatMap((charId) => {
+        const memories = world.relations[charId]?.memories.slice(-5) ?? [];
+        if (!memories.length) return [];
+        const name = characterNames.get(charId) ?? charId;
+        return [`${name}：\n${memories.map((memory) => `- 第 ${memory.day} 天${memory.nodeId ? ` · 地点 ${memory.nodeId}` : ''}：${memory.text}`).join('\n')}`];
+      });
+      return sections.length ? `角色长期记忆（每位角色最多最近 5 条）：\n${sections.join('\n\n')}` : null;
+    } },
     { id: 'recent_diary', role: 'system', priority: 60, order: 9, build: (facts) => {
       const diary = factsOf(facts).world?.diary.slice(-7);
       return diary?.length ? `最近日记：\n${diary.map((entry) => `第 ${entry.day} 天：${entry.text}`).join('\n')}` : null;
