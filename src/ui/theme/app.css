@@ -213,6 +213,7 @@ button.danger { background: #fee4e2; color: #b42318; }
 .collection-editor { display: grid; gap: 8px; }
 .tag-row { display: flex; flex-wrap: wrap; gap: 5px; }
 .tag { border-radius: 999px; padding: 3px 8px; background: #eef2ff; color: #3b4cca; font-size: 12px; }
+.collection-show-panel { display: grid; gap: 8px; padding: 12px; border: 1px solid #e4e8ef; border-radius: 8px; background: #fff; }
 .list-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid #eef0f3; }
 .list-row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .list-row button { min-height: 36px; padding: 0 10px; background: #eef2f6; color: #475467; font-size: 12px; }
