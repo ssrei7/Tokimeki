@@ -45,6 +45,7 @@ type Feedback = { tone: 'info' | 'success' | 'error'; text: string } | null;
 type DebugState = { prompt: AssembledPrompt | null; raw: string; ops: string; state: string };
 type PendingOpsRecovery = { raw: string; actorId?: string; streamError?: string };
 type GiftGenerationContext = { giftId: string; itemId: string; itemName: string; charId: string; charName: string };
+type CollectionGenerationContext = { entryId: string; itemId: string; title: string; description: string; tags: string[] };
 type TopicRetryContext = { charId: string; nodeId: string; participantIds: string[]; entryId?: string };
 type ActiveEncounter = { entryId: string; nodeId: string; scope: 'formal' | 'peripheral'; candidates: EncounterCandidate[] };
 type EncounterChatSession = { characterId: string; participantIds: string[]; nodeId: string; mode: 'topics' | 'manual' | 'ended'; entryId?: string; lastResponseSource?: 'topic' | 'manual' };
@@ -895,7 +896,7 @@ export function App() {
     setMessages(nextMessages);
     void saveChat({ characterId: selectedCharacterId, messages: nextMessages, updatedAt: now() });
     setFeedback({ tone: 'info', text: `你出示了收藏《${entry.title}》，正在等待角色回应。` });
-    void generateReply(undefined, nextMessages, true);
+    void generateReply(undefined, nextMessages, true, { entryId: entry.id, itemId: entry.itemId, title: entry.title, description: entry.description, tags: entry.tags });
   }
 
   function updateChatParticipants(ids: string[]): void {
@@ -916,7 +917,7 @@ export function App() {
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
   }
 
-  async function generateReply(giftContext?: GiftGenerationContext, providedMessages?: ChatMessage[], suppressItemGains = false) {
+  async function generateReply(giftContext?: GiftGenerationContext, providedMessages?: ChatMessage[], suppressItemGains = false, collectionContext?: CollectionGenerationContext) {
     if (busy) return;
     if (!selectedCharacterId) { setFeedback({ tone: 'error', text: '请先选择聊天角色。' }); return; }
     const text = input.trim();
@@ -942,7 +943,7 @@ export function App() {
     const generationCharacterId = giftContext?.charId ?? selectedCharacterId;
     const generationCharacter = characters.find((item) => item.id === generationCharacterId);
     const relationshipState = generationCharacter ? deriveRelationshipPromptState(saveRef.current.world, generationCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
-    const promptFacts = { input: latestInput, character: generationCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, giftContext: giftContext ? { ...giftContext, description: saveRef.current.world.items[giftContext.itemId]?.description, tags: saveRef.current.world.items[giftContext.itemId]?.tags ?? [] } : undefined, worldbooks, history: next, world: saveRef.current.world };
+    const promptFacts = { input: latestInput, character: generationCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, giftContext: giftContext ? { ...giftContext, description: saveRef.current.world.items[giftContext.itemId]?.description, tags: saveRef.current.world.items[giftContext.itemId]?.tags ?? [] } : undefined, collectionContext, worldbooks, history: next, world: saveRef.current.world };
     promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
     const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
     setDebug((current) => ({ ...current, prompt: assembled }));

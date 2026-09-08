@@ -62,8 +62,9 @@ describe('prompt assembler', () => {
     for (const block of createDefaultPromptBlocks()) assembler.register(block);
     expect(assembler.listBlocks().map((block) => block.id)).toEqual([...DEFAULT_PROMPT_BLOCK_IDS]);
     const result = assembler.assemble({ input: '', worldbooks: [], history: [], world: undefined }, { budget: 200, task: 'narrate_main' });
-    expect(result.blocks).toHaveLength(16);
+    expect(result.blocks).toHaveLength(17);
     expect(result.blocks.find((block) => block.id === 'relationship_state')?.skipped).toBe(true);
+    expect(result.blocks.find((block) => block.id === 'collection_context')?.skipped).toBe(true);
     expect(result.messages.some((message) => message.content.includes('开放世界叙事游戏'))).toBe(true);
   });
 
@@ -73,6 +74,19 @@ describe('prompt assembler', () => {
     const result = assembler.assemble({ input: '上一句', worldbooks: [], history: [{ role: 'assistant', content: '原回复' }], regenerationRequest: '更温柔一些，并缩短为两句。', world: undefined }, { budget: 500, task: 'narrate_main' });
     expect(result.messages.at(-1)).toEqual({ role: 'user', content: '[重生成上一条角色回复]\n用户要求：更温柔一些，并缩短为两句。\n请只输出替代上一条回复的自然语言正文。不要输出或提议任何 <ops> 状态操作。' });
     expect(result.blocks.find((block) => block.id === 'regeneration_request')?.skipped).toBe(false);
+  });
+
+  it('adds structured collection context without treating a display as a gift', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks()) assembler.register(block);
+    const result = assembler.assemble({
+      input: '（你向对方出示了收藏《旧车票》。）', worldbooks: [], history: [], world: undefined,
+      collectionContext: { entryId: 'collection-1', itemId: 'ticket', title: '旧车票', description: '褪色的车票', tags: ['memory'] },
+    }, { budget: 4096, task: 'narrate_main' });
+    const block = result.blocks.find((item) => item.id === 'collection_context');
+    expect(block?.text).toContain('collection-1');
+    expect(block?.text).toContain('memory');
+    expect(block?.text).toContain('不要提出 give_item 或 offer_gift');
   });
 
   it('adds gift context only for a gift reaction request', () => {

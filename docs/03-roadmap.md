@@ -365,6 +365,7 @@
 - 报纸四类条目混排：lead（带 nodeId/slotId）/ ambience / character / ad
 - 前一天日记塞进 prompt 产生回声
 - `HookPool`：未选中的钩子回池，数日后重现或按 `expiresDay` 过期
+- 记忆检索基础：为记忆补齐类型、来源、重要性、归档和注入开关；先提供零 API 的结构化/关键词检索
 - `npcMoves` 写入 `Schedule.overrides`
 - 半正式 NPC 打包 `npc_batch`（可与晨报合并）
 - 天气注入 prompt，可门控事件
@@ -399,6 +400,7 @@
 - pending 队列 = 伏笔；`revealed` 支持模糊预告（"三天后有拍卖会"）
 - 日历 UI 可视化已排程事件
 - 章节收束：`ChapterSummary` + `Milestone`，二级记忆压缩
+- 可选外部向量记忆：仅使用用户明确配置的 embedding Provider；与结构化/关键词检索混合排序，向量索引可重建且不持有事实
 - 证物反应：角色/NPC 根据自身个性、当前 situation、事件阶段、物品规则标签和用户确认后的展示描述产生确定性反应，再由 AI 负责自然语言呈现
 - 事件回顾：保存已触发事件的标题、时间地点、参与者、选择与结果摘要及可回看的叙事记录；支持导出/删除回顾，删除只移除回顾资料，不回滚已经写入世界的事实
 - 事件包导入导出（`manifest.type = 'events'`）
