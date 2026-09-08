@@ -289,6 +289,9 @@ button.danger { background: #fee4e2; color: #b42318; }
 .regenerate-panel { display: grid; gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid #dce3ef; border-radius: 8px; background: #fff; }
 .regenerate-panel textarea { min-height: 48px; resize: vertical; }
 .regenerate-panel button { justify-self: start; }
+.regenerate-toggle { margin: 8px 0; }
+.topic-retry-panel { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 0; padding: 10px 12px; border: 1px solid #e5c98b; border-radius: 8px; background: #fffaf0; color: #667085; font-size: 12px; }
+.topic-retry-panel button { flex: 0 0 auto; }
 .departure-panel { display: grid; gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid #e5c98b; border-radius: 8px; background: #fffaf0; }
 .departure-panel p { margin: 0; color: #667085; font-size: 12px; }
 .gift-panel { display: grid; gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid #dce3ef; border-radius: 8px; background: #fff; }
