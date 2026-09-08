@@ -312,7 +312,7 @@
 - `Knot` 心结，不处理则持续存在
 - 礼物：自由环节送出后复用普通 `narrate_main` 单次调用，由模型提出角色反应与 `resolve_gift` ops；内核校验并写入 `giftHistory`，送礼事实、库存和 pending 状态仍由代码持有
 - 收藏条目：根据实际获得来源生成标题、描述、tags 和时间地点；用户可编辑展示文字并纠错，收藏条目可在互动中出示
-- 拒绝判定：忙 / 心情差 / 阶段不到位则互动失败
+- 互动承接与角色主动性：产品默认基调为角色主动靠近玩家；忙碌、心情和关系阶段影响回应方式、投入程度与后续邀约，不由内核默认制造挫败式拒绝。该基调作为可编辑、可关闭的预设条目提供，用户可用其他预设塑造不同氛围
 - `Appointment` 四元组 + 守约 / 迟到 / 失约（`onDaySettle` 判定）
 - 结算页关系变化改为散文，`showNumbers` 默认关
 - op：`unlock_topic` `mark_topic_used` `set_mood` `adjust_relation_axis` `add_knot` `resolve_knot` `offer_gift` `resolve_gift` `make_appointment`
@@ -334,8 +334,9 @@
 12. 话题树未结束时输入框不可见；话题树自然耗尽后手动输入才出现，terminal 话题仍按规则结束场景
 13. 手动对话的最新回复可填写要求并重新生成；重新生成不重复应用原回复的状态 ops，TopicTree 固定回应不受影响
 14. 相遇中先选择 1–3 位正式角色；未选角色不进入本次 TopicTree，进入聊天后不能切换参与者
+15. 默认预设下角色会主动提问、邀约或留下后续空间；关闭或编辑“角色主动性”预设后，可塑造疏离、对抗或其他氛围，且状态事实与 ops 边界不受影响
 
-**schema**：v12 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `world.giftHistory` / `relations` 全字段 / `characters[].giftPrefs` / `encounterLog[].departure`；v10 → v11 补齐礼物结果历史，v11 → v12 将礼物结果扩展为 pending/resolved，均保留旧字段
+**schema**：v13 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `world.giftHistory` / `world.collection` / `relations` 全字段 / `characters[].giftPrefs` / `encounterLog[].departure`；v10 → v11 补齐礼物结果历史，v11 → v12 将礼物结果扩展为 pending/resolved，v12 → v13 补齐收藏记录，均保留旧字段
 
 **交互与记忆备忘（2026-09-07）**
 
@@ -350,6 +351,7 @@
 - 阶段 5 已提供最小记忆库：按角色查看关系长期记忆并逐条删除；删除只影响未来 prompt，不改写历史聊天。编辑、归档/恢复、筛选、批量管理和地点记忆留到阶段 6/7。
 - 资料与设置页面的后续壳层规划：阶段 9 改为图标启动器，每项只显示图标与中文名称，不显示状态摘要；底部五项主导航保持不变。
 - 阶段 5 已加入 provider-free 固定 seed 话题统计 runner：报告可用话题数量分布、首次枯竭日与 daily 树刷新覆盖率；统计只读取/克隆存档，不调用 API、不写回正式世界。
+- “角色主动靠近玩家”通过基础叙事控制中的独立“角色主动性”预设默认启用；用户可编辑或关闭，不写死进不可覆盖的内置格式契约。
 - 记忆管理默认采用“归档/停用”，永久删除需显式确认；删除只影响未来 prompt，不回滚关系、物品、事件或聊天事实。
 
 **做完**相遇从一次性对话变成可经营的关系。

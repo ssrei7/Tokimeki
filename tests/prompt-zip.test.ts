@@ -6,7 +6,7 @@ import { exportPresetBundle, exportSaveZip, importPresetBundle, importSaveZip } 
 import { UnsupportedSchemaVersionError } from '../src/data/migrations/types';
 import type { SaveFile } from '../src/data/schema/save';
 import { createDefaultMap, CURRENT_SCHEMA_VERSION } from '../src/data/schema/save';
-import { createBuiltinNarrationPresetBundle } from '../src/data/presets/builtins';
+import { createBuiltinNarrationPresetBundle, mergeBuiltinNarrationPresetBundle } from '../src/data/presets/builtins';
 import { buildRelationshipStatePrompt, deriveRelationshipPromptState } from '../src/core/relationship';
 
 describe('prompt assembler', () => {
@@ -106,10 +106,20 @@ describe('prompt assembler', () => {
     expect(result.messages[1].content).not.toContain('不要替玩家决定');
   });
 
-  it('provides a built-in bundle with separate authorship and narration-person entries', () => {
+  it('provides editable built-in narration controls including character initiative', () => {
     const bundle = createBuiltinNarrationPresetBundle();
-    expect(bundle.entries.map((entry) => entry.name)).toEqual(['玩家代写方式', '旁白人称']);
+    expect(bundle.entries.map((entry) => entry.name)).toEqual(['玩家代写方式', '旁白人称', '角色主动性']);
     expect(bundle.entries.every((entry) => entry.enabled)).toBe(true);
+  });
+
+  it('adds new built-in controls without overwriting stored user edits', () => {
+    const old = createBuiltinNarrationPresetBundle();
+    old.entries = old.entries.slice(0, 2);
+    old.entries[0] = { ...old.entries[0], enabled: false, systemPrompt: '用户自定义的代写规则。' };
+    const merged = mergeBuiltinNarrationPresetBundle(old);
+    expect(merged.entries).toHaveLength(3);
+    expect(merged.entries[0]).toMatchObject({ enabled: false, systemPrompt: '用户自定义的代写规则。' });
+    expect(merged.entries[2].name).toBe('角色主动性');
   });
 
   it('uses the latest edited diary text in prompt context', () => {
