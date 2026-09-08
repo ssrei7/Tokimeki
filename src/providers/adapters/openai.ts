@@ -1,4 +1,5 @@
 import type { ProviderAdapter, ProviderConfig, ChatRequest, PreparedRequest } from '../types';
+import { TOPIC_TREE_RESPONSE_SCHEMA } from '../structured-output';
 
 function trimEndpoint(endpoint: string): string { return endpoint.replace(/\/+$/, ''); }
 export function openAiChatUrl(endpoint: string): string {
@@ -17,7 +18,11 @@ function headers(config: ProviderConfig): Record<string, string> {
 export const openAiAdapter: ProviderAdapter = {
   kind: 'openai-compatible',
   prepare(config: ProviderConfig, request: ChatRequest): PreparedRequest {
-    return { url: openAiChatUrl(config.endpoint), init: { method: 'POST', headers: headers(config), body: JSON.stringify({ model: config.model, messages: request.messages, temperature: config.temperature, max_tokens: config.maxOutputTokens, stream: request.stream ?? false }) } };
+    const body: Record<string, unknown> = { model: config.model, messages: request.messages, temperature: config.temperature, max_tokens: config.maxOutputTokens, stream: request.stream ?? false };
+    if (request.taskId === 'topic_tree' && request.outputMode !== 'off') {
+      body.response_format = request.outputMode === 'json_object' ? { type: 'json_object' } : { type: 'json_schema', json_schema: { name: 'topic_tree', strict: true, schema: TOPIC_TREE_RESPONSE_SCHEMA } };
+    }
+    return { url: openAiChatUrl(config.endpoint), init: { method: 'POST', headers: headers(config), body: JSON.stringify(body) } };
   },
   extractText: (_config, payload) => { const content = (payload as { choices?: Array<{ message?: { content?: unknown } }> })?.choices?.[0]?.message?.content; return typeof content === 'string' ? content : null; },
   extractStreamText: (_config, chunk) => { const line = chunk.replace(/^data:\s*/, '').trim(); if (!line || line === '[DONE]') return null; try { const content = (JSON.parse(line) as { choices?: Array<{ delta?: { content?: unknown } }> }).choices?.[0]?.delta?.content; return typeof content === 'string' ? content : null; } catch { return null; } },

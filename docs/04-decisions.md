@@ -321,3 +321,9 @@
 **决定**：多人相遇进入自由对话后，送礼面板在参与者超过一人时显示“送给谁”选择器。目标只能是本次相遇开始时锁定的正式参与者；一件礼物一次只能送给一位角色。
 **状态边界**：送礼目标写入 `giftHistory.charId`，生成回应时以该角色作为 `resolve_gift` 的 actor；主要聊天角色只是对话记录与 TopicTree 的默认主角，不代表每次礼物的收礼人。
 **分期**：阶段 5 先提供单件礼物的显式目标选择；群体礼物、多人同时回应和超过三人的剧情继续留给 StoryScene。
+
+## D56 TopicTree 优先使用结构化输出并保留中转站降级
+**决定**：`topic_tree` 任务在 OpenAI-compatible Provider 上默认请求严格 JSON Schema（Structured Outputs）；若中转站只支持 JSON mode，Provider 配置可切换为 `json_object`；关闭结构化输出时仍保留现有解析、schema 校验和失败重试。
+**兼容边界**：中转站只有在透传 `response_format` 与 JSON Schema 字段时才能使用严格模式。只支持旧字段、重写请求体或拒绝未知字段的服务，应选择 JSON mode 或关闭结构化输出；Anthropic、Gemini、Generic 不被强行套用 OpenAI 请求字段。
+**状态边界**：输出格式只约束模型返回形状，不授予模型写入状态的权限；TopicTree 仍须经过 `parseGeneratedTopicTree`，角色、地点、日期、数量和字段规则由内核确认。
+**分期**：阶段 5 先接入 OpenAI-compatible 的任务级开关；后续再为 Gemini 的 `responseMimeType` / schema 和其他 Provider 增加原生适配。

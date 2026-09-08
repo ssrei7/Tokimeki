@@ -34,6 +34,16 @@ describe('TopicTree', () => {
     expect(parseGeneratedTopicTree(`\`\`\`json\n${rawTree}\n\`\`\``, 'seir', 'docks', 3).charId).toBe('seir');
   });
 
+  it('normalizes null optional fields from strict JSON schemas', () => {
+    const strictTree = JSON.stringify({ charId: 'seir', nodeId: 'docks', generatedDay: 3, topics: [
+      { id: 'a', label: 'A', kind: 'daily', terminal: false, require: null, response: 'A', usedResponse: null, ops: [], unlocks: [], generatedDay: 3 },
+      { id: 'b', label: 'B', kind: 'daily', terminal: false, require: null, response: 'B', usedResponse: null, ops: [], unlocks: [], generatedDay: 3 },
+      { id: 'c', label: 'C', kind: 'story', terminal: false, require: null, response: 'C', usedResponse: null, ops: [], unlocks: [], generatedDay: 3 },
+      { id: 'd', label: 'D', kind: 'story', terminal: true, require: null, response: 'D', usedResponse: null, ops: [], unlocks: [], generatedDay: 3 },
+    ] });
+    expect(parseGeneratedTopicTree(strictTree, 'seir', 'docks', 3).topics[0].require).toBeUndefined();
+  });
+
   it('rejects malformed, mismatched, and out-of-range trees', () => {
     expect(() => parseGeneratedTopicTree('{"topics": [', 'seir', 'docks', 3)).toThrow();
     expect(() => parseGeneratedTopicTree(rawTree, 'rin', 'docks', 3)).toThrow();

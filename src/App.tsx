@@ -694,7 +694,7 @@ export function App() {
       await streamChat(parsed, [
         { role: 'system', content: '你为开放世界叙事游戏生成一次面对面话题树。只输出 JSON，不要 Markdown、解释或正文。返回 4–8 个话题；每个话题包含 id、label、kind(daily/story)、terminal、response、可选 usedResponse、require、unlocks、ops、generatedDay。response 是已经确定的叙述文字，不要把状态变化当作已经发生。' },
         { role: 'user', content: JSON.stringify({ day: saveRef.current.world.clock.day, slotId: saveRef.current.world.clock.slotId, node: scene ? { id: scene.id, name: scene.name, description: scene.description } : { id: nodeId }, character: mainCharacter, participants, usedTopics: saveRef.current.world.usedTopics }) },
-      ], (delta) => { generated += delta; }, { taskId: 'topic_tree', onStatus: (status) => setRequestStatus(status) });
+      ], (delta) => { generated += delta; }, { taskId: 'topic_tree', outputMode: parsed.outputMode, onStatus: (status) => setRequestStatus(status) });
       const tree = mergeDailyTopicTree(existing, parseGeneratedTopicTree(generated, charId, nodeId, saveRef.current.world.clock.day));
       const next = structuredClone(saveRef.current);
       next.world.topicTrees[key] = tree;
@@ -2010,6 +2010,7 @@ function SettingsView(props: {
       <label>模型<input list="model-list" placeholder="可手动填写" value={props.provider.model} onChange={(event) => props.setProvider({ ...props.provider, model: event.target.value })} /></label>
       <datalist id="model-list">{props.models.map((model) => <option key={model} value={model} />)}</datalist>
       <label>温度 {props.provider.temperature.toFixed(2)}<input type="range" min="0" max="2" step="0.05" value={props.provider.temperature} onChange={(event) => props.setProvider({ ...props.provider, temperature: Number(event.target.value) })} /></label>
+      {props.provider.kind === 'openai-compatible' && <label>话题树输出格式<select value={props.provider.outputMode ?? 'auto'} onChange={(event) => props.setProvider({ ...props.provider, outputMode: event.target.value as ProviderConfig['outputMode'] })}><option value="auto">优先 Structured Outputs</option><option value="json_object">JSON mode（兼容性更广）</option><option value="off">关闭结构化输出</option></select><small>仅影响 TopicTree；中转站不支持 JSON Schema 时改用 JSON mode。</small></label>}
       {props.provider.kind === 'generic' && <div className="generic-fields">
         <label>自定义 headers（JSON）<textarea spellCheck={false} value={props.headersDraft} onChange={(event) => props.setHeadersDraft(event.target.value)} /></label>
         <label>请求体模板<textarea spellCheck={false} placeholder={'{"model":{{model}},"messages":{{messages}},"stream":{{stream}}}'} value={props.provider.bodyTemplate ?? ''} onChange={(event) => props.setProvider({ ...props.provider, bodyTemplate: event.target.value || undefined })} /></label>

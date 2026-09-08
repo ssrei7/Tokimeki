@@ -303,6 +303,7 @@
 - `terminal` 区分纯聊天话题与推进型选项
 - 已用话题不置灰，返回 `usedResponse` 敷衍变体
 - daily 树跨天重生成，story 树永久保留
+- TopicTree 生成优先使用 Provider 支持的 Structured Outputs；OpenAI-compatible 中转站不支持 JSON Schema 时可切换 JSON mode，最终仍经本地 schema 校验与失败重试
 - 话题树结束前隐藏自由输入；当前可选话题耗尽且没有待解锁话题后，才解锁手动输入；允许 AI 反向 `unlock_topic`
 - 手动输入模式支持用户填写要求后显式重新生成；固定 TopicTree response 不参与重生成
 - 告别与挽留：玩家可以主动告别；角色也可基于当前处境提出离开，玩家可在输入框自由编辑挽留、转移话题或无视并放任对方离开；结果由内核记录，不消耗行动点

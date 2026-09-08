@@ -25,7 +25,12 @@ function normalizePayload(raw: unknown, charId: string, nodeId: string, day: num
     const nested = record[key];
     if (nested && typeof nested === 'object' && !Array.isArray(nested)) return normalizePayload(nested, charId, nodeId, day);
   }
-  return { ...record, charId: record.charId ?? charId, nodeId: record.nodeId ?? nodeId, generatedDay: record.generatedDay ?? day };
+  const topics = Array.isArray(record.topics) ? record.topics.map((topic) => {
+    if (!topic || typeof topic !== 'object' || Array.isArray(topic)) return topic;
+    const candidate = topic as Record<string, unknown>;
+    return { ...candidate, ...(candidate.require === null ? { require: undefined } : {}), ...(candidate.usedResponse === null ? { usedResponse: undefined } : {}) };
+  }) : record.topics;
+  return { ...record, ...(topics ? { topics } : {}), charId: record.charId ?? charId, nodeId: record.nodeId ?? nodeId, generatedDay: record.generatedDay ?? day };
 }
 
 function extractJson(text: string): unknown {

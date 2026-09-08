@@ -1,13 +1,13 @@
 import { getAdapter } from './adapters';
-import type { ChatMessage, ProviderConfig, TaskId } from './types';
+import type { ChatMessage, ProviderConfig, ProviderOutputMode, TaskId } from './types';
 
 export class StreamRequestError extends Error { constructor(message: string, public readonly status?: number) { super(message); this.name = 'StreamRequestError'; } }
 export type StreamStatus = 'requesting' | 'generating' | 'success' | 'error';
 
-export async function streamChat(config: ProviderConfig, messages: ChatMessage[], onDelta: (text: string) => void, options: { fetchImpl?: typeof fetch; signal?: AbortSignal; onStatus?: (status: StreamStatus) => void; taskId?: TaskId } = {}): Promise<string> {
+export async function streamChat(config: ProviderConfig, messages: ChatMessage[], onDelta: (text: string) => void, options: { fetchImpl?: typeof fetch; signal?: AbortSignal; onStatus?: (status: StreamStatus) => void; taskId?: TaskId; outputMode?: ProviderOutputMode } = {}): Promise<string> {
   options.onStatus?.('requesting');
   try {
-    const fetchImpl = options.fetchImpl ?? fetch; const adapter = getAdapter(config.kind); const request = { messages, stream: true, taskId: options.taskId };
+    const fetchImpl = options.fetchImpl ?? fetch; const adapter = getAdapter(config.kind); const request = { messages, stream: true, taskId: options.taskId, outputMode: options.outputMode ?? config.outputMode };
     let hasStarted = false;
     const emit = (text: string) => { if (!hasStarted) { hasStarted = true; options.onStatus?.('generating'); } onDelta(text); };
     if (adapter.stream) {

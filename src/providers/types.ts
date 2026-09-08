@@ -9,12 +9,15 @@ export type TaskId = z.infer<typeof TaskIdSchema>;
 
 export const ProviderKindSchema = z.enum(['openai-compatible', 'anthropic', 'gemini', 'generic', 'mock']);
 export type ProviderKind = z.infer<typeof ProviderKindSchema>;
+export const ProviderOutputModeSchema = z.enum(['auto', 'json_schema', 'json_object', 'off']);
+export type ProviderOutputMode = z.infer<typeof ProviderOutputModeSchema>;
 
 export const ProviderConfigSchema = z.object({
   id: z.string().min(1), name: z.string().min(1), kind: ProviderKindSchema,
   endpoint: z.string().url(), apiKey: z.string().optional(), model: z.string().min(1),
   contextWindow: z.number().int().positive().default(8192), maxOutputTokens: z.number().int().positive().default(1024),
   temperature: z.number().min(0).max(2).default(0.7), headers: z.record(z.string(), z.string()).optional(),
+  outputMode: ProviderOutputModeSchema.optional(),
   bodyTemplate: z.string().optional(), responsePath: z.string().optional(), streamFraming: z.enum(['sse', 'ndjson', 'json']).optional(),
 });
 export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
@@ -30,7 +33,7 @@ export const ProviderSettingSchema = z.object({ key: z.enum(['defaultProviderId'
 export type ProviderSetting = z.infer<typeof ProviderSettingSchema>;
 
 export interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string }
-export interface ChatRequest { messages: ChatMessage[]; stream?: boolean; taskId?: TaskId }
+export interface ChatRequest { messages: ChatMessage[]; stream?: boolean; taskId?: TaskId; outputMode?: ProviderOutputMode }
 export interface PreparedRequest { url: string; init: RequestInit }
 
 export interface ProviderAdapter {

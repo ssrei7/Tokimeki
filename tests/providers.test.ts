@@ -13,6 +13,16 @@ const base: ProviderConfig = { id: 'default', name: 'Default', kind: 'openai-com
 
 describe('provider adapters and routing', () => {
   it('formats OpenAI-compatible requests and extracts text', () => { const prepared = getAdapter('openai-compatible').prepare({ ...base, apiKey: 'secret' }, { messages: [{ role: 'user', content: 'hi' }] }); expect(prepared.url).toContain('/chat/completions'); expect(JSON.parse(String(prepared.init.body)).model).toBe('demo'); expect(getAdapter('openai-compatible').extractText(base, { choices: [{ message: { content: 'hello' } }] })).toBe('hello'); });
+  it('adds Structured Outputs only to topic tree requests and supports JSON mode fallback', () => {
+    const adapter = getAdapter('openai-compatible');
+    const structured = JSON.parse(String(adapter.prepare({ ...base, outputMode: 'auto' }, { taskId: 'topic_tree', outputMode: 'auto', messages: [{ role: 'user', content: 'hi' }] }).init.body));
+    expect(structured.response_format.type).toBe('json_schema');
+    expect(structured.response_format.json_schema.strict).toBe(true);
+    const jsonMode = JSON.parse(String(adapter.prepare({ ...base, outputMode: 'json_object' }, { taskId: 'topic_tree', outputMode: 'json_object', messages: [{ role: 'user', content: 'hi' }] }).init.body));
+    expect(jsonMode.response_format).toEqual({ type: 'json_object' });
+    const narrative = JSON.parse(String(adapter.prepare({ ...base, outputMode: 'auto' }, { taskId: 'narrate_main', outputMode: 'auto', messages: [{ role: 'user', content: 'hi' }] }).init.body));
+    expect(narrative.response_format).toBeUndefined();
+  });
   it('adds Anthropic browser header and extracts Gemini text', () => { const request = getAdapter('anthropic').prepare({ ...base, kind: 'anthropic', endpoint: 'https://example.test/messages' }, { messages: [{ role: 'user', content: 'hi' }] }); expect((request.init.headers as Record<string, string>)['anthropic-dangerous-direct-browser-access']).toBe('true'); const gemini = getAdapter('gemini'); expect(gemini.extractText({ ...base, kind: 'gemini' }, { candidates: [{ content: { parts: [{ text: 'hello' }] } }] })).toBe('hello'); expect(gemini.extractStreamText({ ...base, kind: 'gemini' }, 'data: {"candidates":[{"content":{"parts":[{"text":"stream"}]}}]}')).toBe('stream'); });
   it('routes tasks with default fallback and cleans removed bindings', () => { const manager = new ProviderManager(); manager.upsertProvider(base); manager.upsertProvider({ ...base, id: 'cheap', name: 'Cheap' }); manager.bindTask({ taskId: 'narrate_main', providerId: 'cheap' }); expect(manager.resolve('narrate_main')?.id).toBe('cheap'); expect(manager.resolve('summarize_day')?.id).toBe('default'); manager.removeProvider('cheap'); expect(manager.resolve('narrate_main')?.id).toBe('default'); });
   it('resolves a bound provider and falls back to the selected default', () => {
