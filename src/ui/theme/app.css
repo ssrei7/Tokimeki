@@ -214,6 +214,7 @@ button.danger { background: #fee4e2; color: #b42318; }
 .tag-row { display: flex; flex-wrap: wrap; gap: 5px; }
 .tag { border-radius: 999px; padding: 3px 8px; background: #eef2ff; color: #3b4cca; font-size: 12px; }
 .collection-show-panel { display: grid; gap: 8px; padding: 12px; border: 1px solid #e4e8ef; border-radius: 8px; background: #fff; }
+.relation-change small { display: block; margin-top: -4px; color: var(--muted); font-size: 12px; }
 .interaction-tools { position: relative; display: flex; gap: 6px; align-items: center; }
 .interaction-icon { width: 38px; min-height: 36px; padding: 0; font-size: 20px; line-height: 1; }
 .interaction-popover { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 12; width: min(420px, calc(100vw - 32px)); max-height: min(60vh, 420px); overflow: auto; box-shadow: 0 12px 32px #1018282b; }
