@@ -45,7 +45,7 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
       if (!entries?.length) return null;
       return entries.map((entry, index) => `[${index === 0 ? '核心预设' : '预设'}：${entry.name}]\n${entry.systemPrompt}`).join('\n\n');
     } },
-    { id: 'format_contract', role: 'system', priority: 100, order: 1, build: () => `你是开放世界叙事游戏中的角色。先输出自然语言正文。面对面场景中只有明确写成 [说话人:角色名] 的内容才是角色台词；环境、动作、心理或其他描写一律使用 [旁白] 内容。未标记的助手正文为兼容旧记录，界面会按旁白显示。游戏状态只由确定性内核持有，不要声称提议已经生效。${opContract}` },
+    { id: 'format_contract', role: 'system', priority: 100, order: 1, tasks: ['narrate_main'], build: () => `你是开放世界叙事游戏中的角色。先输出自然语言正文。面对面场景中只有明确写成 [说话人:角色名] 的内容才是角色台词；环境、动作、心理或其他描写一律使用 [旁白] 内容。未标记的助手正文为兼容旧记录，界面会按旁白显示。游戏状态只由确定性内核持有，不要声称提议已经生效。${opContract}` },
     { id: 'encounter_participants', role: 'system', priority: 96, order: 2, build: (facts) => {
       const { participants, character, playerPersona, world } = factsOf(facts);
       if (!participants?.length) return null;

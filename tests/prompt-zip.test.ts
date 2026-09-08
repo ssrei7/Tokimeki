@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
 import { PromptAssembler } from '../src/core/prompt/assembler';
 import { createDefaultPromptBlocks, DEFAULT_PROMPT_BLOCK_IDS } from '../src/core/prompt/default-blocks';
+import { TOPIC_TREE_PROMPT_BLOCKS } from '../src/core/prompt/topic-tree';
 import { exportPresetBundle, exportSaveZip, importPresetBundle, importSaveZip } from '../src/data/io/zip';
 import { UnsupportedSchemaVersionError } from '../src/data/migrations/types';
 import type { SaveFile } from '../src/data/schema/save';
@@ -11,6 +12,25 @@ import { buildRelationshipStatePrompt, deriveRelationshipPromptState } from '../
 
 describe('prompt assembler', () => {
   it('orders blocks and reports truncation', () => { const assembler = new PromptAssembler(); assembler.register({ id: 'low', role: 'system', priority: 10, order: 2, build: () => 'low '.repeat(20) }); assembler.register({ id: 'high', role: 'system', priority: 100, order: 1, build: () => 'high' }); const result = assembler.assemble({}, { budget: 4 }); expect(result.blocks.find((b) => b.id === 'high')?.dropped).toBe(false); expect(result.estimatedTokens).toBeLessThanOrEqual(4); });
+
+  it('assembles TopicTree with the selected preset and JSON-only contract', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks()) assembler.register(block);
+    for (const block of TOPIC_TREE_PROMPT_BLOCKS) assembler.register(block);
+    const builtin = createBuiltinNarrationPresetBundle();
+    const result = assembler.assemble({
+      input: '', worldbooks: [], history: [], world: undefined,
+      presetBundle: { ...builtin, entries: [{ ...builtin.entries[0], systemPrompt: `${builtin.entries[0].systemPrompt}\nTOPIC_TREE_MARKER` }] },
+      topicTreeRequest: { day: 3, slotId: 'noon', usedTopics: {} },
+    }, { budget: 4096, task: 'topic_tree' });
+    const content = result.messages.map((message) => message.content).join('\n');
+    expect(content).toContain('TOPIC_TREE_MARKER');
+    expect(content).toContain('只输出 JSON');
+    expect(content).toContain('"day":3');
+    expect(content).not.toContain('先输出自然语言正文');
+    expect(result.blocks.find((block) => block.id === 'preset_bundle')?.skipped).toBe(false);
+    expect(result.blocks.find((block) => block.id === 'topic_tree_contract')?.skipped).toBe(false);
+  });
 
   it('anchors the player and explicit addressees before the primary character in multi-character scenes', () => {
     const assembler = new PromptAssembler();

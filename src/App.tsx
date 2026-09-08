@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { PromptAssembler } from './core/prompt/assembler';
 import type { AssembledPrompt } from './core/prompt/assembler';
 import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
+import { TOPIC_TREE_PROMPT_BLOCKS } from './core/prompt/topic-tree';
 import { EventBus } from './core/events/bus';
 import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGeneratedMapExpansion, parseGeneratedNodeSuggestion, updateMapNode, type CreateMapNodeInput, type UpdateMapNodeInput } from './core/map';
 import { parseGeneratedTopicTree } from './core/topics/parser';
@@ -280,6 +281,7 @@ export function App() {
   const assembler = useMemo(() => {
     const instance = new PromptAssembler();
     for (const block of createDefaultPromptBlocks(opRegistry.promptDocs())) instance.register(block);
+    for (const block of TOPIC_TREE_PROMPT_BLOCKS) instance.register(block);
     return instance;
   }, [opRegistry]);
 
@@ -726,12 +728,31 @@ export function App() {
     try {
       const mainCharacter = characters.find((item) => item.id === charId);
       const scene = saveRef.current.world.map.nodes[nodeId];
-      const participants = participantIds.map((id) => characters.find((item) => item.id === id)).filter(Boolean).map((item) => ({ id: item!.id, name: item!.name, description: item!.description, personality: item!.personality }));
+      const participants = participantIds.map((id) => characters.find((item) => item.id === id)).filter((item): item is CharacterCard => Boolean(item));
+      const activePresetBundle = presetBundles.find((item) => item.id === selectedPresetBundleId);
+      const relationshipState = mainCharacter ? deriveRelationshipPromptState(saveRef.current.world, mainCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
+      const promptFacts = {
+        input: '',
+        character: mainCharacter,
+        participants,
+        presetBundle: activePresetBundle,
+        playerPersona: activePersona,
+        relationshipState,
+        worldbooks,
+        history: [],
+        world: saveRef.current.world,
+        topicTreeRequest: {
+          day: saveRef.current.world.clock.day,
+          slotId: saveRef.current.world.clock.slotId,
+          node: scene ? { id: scene.id, name: scene.name, description: scene.description } : { id: nodeId },
+          usedTopics: saveRef.current.world.usedTopics,
+        },
+      };
+      promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'topic_tree' });
+      const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'topic_tree' });
+      setDebug((current) => ({ ...current, prompt: assembled }));
       let generated = '';
-      await streamChat(parsed, [
-        { role: 'system', content: '你为开放世界叙事游戏生成一次面对面话题树。只输出 JSON，不要 Markdown、解释或正文。返回 4–8 个话题；每个话题包含 id、label、kind(daily/story)、terminal、response、可选 usedResponse、require、unlocks、ops、generatedDay。response 是已经确定的叙述文字，不要把状态变化当作已经发生。' },
-        { role: 'user', content: JSON.stringify({ day: saveRef.current.world.clock.day, slotId: saveRef.current.world.clock.slotId, node: scene ? { id: scene.id, name: scene.name, description: scene.description } : { id: nodeId }, character: mainCharacter, participants, usedTopics: saveRef.current.world.usedTopics }) },
-      ], (delta) => { generated += delta; }, { taskId: 'topic_tree', outputMode: parsed.outputMode, onStatus: (status) => setRequestStatus(status) });
+      await streamChat(parsed, assembled.messages, (delta) => { generated += delta; }, { taskId: 'topic_tree', outputMode: parsed.outputMode, onStatus: (status) => setRequestStatus(status) });
       const tree = mergeDailyTopicTree(existing, parseGeneratedTopicTree(generated, charId, nodeId, saveRef.current.world.clock.day));
       const next = structuredClone(saveRef.current);
       next.world.topicTrees[key] = tree;
