@@ -291,6 +291,9 @@ button.danger { background: #fee4e2; color: #b42318; }
 .regenerate-panel button { justify-self: start; }
 .departure-panel { display: grid; gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid #e5c98b; border-radius: 8px; background: #fffaf0; }
 .departure-panel p { margin: 0; color: #667085; font-size: 12px; }
+.gift-panel { display: grid; gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid #dce3ef; border-radius: 8px; background: #fff; }
+.gift-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+.gift-history { display: grid; gap: 4px; color: #667085; font-size: 12px; }
 .topic-choice-list { display: grid; gap: 8px; }
 .topic-choice { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border: 1px solid #cfd8e8; border-radius: 10px; background: #f8faff; color: #26364f; text-align: left; }
 .topic-choice:disabled { opacity: .58; cursor: not-allowed; }

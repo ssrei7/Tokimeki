@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 10;
+export const CURRENT_SCHEMA_VERSION = 11;
 
 const IdSchema = z.string().min(1);
 
@@ -188,6 +188,21 @@ export const AppointmentSchema = z.object({
   nodeId: IdSchema,
   status: z.enum(['pending', 'kept', 'late', 'missed']),
   note: z.string().optional(),
+});
+
+export const GiftHistoryEntrySchema = z.object({
+  id: IdSchema,
+  day: z.number().int().positive(),
+  slotId: IdSchema,
+  nodeId: IdSchema,
+  charId: IdSchema,
+  itemId: IdSchema,
+  reaction: z.enum(['special', 'liked', 'disliked', 'neutral']),
+  accepted: z.boolean(),
+  score: z.number().finite(),
+  specialItem: z.boolean(),
+  matchedLikeTags: z.array(z.string()),
+  matchedDislikeTags: z.array(z.string()),
 });
 
 export const InventoryEntrySchema = z.object({
@@ -380,6 +395,7 @@ export const WorldV9Schema = WorldV5Schema.extend({
 });
 
 export const WorldV10Schema = WorldV9Schema;
+export const WorldV11Schema = WorldV10Schema.extend({ giftHistory: z.array(GiftHistoryEntrySchema).default([]) });
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -415,16 +431,17 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV10Schema,
+  world: WorldV11Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV10Schema>;
+export type WorldState = z.infer<typeof WorldV11Schema>;
 export type WorldV5State = z.infer<typeof WorldV5Schema>;
 export type Topic = z.infer<typeof TopicSchema>;
 export type TopicTree = z.infer<typeof TopicTreeSchema>;
 export type Appointment = z.infer<typeof AppointmentSchema>;
+export type GiftHistoryEntry = z.infer<typeof GiftHistoryEntrySchema>;
 export type ScheduleCell = z.infer<typeof ScheduleCellSchema>;
 export type Schedule = z.infer<typeof ScheduleSchema>;
 export type FormalCharacter = z.infer<typeof FormalCharacterSchema>;

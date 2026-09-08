@@ -309,7 +309,7 @@
 - 多轴关系 `AxisDef` + `StageRule` + 阶段标签派生
 - `mood`（词 + 衰减天数）+ `situation` + `lastSeenDay` → "已 N 天未见"
 - `Knot` 心结，不处理则持续存在
-- 礼物：tag 匹配 + `specialItems` + 阶段 + mood，代码算结果，AI 只写反应
+- 礼物：tag 匹配 + `specialItems` + 阶段 + mood，代码算结果，AI 只写反应；每次赠送写入 `giftHistory`，资料页可回看最近反应
 - 收藏条目：根据实际获得来源生成标题、描述、tags 和时间地点；用户可编辑展示文字并纠错，收藏条目可在互动中出示
 - 拒绝判定：忙 / 心情差 / 阶段不到位则互动失败
 - `Appointment` 四元组 + 守约 / 迟到 / 失约（`onDaySettle` 判定）
@@ -334,7 +334,7 @@
 13. 手动对话的最新回复可填写要求并重新生成；重新生成不重复应用原回复的状态 ops，TopicTree 固定回应不受影响
 14. 相遇中先选择 1–3 位正式角色；未选角色不进入本次 TopicTree，进入聊天后不能切换参与者
 
-**schema**：v10 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `relations` 全字段 / `characters[].giftPrefs` / `encounterLog[].departure`；v8 → v9 自动补齐关系状态字段，v9 → v10 为相遇日志补充可选告别状态，均保留旧字段
+**schema**：v11 —— `config.axisDefs` / `config.stageRules` / `world.topicTrees` / `world.usedTopics` / `world.appointments` / `world.giftHistory` / `relations` 全字段 / `characters[].giftPrefs` / `encounterLog[].departure`；v8 → v9 自动补齐关系状态字段，v9 → v10 为相遇日志补充可选告别状态，v10 → v11 补齐礼物结果历史，均保留旧字段
 
 **交互与记忆备忘（2026-09-07）**
 

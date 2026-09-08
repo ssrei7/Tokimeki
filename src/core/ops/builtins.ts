@@ -352,7 +352,25 @@ function offerGift(payload: z.infer<typeof OfferGiftSchema>, context: OpContext)
   const before = entry.count;
   entry.count -= 1;
   context.world.player.inventory = context.world.player.inventory.filter((candidate) => candidate.count > 0);
-  return changed(`player.inventory.${payload.itemId}`, before, before - 1, `Gift to ${character.name}: ${evaluation.reaction}.`);
+  const historyBefore = context.world.giftHistory.length;
+  context.world.giftHistory.push({
+    id: `gift-${context.day}-${context.world.giftHistory.length + 1}`,
+    day: context.day,
+    slotId: context.slotId,
+    nodeId: context.nodeId,
+    charId: payload.target,
+    itemId: payload.itemId,
+    reaction: evaluation.reaction,
+    accepted: evaluation.reaction !== 'disliked',
+    score: evaluation.score,
+    specialItem: evaluation.specialItem,
+    matchedLikeTags: evaluation.matchedLikeTags,
+    matchedDislikeTags: evaluation.matchedDislikeTags,
+  });
+  return { ok: true, changes: [
+    ...changed(`player.inventory.${payload.itemId}`, before, before - 1, `Gift to ${character.name}: ${evaluation.reaction}.`).changes,
+    ...changed('world.giftHistory', historyBefore, context.world.giftHistory.length, `Recorded gift reaction for ${character.name}.`).changes,
+  ] };
 }
 
 function itemCount(world: WorldState, itemId: string): number {

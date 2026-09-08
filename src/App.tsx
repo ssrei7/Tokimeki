@@ -17,7 +17,7 @@ import { deleteAsset, loadAsset, saveAsset } from './data/db/assets';
 import { listSnapshots, loadCurrentSave, loadSnapshot, saveCurrentSave, saveDailySnapshot, type SaveSnapshot } from './data/db/save';
 import { downsampleImage } from './data/assets/image';
 import { exportPresetBundle, exportSaveZip, importPresetBundle, importSaveZip } from './data/io/zip';
-import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_SLOT_DEFS, SaveFileSchema, type AssetRef, type EncounterDeparture, type SaveFile, type Topic, type TopicTree } from './data/schema/save';
+import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_SLOT_DEFS, SaveFileSchema, type AssetRef, type EncounterDeparture, type GiftHistoryEntry, type SaveFile, type Topic, type TopicTree } from './data/schema/save';
 import { testProviderConnection } from './providers/connection-test';
 import { providerDb } from './providers/db';
 import { listProviderModels } from './providers/models';
@@ -786,6 +786,20 @@ export function App() {
     setFeedback({ tone: 'info', text: '你主动结束了这次相遇。' });
   }
 
+  function offerGiftToCurrent(itemId: string): void {
+    if (!selectedCharacterId || !chatEncounterEntryId || busy) return;
+    const next = structuredClone(saveRef.current);
+    const applied = opRegistry.applyAll([{ op: 'offer_gift', target: selectedCharacterId, itemId }], {
+      world: next.world, actorId: selectedCharacterId, day: next.world.clock.day, slotId: next.world.clock.slotId, nodeId: next.world.player.nodeId,
+      calendar: next.config.calendar, actionCosts: next.config.actionCosts, encounterConfig: next.config.encounter, axisDefs: next.config.axisDefs, stageRules: next.config.stageRules, events: promptEvents, log: () => {},
+    }, next.config.opsLimitPerTurn);
+    if (!applied.applied) { setFeedback({ tone: 'error', text: applied.warnings[0] ?? applied.rejected[0]?.reason ?? '无法送出这件礼物。' }); return; }
+    commitSave(next);
+    promptEvents.emit('onOpsApply', { changes: applied.changes });
+    const result = next.world.giftHistory.at(-1);
+    if (result) setFeedback({ tone: result.accepted ? 'success' : 'info', text: `${next.world.characters[selectedCharacterId]?.name ?? selectedCharacterId} 对${next.world.items[itemId]?.name ?? itemId}的反应：${giftReactionLabel(result.reaction)}${result.accepted ? '' : '（对方没有接受这份心意）'}。` });
+  }
+
   function updateChatParticipants(ids: string[]): void {
     const available = [...new Set(ids)].filter((id) => presentChatCharacters.some((character) => character.id === id));
     if (!available.length) return;
@@ -1322,7 +1336,7 @@ export function App() {
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} />}
+      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftHistory={save.world.giftHistory.filter((entry) => entry.charId === selectedCharacterId).slice(-5)} onOfferGift={offerGiftToCurrent} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} />}
       {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} />}
     </main>
@@ -1668,6 +1682,10 @@ function DiaryEditor(props: { entry: SaveFile['world']['diary'][number]; onSave:
   return <div className="diary-editor"><div className="list-heading"><strong>第 {props.entry.day} 天日记</strong>{props.entry.editedAt && <small>已手动编辑</small>}</div><textarea value={text} onChange={(event) => setText(event.target.value)} /><button onClick={() => props.onSave(props.entry.day, text)}>保存日记</button></div>;
 }
 
+function giftReactionLabel(reaction: GiftHistoryEntry['reaction']): string {
+  return reaction === 'special' ? '特别喜欢' : reaction === 'liked' ? '喜欢' : reaction === 'disliked' ? '拒绝' : '反应平淡';
+}
+
 function ChatView(props: {
   characters: CharacterCard[];
   worldCharacters: SaveFile['world']['characters'];
@@ -1706,6 +1724,9 @@ function ChatView(props: {
   canFarewell: boolean;
   onPlayerFarewell: () => void;
   onResolveDeparture: (outcome: 'stayed' | 'left') => void;
+  giftItems: SaveFile['world']['items'][string][];
+  giftHistory: GiftHistoryEntry[];
+  onOfferGift: (itemId: string) => void;
 }) {
   const messagesRef = useRef<HTMLDivElement>(null);
   const followLatestRef = useRef(true);
@@ -1767,6 +1788,8 @@ function ChatView(props: {
     props.onParticipantIdsChange([...participantIds, id]);
   };
   const topicEntries = props.topicTree ? visibleTopics(props.topicTree, props.world, props.hiddenTopicStyle) : [];
+  const [selectedGiftId, setSelectedGiftId] = useState('');
+  useEffect(() => { if (!props.giftItems.some((item) => item.id === selectedGiftId)) setSelectedGiftId(props.giftItems[0]?.id ?? ''); }, [props.giftItems, selectedGiftId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1868,6 +1891,7 @@ function ChatView(props: {
     </div>}
     {props.topicMode === 'ended' && <div className="topic-tree-panel"><p className="empty">本次面对面场景已经结束。</p></div>}
     {props.departure?.status === 'pending' && <div className="departure-panel" role="alert"><strong>{props.departure.kind === 'character_request' ? '对方似乎准备离开了。' : '你提出了告别。'}</strong>{props.departure.reason && <p>{props.departure.reason}</p>}<div className="button-row"><button onClick={() => props.onResolveDeparture('stayed')} disabled={props.busy}>挽留，继续聊聊</button><button className="secondary" onClick={() => props.onResolveDeparture('left')} disabled={props.busy}>就到这里吧</button></div></div>}
+    {props.canFarewell && props.topicMode !== 'ended' && <div className="gift-panel" aria-label="送礼"><div className="list-heading"><strong>带来的礼物</strong><span className="io-scope">结果由当前角色偏好与关系状态判定</span></div>{props.giftItems.length ? <div className="gift-row"><select aria-label="选择礼物" value={selectedGiftId} onChange={(event) => setSelectedGiftId(event.target.value)}>{props.giftItems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="secondary" onClick={() => { if (selectedGiftId) props.onOfferGift(selectedGiftId); }} disabled={props.busy || !selectedGiftId}>送出</button></div> : <p className="empty">暂无可赠送物品。</p>}{props.giftHistory.length > 0 && <div className="gift-history"><strong>最近反应</strong>{props.giftHistory.map((entry) => <span key={entry.id}>第 {entry.day} 天 · {props.world.items[entry.itemId]?.name ?? entry.itemId}：{giftReactionLabel(entry.reaction)}{entry.accepted ? '' : ' · 未接受'}</span>)}</div>}</div>}
     {props.topicMode === 'manual' && props.canRegenerate && latestRole === 'assistant' && <div className="regenerate-panel" aria-label="重新生成回复">
       <div className="list-heading"><strong>对这条回复不满意？</strong><span className="io-scope">只会替换叙述文字，不会重复应用状态变化</span></div>
       <textarea value={props.regenerateInput} onChange={(event) => props.setRegenerateInput(event.target.value)} placeholder="告诉角色换一种说法……" aria-label="重新生成要求" />
