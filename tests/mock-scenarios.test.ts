@@ -81,5 +81,8 @@ describe('version-aware scenario seeder', () => {
     expect(Object.keys(fixture.world.characters)).toEqual(['seir', 'rin']);
     expect(fixture.world.characters.seir.schedule?.grid['2:noon']?.nodeId).toBe('docks');
     expect(fixture.world.npcs['vendor-1']?.homeNodeId).toBe('docks');
+    expect(fixture.world.player.inventory.map((entry) => entry.itemId)).toEqual(['white-flower', 'lemon-candy', 'metal-charm']);
+    expect(fixture.world.characters.seir.giftPrefs).toEqual({ likeTags: ['flower'], dislikeTags: ['metal'], specialItems: { 'white-flower': 4 } });
+    expect(fixture.world.characters.rin.giftPrefs).toEqual({ likeTags: ['sweet'], dislikeTags: ['metal'], specialItems: { 'lemon-candy': 3 } });
   });
 });

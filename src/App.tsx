@@ -648,7 +648,7 @@ export function App() {
     setActiveEncounter(null);
     commitSave(fixture);
     setTab('map');
-    setFeedback({ tone: 'success', text: '阶段 4 相遇测试存档已载入：第 3 天中午前往西码头即可测试。' });
+    setFeedback({ tone: 'success', text: '阶段 4 相遇测试存档已载入：第 3 天中午前往西码头即可测试相遇与送礼；库存含三种测试礼物。' });
   }
 
   function addCharacterToCurrentWorld(characterId: string): void {
