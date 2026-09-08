@@ -354,6 +354,14 @@
 - “角色主动靠近玩家”通过基础叙事控制中的独立“角色主动性”预设默认启用；用户可编辑或关闭，不写死进不可覆盖的内置格式契约。
 - 记忆管理默认采用“归档/停用”，永久删除需显式确认；删除只影响未来 prompt，不回滚关系、物品、事件或聊天事实。
 
+**阶段 5 自动验收记录（2026-09-09）**
+
+- 自动验证：25 个测试文件、155 项测试通过。`tests/topics.test.ts` 覆盖 TopicTree 解析、require/unlock、已用话题变体和 daily 刷新；`tests/providers.test.ts` / `tests/prompt-zip.test.ts` 覆盖 Structured Outputs、JSON mode 降级、预设控制、关系/收藏上下文与重生成约束；`tests/ops.test.ts` 覆盖关系轴、mood、Knot、礼物及记忆 op；`tests/appointments.test.ts` 覆盖 kept / late / missed；`tests/settlement-view.test.ts` 覆盖散文结算与 `showNumbers`；`tests/encounter-selection.test.ts`、`tests/encounter-trigger.test.ts` 覆盖参与者上限、离开结果和固定 seed 分布；`tests/topic-simulator.test.ts` 覆盖话题枯竭与 daily 刷新统计；`tests/relationship-memory.test.ts` 覆盖最小记忆库逐条删除。
+- 构建验证：`npm run build` 通过；`git diff --check` 通过；`core/` Node 边界测试通过。
+- 状态边界复核：TopicTree、关系、时间、地点、库存、礼物 pending/resolved、收藏和预约事实均由内核保存；Provider 只负责叙述与 ops 提议。点击已生成话题、读取记忆/收藏/结算仍为本地零 API。
+- 手测清单：仍建议在真实移动端完成一次端到端冒烟，确认输入框解锁、多人参与者锁定、礼物目标选择、收藏出示、重生成入口和相遇窗口层级；这些检查不改变本次自动验收结论。
+- 阶段 5 代码交付可视为完成，下一阶段只处理上述冒烟反馈或阻塞性缺陷；记忆库增强与外部向量 API 按阶段 6/7 计划执行。
+
 **做完**相遇从一次性对话变成可经营的关系。
 
 ---
