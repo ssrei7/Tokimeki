@@ -39,7 +39,11 @@ export function createStage4EncounterScenario(): ScenarioDefinition {
             rin: { id: 'rin', name: '凛', tier: 'formal', card: { description: '偶尔来码头买花的女孩。', personality: '爽朗。' }, visuals: { portraits: [], accentColor: '#d97706' }, homeNodeId: 'start', giftPrefs: { likeTags: ['sweet'], dislikeTags: ['metal'], specialItems: { 'lemon-candy': 3 } }, schedule: { grid: { '2:noon': { nodeId: 'docks', activity: '在摊位旁挑花' } }, overrides: {} } },
           },
           npcs: { 'vendor-1': { id: 'vendor-1', name: '摊主', tier: 'semi', facts: ['卖花'], tags: ['merchant'], homeNodeId: 'docks', lightMemory: [] } },
-          npcTemplates: {}, encounterLog: [], topicTrees: {}, usedTopics: {}, appointments: [], giftHistory: [], collection: [],
+          npcTemplates: {}, encounterLog: [], topicTrees: {}, usedTopics: {}, appointments: [], giftHistory: [], collection: [
+            { id: 'collection-white-flower-3-1', itemId: 'white-flower', title: '白色小花', description: '塞伊尔的特殊礼物测试项。', tags: ['flower'], day: 3, nodeId: 'start' },
+            { id: 'collection-lemon-candy-3-2', itemId: 'lemon-candy', title: '柠檬糖', description: '凛的特殊礼物测试项。', tags: ['sweet'], day: 3, nodeId: 'start' },
+            { id: 'collection-metal-charm-3-3', itemId: 'metal-charm', title: '金属护符', description: '用于测试被角色拒绝的礼物。', tags: ['metal'], day: 3, nodeId: 'start' },
+          ],
         },
       };
     },
