@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 30;
+export const CURRENT_SCHEMA_VERSION = 31;
 
 const IdSchema = z.string().min(1);
 
@@ -293,6 +293,22 @@ export const MilestoneSchema = z.object({
   day: z.number().int().positive(),
   text: z.string().min(1).max(2000),
   charIds: z.array(IdSchema).max(3),
+});
+
+export const StorySceneSchema = z.object({
+  id: IdSchema,
+  title: z.string().min(1).max(160),
+  intent: z.string().min(1).max(4000),
+  outline: z.string().min(1).max(12000),
+  participantIds: z.array(IdSchema).min(1).max(20),
+  nodeId: IdSchema,
+  startDay: z.number().int().positive(),
+  startSlotId: IdSchema,
+  currentStageId: IdSchema,
+  status: z.enum(['draft', 'active', 'completed', 'cancelled']),
+  source: z.enum(['keywords', 'outline', 'manual']),
+  createdDay: z.number().int().positive(),
+  updatedDay: z.number().int().positive(),
 });
 
 export const GiftHistoryEntrySchema = z.object({
@@ -605,6 +621,10 @@ export const WorldV27Schema = WorldV26Schema.extend({
 });
 export const WorldV28Schema = WorldV27Schema;
 export const WorldV29Schema = WorldV28Schema;
+export const WorldV30Schema = WorldV29Schema;
+export const WorldV31Schema = WorldV30Schema.extend({
+  storyScenes: z.array(StorySceneSchema).max(100).default([]),
+});
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -641,12 +661,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV29Schema,
+  world: WorldV31Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV29Schema>;
+export type WorldState = z.infer<typeof WorldV31Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;
@@ -691,5 +711,6 @@ export type DirectorState = z.infer<typeof DirectorStateSchema>;
 export type EventHistoryEntry = z.infer<typeof EventHistoryEntrySchema>;
 export type ChapterSummary = z.infer<typeof ChapterSummarySchema>;
 export type Milestone = z.infer<typeof MilestoneSchema>;
+export type StoryScene = z.infer<typeof StorySceneSchema>;
 export type MemoryType = z.infer<typeof MemoryTypeSchema>;
 export type MemorySource = z.infer<typeof MemorySourceSchema>;

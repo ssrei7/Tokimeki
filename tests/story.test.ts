@@ -1,8 +1,36 @@
 import { describe, expect, it } from 'vitest';
-import { buildLocalChapterSummary, formatChatArchive, formatEventHistoryArchive, upsertChapterSummary, upsertMilestone } from '../src/core/story';
+import { buildLocalChapterSummary, confirmStoryScene, createStorySceneDraft, formatChatArchive, formatEventHistoryArchive, updateStorySceneStatus, upsertChapterSummary, upsertMilestone } from '../src/core/story';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 describe('local chapter summaries and milestones', () => {
+  it('persists a reviewable StoryScene draft and confirms it only after deterministic validation', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'story-scene', title: 'Story scene' }));
+    save.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '码头青年', personality: '安静' }, visuals: { portraits: [] } };
+    save.world.characters.rin = { id: 'rin', name: '凛', tier: 'formal', card: { description: '花店女孩', personality: '爽朗' }, visuals: { portraits: [] } };
+    save.world.characters.aya = { id: 'aya', name: '绫', tier: 'formal', card: { description: '记者', personality: '好奇' }, visuals: { portraits: [] } };
+    save.world.characters.ren = { id: 'ren', name: '莲', tier: 'formal', card: { description: '修理师', personality: '沉稳' }, visuals: { portraits: [] } };
+    const created = createStorySceneDraft(save.world, save.config.calendar, {
+      id: 'scene-dock-secret', title: '码头的秘密', intent: '调查旧仓库', outline: '玩家与两位角色在夜晚调查旧仓库。',
+      participantIds: ['seir', 'rin', 'aya', 'ren'], nodeId: 'start', startSlotId: 'night', source: 'outline',
+    });
+    expect(created.ok).toBe(true);
+    expect(created.scene?.status).toBe('draft');
+    expect(confirmStoryScene(save.world, save.config.calendar, 'scene-dock-secret').scene?.status).toBe('active');
+    expect(updateStorySceneStatus(save.world, 'scene-dock-secret', 'completed').scene?.status).toBe('completed');
+  });
+
+  it('rejects invalid participants, duplicate IDs, and stale drafts without mutating facts', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'story-scene-invalid', title: 'Story scene invalid' }));
+    save.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '码头青年', personality: '安静' }, visuals: { portraits: [] } };
+    expect(createStorySceneDraft(save.world, save.config.calendar, { id: 'bad', title: '坏草案', intent: '意图', outline: '大纲', participantIds: ['seir', 'seir'], nodeId: 'start' })).toMatchObject({ ok: false });
+    expect(createStorySceneDraft(save.world, save.config.calendar, { id: 'missing', title: '缺人', intent: '意图', outline: '大纲', participantIds: ['unknown'], nodeId: 'start' })).toMatchObject({ ok: false });
+    const draft = createStorySceneDraft(save.world, save.config.calendar, { id: 'stale', title: '会变化的草案', intent: '意图', outline: '大纲', participantIds: ['seir'], nodeId: 'start' });
+    expect(draft.ok).toBe(true);
+    delete save.world.characters.seir;
+    expect(confirmStoryScene(save.world, save.config.calendar, 'stale')).toMatchObject({ ok: false });
+    expect(save.world.storyScenes[0].status).toBe('draft');
+  });
+
   it('builds a stable summary from diary and event facts', () => {
     const save = seedScenario(createCurrentSaveScenario({ id: 'story', title: 'Story', day: 4 }));
     save.world.diary = [{ day: 2, text: '在码头等到潮声。' }];

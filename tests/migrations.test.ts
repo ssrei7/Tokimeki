@@ -164,8 +164,15 @@ describe('save migrations', () => {
   it('accepts the stage 7 relationship-gated event schema as the current version', () => {
     const source = seedScenario(createCurrentSaveScenario({ id: 'v29-current', title: 'v29 current' }));
     const migrated = migrateSave({ ...source, schemaVersion: 28, world: { ...source.world, eventDefs: undefined } });
-    expect(migrated.schemaVersion).toBe(30);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.eventDefs).toEqual({});
+  });
+
+  it('migrates v30 saves with an empty StoryScene collection', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v31-story-scene', title: 'v31 story scene' }));
+    const migrated = migrateSave({ ...source, schemaVersion: 30, world: { ...source.world, storyScenes: undefined } });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.storyScenes).toEqual([]);
   });
 
   it('migrates v5 persona text without dropping it and accepts a persona binding', () => {
