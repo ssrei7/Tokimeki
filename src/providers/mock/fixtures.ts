@@ -124,3 +124,10 @@ export function adaptTopicTreeFixture(fixture: MockFixture, messages: readonly {
     return fixture;
   }
 }
+
+export function adaptMemoryFixture(fixture: MockFixture, messages: readonly { role: string; content: string }[]): MockFixture {
+  const system = messages.find((message) => message.content.includes('target 必须是'))?.content;
+  const target = system?.match(/target 必须是\s+([A-Za-z0-9_-]+)/)?.[1];
+  if (!target) return fixture;
+  return { ...fixture, chunks: fixture.chunks.map((chunk) => chunk.replaceAll('"seir"', JSON.stringify(target))) };
+}

@@ -1,4 +1,4 @@
-import { adaptTopicTreeFixture, getMockFixture, MOCK_FIXTURE_IDS } from '../mock/fixtures';
+import { adaptMemoryFixture, adaptTopicTreeFixture, getMockFixture, MOCK_FIXTURE_IDS } from '../mock/fixtures';
 import type { ChatRequest, PreparedRequest, ProviderAdapter, ProviderConfig } from '../types';
 
 export const mockAdapter: ProviderAdapter = {
@@ -11,7 +11,7 @@ export const mockAdapter: ProviderAdapter = {
   async *stream(config, request) {
     const taskId = request.taskId ?? 'narrate_main';
     const baseFixture = getMockFixture(taskId, config.model);
-    const fixture = taskId === 'topic_tree' ? adaptTopicTreeFixture(baseFixture, request.messages) : adaptGiftFixture(baseFixture, request.messages);
+    const fixture = taskId === 'topic_tree' ? adaptTopicTreeFixture(baseFixture, request.messages) : taskId === 'summarize_memory' ? adaptMemoryFixture(baseFixture, request.messages) : adaptGiftFixture(baseFixture, request.messages);
     for (const chunk of fixture.chunks) yield chunk;
     if (fixture.errorAfterChunks) throw new Error(fixture.errorAfterChunks);
   },

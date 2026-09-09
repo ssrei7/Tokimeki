@@ -16,8 +16,19 @@ export function countConsolidationMessages(messages: readonly ChatMessage[]): nu
   return messages.filter((message) => message.role === 'user' || message.role === 'assistant').length;
 }
 
+/** Counts completed player/character exchanges; a topic selection is stored as the player half. */
+export function countConsolidationRounds(messages: readonly ChatMessage[]): number {
+  let rounds = 0;
+  let awaitingReply = false;
+  for (const message of messages) {
+    if (message.role === 'user') awaitingReply = true;
+    else if (message.role === 'assistant' && awaitingReply) { rounds += 1; awaitingReply = false; }
+  }
+  return rounds;
+}
+
 export function shouldConsolidateMemories(messages: readonly ChatMessage[]): boolean {
-  return countConsolidationMessages(messages) >= MEMORY_CONSOLIDATION_THRESHOLD;
+  return countConsolidationRounds(messages) >= MEMORY_CONSOLIDATION_THRESHOLD;
 }
 
 export function buildMemoryConsolidationPrompt(messages: readonly ChatMessage[], characterId: string, characterName: string): { role: 'system' | 'user'; content: string }[] {

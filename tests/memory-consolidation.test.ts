@@ -1,4 +1,4 @@
-import { buildMemoryConsolidationPrompt, countConsolidationMessages, parseMemoryConsolidationResponse, shouldConsolidateMemories } from '../src/core/relationship/consolidation';
+import { buildMemoryConsolidationPrompt, countConsolidationMessages, countConsolidationRounds, parseMemoryConsolidationResponse, shouldConsolidateMemories } from '../src/core/relationship/consolidation';
 import { describe, expect, it } from 'vitest';
 
 describe('memory consolidation', () => {
@@ -13,8 +13,9 @@ describe('memory consolidation', () => {
 
   it('uses a six-message threshold and builds a single transcript prompt', () => {
     expect(countConsolidationMessages(messages)).toBe(6);
-    expect(shouldConsolidateMemories(messages)).toBe(true);
-    expect(shouldConsolidateMemories(messages.slice(0, 5))).toBe(false);
+    expect(countConsolidationRounds(messages)).toBe(3);
+    expect(shouldConsolidateMemories(messages)).toBe(false);
+    expect(shouldConsolidateMemories([...messages, ...messages])).toBe(true);
     expect(buildMemoryConsolidationPrompt(messages, 'seir', '塞伊尔')).toHaveLength(2);
   });
 

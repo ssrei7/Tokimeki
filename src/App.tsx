@@ -824,7 +824,11 @@ export function App() {
     }, next.config.opsLimitPerTurn);
     commitSave(next);
     if (applied.changes.length) promptEvents.emit('onOpsApply', { changes: applied.changes });
-    const nextMessages = [...messages, { role: 'assistant' as const, content: response }];
+    const nextMessages = [
+      ...messages,
+      { role: 'user' as const, content: topic.label, kind: 'dialogue' as const, speakerId: 'player' },
+      { role: 'assistant' as const, content: response, kind: 'dialogue' as const, speakerId: selectedCharacterId },
+    ];
     setMessages(nextMessages);
     markResponseSource('topic');
     void saveChat({ characterId: selectedCharacterId, messages: nextMessages, updatedAt: now() });
