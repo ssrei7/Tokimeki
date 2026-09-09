@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLocalMorningBrief, buildMorningPrompt, hasMorningBrief, parseMorningResponse } from '../src/core/world/morning';
+import { applyMorningNpcMoves, buildLocalMorningBrief, buildMorningPrompt, hasMorningBrief, parseMorningResponse, parseMorningUpdate } from '../src/core/world/morning';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 describe('morning brief', () => {
@@ -19,5 +19,31 @@ describe('morning brief', () => {
     expect(prompt[1].content).toContain('昨天在码头遇见了凛');
     expect(parseMorningResponse('[{"category":"ad","title":"公告","body":"去看看。"}]', 2)).toEqual([]);
     expect(parseMorningResponse('[{"category":"lead","title":"头条","body":"西码头有动静。","nodeId":"docks","slotId":"noon"},{"category":"ambience","title":"风","body":"海风。"},{"category":"ad","title":"招募","body":"找帮工。"}]', 2)).toHaveLength(3);
+  });
+
+  it('parses one merged update and filters untrusted references', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'morning-update', title: 'Morning update' }));
+    save.world.map.nodes.docks = { ...save.world.map.nodes.start, id: 'docks', name: '西码头' };
+    save.world.npcs['vendor-1'] = { id: 'vendor-1', name: '摊主', tier: 'semi', facts: [], tags: ['merchant'], homeNodeId: 'start', lightMemory: [] };
+    const raw = JSON.stringify({
+      news: [
+        { category: 'lead', title: '无地点线索', body: '退回氛围。' },
+        { category: 'ambience', title: '海风', body: '潮气沿街。' },
+        { category: 'ad', title: '帮工', body: '码头招人。', nodeId: 'docks' },
+        { category: 'character', title: '摊主', body: '有人在整理货物。', charIds: ['vendor-1'] },
+        { category: 'lead', title: '伪造地点', body: '不应保留。', nodeId: 'moon' },
+      ],
+      weather: { id: 'drizzle', label: '细雨', tags: ['rain'] },
+      npcMoves: [{ charId: 'vendor-1', slotId: 'noon', nodeId: 'docks', note: '整理货物' }, { charId: 'ghost', slotId: 'noon', nodeId: 'docks' }],
+      worldNote: '港口晚了一刻报时。',
+    });
+    const update = parseMorningUpdate(raw, 2, save.world, ['morning', 'noon']);
+    expect(update?.entries).toHaveLength(4);
+    expect(update?.entries[0].category).toBe('ambience');
+    expect(update?.npcMoves).toEqual([{ charId: 'vendor-1', slotId: 'noon', nodeId: 'docks', note: '整理货物' }]);
+    expect(update?.weather.tags).toEqual(['rain']);
+    expect(update?.worldNote).toContain('港口');
+    expect(applyMorningNpcMoves(save.world, 2, update?.npcMoves ?? [])).toBe(1);
+    expect(save.world.npcs['vendor-1'].schedule?.overrides['2:noon']).toEqual({ nodeId: 'docks', activity: '整理货物' });
   });
 });

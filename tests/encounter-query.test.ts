@@ -60,6 +60,14 @@ describe('deterministic schedule presence query', () => {
     ]);
   });
 
+  it('uses a semi-formal NPC day override when one is present', () => {
+    const world = setup();
+    world.npcs['vendor-1'].schedule = { grid: {}, overrides: { '3:morning': { nodeId: 'start', activity: '去街角送货' } } };
+    expect(whoIsHere(world, 'start', 3, 'morning', 7)).toEqual([
+      { id: 'vendor-1', name: '摊主', tier: 'semi', nodeId: 'start', activity: '去街角送货', source: 'schedule' },
+    ]);
+  });
+
   it('returns every known location in one local query', () => {
     const world = setup();
     expect(whoIsWhere(world, 3, 'morning', 7).map(({ id, nodeId }) => ({ id, nodeId }))).toEqual([

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 18;
+export const CURRENT_SCHEMA_VERSION = 19;
 
 const IdSchema = z.string().min(1);
 
@@ -127,6 +127,7 @@ export const NpcLiteSchema = z.object({
   tags: z.array(z.string()),
   homeNodeId: IdSchema.optional(),
   lightMemory: z.array(z.string()).max(5),
+  schedule: ScheduleSchema.optional(),
   seed: z.number().int().optional(),
   templateId: IdSchema.optional(),
   visuals: z.object({ avatar: AssetRefSchema.optional() }).optional(),
@@ -334,6 +335,26 @@ export const HookPoolEntrySchema = z.object({
   triggerCount: z.number().int().nonnegative().default(0),
 });
 
+export const WeatherSchema = z.object({
+  id: IdSchema,
+  label: z.string().min(1).max(80),
+  tags: z.array(z.string().min(1)).max(12),
+});
+
+export const MorningNpcMoveSchema = z.object({
+  charId: IdSchema,
+  slotId: IdSchema,
+  nodeId: IdSchema,
+  note: z.string().max(240).optional(),
+});
+
+export const MorningWorldUpdateSchema = z.object({
+  day: z.number().int().positive(),
+  weather: WeatherSchema,
+  npcMoves: z.array(MorningNpcMoveSchema).max(200).default([]),
+  worldNote: z.string().max(1000).optional(),
+});
+
 export const RelationMemoryStateSchema = z.object({
   memories: z.array(MemoryEntrySchema),
 });
@@ -458,6 +479,7 @@ export const WorldV14Schema = WorldV13Schema;
 export const WorldV15Schema = WorldV14Schema;
 export const WorldV17Schema = WorldV15Schema.extend({ morningBriefs: z.array(MorningBriefEntrySchema).max(200).default([]) });
 export const WorldV18Schema = WorldV17Schema.extend({ hooks: z.array(HookPoolEntrySchema).max(200).default([]) });
+export const WorldV19Schema = WorldV18Schema.extend({ morningUpdates: z.array(MorningWorldUpdateSchema).max(200).default([]) });
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -493,14 +515,17 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV18Schema,
+  world: WorldV19Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV18Schema>;
+export type WorldState = z.infer<typeof WorldV19Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
+export type Weather = z.infer<typeof WeatherSchema>;
+export type MorningNpcMove = z.infer<typeof MorningNpcMoveSchema>;
+export type MorningWorldUpdate = z.infer<typeof MorningWorldUpdateSchema>;
 export type WorldV5State = z.infer<typeof WorldV5Schema>;
 export type Topic = z.infer<typeof TopicSchema>;
 export type TopicTree = z.infer<typeof TopicTreeSchema>;

@@ -38,7 +38,7 @@ import { markAppointmentOnEnter, markAppointmentOnTimeAdvance, settleAppointment
 import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
 import { PLAYER_ACCENT_COLOR, resolveCharacterAccentColors, resolveSpeakerAccentColor } from './ui/character-color';
 import { settlementRelationNumbers } from './ui/settlement';
-import { buildLocalMorningBrief, buildMorningPrompt, hasMorningBrief, parseMorningResponse } from './core/world/morning';
+import { applyMorningNpcMoves, buildLocalMorningUpdate, buildMorningPrompt, hasMorningBrief, hasMorningUpdate, parseMorningUpdate } from './core/world/morning';
 import { findMatchingHooks, syncLeadHooks, triggerHook } from './core/world/hooks';
 import './ui/theme/app.css';
 
@@ -390,10 +390,16 @@ export function App() {
     const current = saveRef.current;
     if (hasMorningBrief(current.world, day)) {
       const repaired = structuredClone(current);
-      if (syncLeadHooks(repaired.world, repaired.world.morningBriefs.filter((entry) => entry.day === day))) commitSave(repaired);
+      let changed = syncLeadHooks(repaired.world, repaired.world.morningBriefs.filter((entry) => entry.day === day)) > 0;
+      if (!hasMorningUpdate(repaired.world, day)) {
+        const local = buildLocalMorningUpdate(repaired.world, day);
+        repaired.world.morningUpdates.push({ day, weather: local.weather, npcMoves: local.npcMoves, ...(local.worldNote ? { worldNote: local.worldNote } : {}) });
+        changed = true;
+      }
+      if (changed) commitSave(repaired);
       return;
     }
-    let entries = buildLocalMorningBrief(current.world, day);
+    let update = buildLocalMorningUpdate(current.world, day);
     const explicitRoute = bindings.some((binding) => binding.taskId === 'world_morning') || Boolean(mockFixtureId);
     if (explicitRoute) {
       const routed = mockFixtureId ? createMockProviderConfig(mockFixtureId) : resolveProviderForTask(providers, bindings, 'world_morning', defaultProviderId);
@@ -403,15 +409,17 @@ export function App() {
           let raw = '';
           const previousDiary = current.world.diary.filter((entry) => entry.day < day).at(-1)?.text;
           await streamChat(parsed, buildMorningPrompt(current.world, day, previousDiary), (delta) => { raw += delta; }, { taskId: 'world_morning' });
-          const generated = parseMorningResponse(raw, day);
-          if (generated.length) entries = generated;
+          const generated = parseMorningUpdate(raw, day, current.world, current.config.calendar.slots.map((slot) => slot.id));
+          if (generated) update = generated;
         } catch (error) { setFeedback({ tone: 'info', text: `晨报生成失败，已使用本地事实版：${errorMessage(error, '生成失败')}` }); }
       }
     }
     const next = structuredClone(saveRef.current);
     if (hasMorningBrief(next.world, day)) return;
-    next.world.morningBriefs = [...next.world.morningBriefs.filter((entry) => entry.day !== day), ...entries].slice(-200);
-    syncLeadHooks(next.world, entries);
+    next.world.morningBriefs = [...next.world.morningBriefs.filter((entry) => entry.day !== day), ...update.entries].slice(-200);
+    next.world.morningUpdates = [...next.world.morningUpdates.filter((entry) => entry.day !== day), { day, weather: update.weather, npcMoves: update.npcMoves, ...(update.worldNote ? { worldNote: update.worldNote } : {}) }].slice(-200);
+    applyMorningNpcMoves(next.world, day, update.npcMoves);
+    syncLeadHooks(next.world, update.entries);
     commitSave(next);
   }
 
@@ -1610,7 +1618,7 @@ export function App() {
     <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''} ${tab === 'map' ? 'map-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
-      {tab === 'day' && <DayView save={save} snapshots={snapshots} morningBriefs={save.world.morningBriefs} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
+      {tab === 'day' && <DayView save={save} snapshots={snapshots} morningBriefs={save.world.morningBriefs} morningUpdates={save.world.morningUpdates} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
       {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} />}
       {tab === 'library' && <MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} />}
@@ -1930,7 +1938,7 @@ function PresenceList({ people, scope }: { people: ReturnType<typeof whoIsHere>;
   return <div className="presence-list"><div className="list-heading"><strong>现在这里</strong><span className="io-scope">{scope} · 纯本地查询</span></div>{people.length ? people.map((person) => <div className="presence-row" key={person.id}><span>{person.name}<small>{person.tier === 'formal' ? '正式角色' : '半正式 NPC'} · {person.activity}</small></span></div>) : <p className="empty">当前没有已知角色在这里。</p>}</div>;
 }
 
-function DayView(props: { save: SaveFile; snapshots: SaveSnapshot[]; morningBriefs: SaveFile['world']['morningBriefs']; summarizingDay: number | null; onAction: (kind: string) => void; onSleep: () => void; onRestoreSnapshot: (id: string) => Promise<void>; onSaveDiary: (day: number, text: string) => void; onPresetChange: (preset: SaveFile['config']['calendar']['preset']) => void }) {
+function DayView(props: { save: SaveFile; snapshots: SaveSnapshot[]; morningBriefs: SaveFile['world']['morningBriefs']; morningUpdates: SaveFile['world']['morningUpdates']; summarizingDay: number | null; onAction: (kind: string) => void; onSleep: () => void; onRestoreSnapshot: (id: string) => Promise<void>; onSaveDiary: (day: number, text: string) => void; onPresetChange: (preset: SaveFile['config']['calendar']['preset']) => void }) {
   const { calendar } = props.save.config;
   const capacity = availableSlots(calendar);
   const used = props.save.world.slotsUsedToday;
@@ -1945,10 +1953,11 @@ function DayView(props: { save: SaveFile; snapshots: SaveSnapshot[]; morningBrie
     { kind: 'work', label: '工作', cost: props.save.config.actionCosts.work?.slotCost ?? 0 },
   ];
   const todayBriefs = props.morningBriefs.filter((entry) => entry.day === props.save.world.clock.day);
+  const todayUpdate = props.morningUpdates.find((entry) => entry.day === props.save.world.clock.day);
   return <section>
     <div className="section-heading"><div><span className="eyebrow">生活节奏</span><h2>第 {props.save.world.clock.day} 天 · {slotName}</h2></div><span className="slot-count">{calendar.unlimitedSlots ? '无限时段' : `${used} / ${capacity}`}</span></div>
     <div className="day-card"><label>每日节奏<select value={calendar.preset} disabled={used > 0} onChange={(event) => props.onPresetChange(event.target.value as SaveFile['config']['calendar']['preset'])}><option value="leisure">悠闲 · 6 时段</option><option value="standard">标准 · 4 时段</option><option value="tight">紧凑 · 3 时段</option><option value="sandbox">沙盒 · 不消耗</option></select></label><p className="io-scope">行动只修改本地确定性状态，不调用 API。节奏仅能在当天尚未行动时切换。</p><div className="day-actions">{actionButtons.map((action) => <button key={action.kind} onClick={() => props.onAction(action.kind)} disabled={!calendar.unlimitedSlots && action.cost > remaining}>{action.label}<small>{calendar.unlimitedSlots ? '不消耗' : `${action.cost} 时段`}</small></button>)}<button className="secondary" onClick={props.onSleep}>提前休息<small>结算今天</small></button></div></div>
-    <div className="morning-brief-card"><div className="list-heading"><h3>今日晨报</h3><span className="io-scope">最多每日一次合并更新</span></div>{todayBriefs.length ? <div className="morning-brief-list">{todayBriefs.map((entry) => <article key={entry.id} className={`morning-brief-entry morning-${entry.category}`}><span className="eyebrow">{entry.category}</span><strong>{entry.title}</strong><p>{entry.body}</p></article>)}</div> : <p className="empty">今天还没有晨报；进入新一天后会生成。</p>}</div>
+    <div className="morning-brief-card"><div className="list-heading"><h3>今日晨报</h3><span className="io-scope">最多每日一次合并更新</span></div>{todayUpdate && <div className="morning-world-meta"><span>天气：{todayUpdate.weather.label}</span>{todayUpdate.worldNote && <span>{todayUpdate.worldNote}</span>}</div>}{todayBriefs.length ? <div className="morning-brief-list">{todayBriefs.map((entry) => <article key={entry.id} className={`morning-brief-entry morning-${entry.category}`}><span className="eyebrow">{entry.category}</span><strong>{entry.title}</strong><p>{entry.body}</p></article>)}</div> : <p className="empty">今天还没有晨报；进入新一天后会生成。</p>}</div>
     <div className="settlement-card"><div className="list-heading"><h3>最近结算</h3>{props.summarizingDay === latestSettlement?.day && <span className="request-status requesting">正在生成日记…</span>}</div>{latestSettlement ? <><div className="settlement-grid"><span>日期<strong>第 {latestSettlement.day} 天</strong></span><span>足迹<strong>{latestSettlement.footprint.join('、') || '无'}</strong></span><span>遇见<strong>{latestSettlement.met.join('、') || '无人'}</strong></span><span>收支<strong>{latestSettlement.income - latestSettlement.expense}</strong></span><span>新物品<strong>{latestSettlement.itemsGained.length ? latestSettlement.itemsGained.map((entry) => `${entry.itemId} ×${entry.count}`).join('、') : '无'}</strong></span><span>明日待办<strong>{latestSettlement.appointmentsTomorrow.length ? latestSettlement.appointmentsTomorrow.map((item) => item.note ?? item.id).join('、') : '无'}</strong></span></div><div className="relation-summary"><strong>关系变化</strong>{latestSettlement.relationChanges.length ? latestSettlement.relationChanges.map((change) => { const numbers = settlementRelationNumbers(change, props.save.config.showNumbers); return <div className="relation-change" key={change.charId}><p>{change.prose}</p>{numbers && <small>{numbers}</small>}</div>; }) : <p className="empty">本阶段暂无相遇记录。</p>}</div>{latestDiary && <DiaryEditor entry={latestDiary} onSave={props.onSaveDiary} />}</> : <p className="empty">完成今天或选择提前休息后，这里会显示日结算与日记。</p>}</div>
     <details className="fold-card"><summary>本地快照</summary><div className="fold-body"><div className="snapshot-card"><div className="list-heading"><h3>本地快照</h3><span className="io-scope">结算时自动保存，保留最近 7 天</span></div>{props.snapshots.length ? props.snapshots.map((snapshot) => <div className="list-row" key={snapshot.id}><span>第 {snapshot.day} 天<strong>{snapshot.save.world.clock.day === snapshot.day + 1 ? ' · 次日开始前' : ''}</strong><small>保存于 {snapshot.createdAt}</small></span><button className="secondary" onClick={() => void props.onRestoreSnapshot(snapshot.id)}>回到这一天</button></div>) : <p className="empty">完成一次日结算后，这里会出现可回退的快照。</p>}</div></div></details>
     <div className="diary-archive"><div className="list-heading"><h3>日记回顾</h3><span className="io-scope">共 {props.save.world.diary.length} 天</span></div>{archivedDiaries.length ? archivedDiaries.map((entry) => <details key={entry.day}><summary>第 {entry.day} 天{entry.editedAt ? ' · 已编辑' : ''}</summary><DiaryEditor entry={entry} onSave={props.onSaveDiary} /></details>) : <p className="empty">完成第一天结算后，这里会保留历日日记。</p>}</div>

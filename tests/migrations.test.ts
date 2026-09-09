@@ -159,6 +159,15 @@ describe('save migrations', () => {
     expect(migrated.world.hooks).toEqual([]);
   });
 
+  it('migrates v18 worlds with an empty morning update list', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'morning-update-migration', title: 'Morning update migration' }));
+    const world = { ...source.world } as Record<string, unknown>;
+    delete world.morningUpdates;
+    const migrated = migrateSave({ ...source, schemaVersion: 18, world });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.morningUpdates).toEqual([]);
+  });
+
   it('migrates v10 worlds with an empty gift history', () => {
     const source = seedScenario(createCurrentSaveScenario({ id: 'v10-gifts', title: 'v10 gifts' }));
     const migrated = migrateSave({ ...source, schemaVersion: 10, world: { ...source.world, giftHistory: undefined } });

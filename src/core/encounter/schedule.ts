@@ -14,7 +14,9 @@ export function weekdayIndex(day: number, daysPerWeek: number): number {
   return ((Math.max(1, Math.floor(day)) - 1) % safeDays);
 }
 
-export function resolveScheduledCell(character: FormalCharacter, day: number, slotId: string, daysPerWeek: number): ScheduleCell | undefined {
+type ScheduledPerson = Pick<FormalCharacter | NpcLite, 'schedule' | 'homeNodeId'>;
+
+export function resolveScheduledCell(character: ScheduledPerson, day: number, slotId: string, daysPerWeek: number): ScheduleCell | undefined {
   const schedule = character.schedule;
   if (schedule) {
     const override = schedule.overrides[`${day}:${slotId}`];
@@ -32,9 +34,10 @@ function presentFormalCharacter(character: FormalCharacter, day: number, slotId:
   return { id: character.id, name: character.name, tier: 'formal', nodeId: cell.nodeId, activity: cell.activity, source: character.schedule ? 'schedule' : 'home' };
 }
 
-function presentNpc(npc: NpcLite): PresentCharacter | undefined {
-  if (!npc.homeNodeId) return undefined;
-  return { id: npc.id, name: npc.name, tier: 'semi', nodeId: npc.homeNodeId, activity: '在附近', source: 'home' };
+function presentNpc(npc: NpcLite, day: number, slotId: string, daysPerWeek: number): PresentCharacter | undefined {
+  const cell = resolveScheduledCell(npc, day, slotId, daysPerWeek);
+  if (!cell) return undefined;
+  return { id: npc.id, name: npc.name, tier: 'semi', nodeId: cell.nodeId, activity: cell.activity, source: npc.schedule ? 'schedule' : 'home' };
 }
 
 export function whoIsWhere(world: WorldState, day = world.clock.day, slotId = world.clock.slotId, daysPerWeek = 7): PresentCharacter[] {
@@ -42,7 +45,7 @@ export function whoIsWhere(world: WorldState, day = world.clock.day, slotId = wo
     .map((character) => presentFormalCharacter(character, day, slotId, daysPerWeek))
     .filter((character): character is PresentCharacter => Boolean(character));
   const semi = Object.values(world.npcs)
-    .map(presentNpc)
+    .map((npc) => presentNpc(npc, day, slotId, daysPerWeek))
     .filter((character): character is PresentCharacter => Boolean(character));
   return [...present, ...semi].sort((a, b) => (a.tier === b.tier ? a.id.localeCompare(b.id) : a.tier === 'formal' ? -1 : 1));
 }

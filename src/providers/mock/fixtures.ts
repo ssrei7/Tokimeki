@@ -79,11 +79,16 @@ function memorySummaryFixtures(): Record<MockFixtureId, MockFixture> {
 }
 
 function morningFixtures(): Record<MockFixtureId, MockFixture> {
-  const entries = JSON.stringify([
-    { category: 'lead', title: '码头边的风声', body: '西码头今天仍在中午开放，那里有值得留意的动静。', nodeId: 'docks', slotId: 'noon' },
-    { category: 'ambience', title: '潮气沿街', body: '海风把潮湿的气息带进了起点街区。' },
-    { category: 'ad', title: '临时帮工', body: '有人在码头附近寻找短时帮工，前往地点即可查看。', nodeId: 'docks', expiresDay: 5 },
-  ]);
+  const entries = JSON.stringify({
+    news: [
+      { category: 'lead', title: '码头边的风声', body: '西码头今天仍在中午开放，那里有值得留意的动静。', nodeId: 'docks', slotId: 'noon' },
+      { category: 'ambience', title: '潮气沿街', body: '海风把潮湿的气息带进了起点街区。' },
+      { category: 'ad', title: '临时帮工', body: '有人在码头附近寻找短时帮工，前往地点即可查看。', nodeId: 'docks', expiresDay: 5 },
+    ],
+    weather: { id: 'drizzle', label: '细雨', tags: ['rain', 'cold'] },
+    npcMoves: [{ charId: 'vendor-1', slotId: 'noon', nodeId: 'docks', note: '在摊位后整理货物' }],
+    worldNote: '港口的钟声比往常晚了一刻。',
+  });
   return Object.fromEntries(MOCK_FIXTURE_IDS.map((id) => [id, { id, chunks: [id === 'malformed' ? '[' : id === 'fenced' ? `\`\`\`json\n${entries}\n\`\`\`` : entries] }])) as unknown as Record<MockFixtureId, MockFixture>;
 }
 
