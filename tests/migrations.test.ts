@@ -141,6 +141,15 @@ describe('save migrations', () => {
     expect(migrated.world.relations.seir.memories[0].source.chatMessageIndices).toEqual([4]);
   });
 
+  it('migrates v16 worlds with an empty morning brief list', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'morning-migration', title: 'Morning migration' }));
+    const world = { ...source.world } as Record<string, unknown>;
+    delete world.morningBriefs;
+    const migrated = migrateSave({ ...source, schemaVersion: 16, world });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.morningBriefs).toEqual([]);
+  });
+
   it('migrates v10 worlds with an empty gift history', () => {
     const source = seedScenario(createCurrentSaveScenario({ id: 'v10-gifts', title: 'v10 gifts' }));
     const migrated = migrateSave({ ...source, schemaVersion: 10, world: { ...source.world, giftHistory: undefined } });

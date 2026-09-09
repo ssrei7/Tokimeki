@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 16;
+export const CURRENT_SCHEMA_VERSION = 17;
 
 const IdSchema = z.string().min(1);
 
@@ -305,6 +305,20 @@ export const CollectionEntrySchema = z.object({
   sourceCharId: IdSchema.optional(),
 });
 
+export const MorningBriefCategorySchema = z.enum(['lead', 'ambience', 'character', 'ad']);
+export const MorningBriefEntrySchema = z.object({
+  id: IdSchema,
+  day: z.number().int().positive(),
+  category: MorningBriefCategorySchema,
+  title: z.string().min(1).max(120),
+  body: z.string().min(1).max(1000),
+  nodeId: IdSchema.optional(),
+  slotId: IdSchema.optional(),
+  charIds: z.array(IdSchema).max(3).default([]),
+  expiresDay: z.number().int().positive().optional(),
+  source: z.enum(['local', 'ai']).default('local'),
+});
+
 export const RelationMemoryStateSchema = z.object({
   memories: z.array(MemoryEntrySchema),
 });
@@ -427,6 +441,7 @@ export const WorldV12Schema = WorldV11Schema;
 export const WorldV13Schema = WorldV12Schema.extend({ collection: z.array(CollectionEntrySchema).default([]) });
 export const WorldV14Schema = WorldV13Schema;
 export const WorldV15Schema = WorldV14Schema;
+export const WorldV17Schema = WorldV15Schema.extend({ morningBriefs: z.array(MorningBriefEntrySchema).max(200).default([]) });
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -462,12 +477,13 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV15Schema,
+  world: WorldV17Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV15Schema>;
+export type WorldState = z.infer<typeof WorldV17Schema>;
+export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type WorldV5State = z.infer<typeof WorldV5Schema>;
 export type Topic = z.infer<typeof TopicSchema>;
 export type TopicTree = z.infer<typeof TopicTreeSchema>;

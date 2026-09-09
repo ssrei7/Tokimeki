@@ -23,6 +23,7 @@ function repliesForTask(taskId: TaskId): Record<MockFixtureId, MockFixture> {
   const prefix = `[mock:${taskId}]`;
   if (taskId === 'topic_tree') return topicTreeFixtures();
   if (taskId === 'summarize_memory') return memorySummaryFixtures();
+  if (taskId === 'world_morning') return morningFixtures();
   return {
     perfect: {
       id: 'perfect',
@@ -75,6 +76,15 @@ function memorySummaryFixtures(): Record<MockFixtureId, MockFixture> {
     'interrupted-stream': { id: 'interrupted-stream', chunks: ['[{"target":"seir"'], errorAfterChunks: 'Mock memory summary interrupted' },
     'gift-reaction': { id: 'gift-reaction', chunks: ['[]'] },
   };
+}
+
+function morningFixtures(): Record<MockFixtureId, MockFixture> {
+  const entries = JSON.stringify([
+    { category: 'lead', title: '码头边的风声', body: '西码头今天仍在中午开放，那里有值得留意的动静。', nodeId: 'docks', slotId: 'noon' },
+    { category: 'ambience', title: '潮气沿街', body: '海风把潮湿的气息带进了起点街区。' },
+    { category: 'ad', title: '临时帮工', body: '有人在码头附近寻找短时帮工，前往地点即可查看。', nodeId: 'docks', expiresDay: 5 },
+  ]);
+  return Object.fromEntries(MOCK_FIXTURE_IDS.map((id) => [id, { id, chunks: [id === 'malformed' ? '[' : id === 'fenced' ? `\`\`\`json\n${entries}\n\`\`\`` : entries] }])) as unknown as Record<MockFixtureId, MockFixture>;
 }
 
 function topicTreeFixtures(): Record<MockFixtureId, MockFixture> {

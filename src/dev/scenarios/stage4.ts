@@ -33,7 +33,7 @@ export function createStage4EncounterScenario(): ScenarioDefinition {
             'white-flower': { id: 'white-flower', name: '白色小花', tags: ['flower'], description: '塞伊尔的特殊礼物测试项。', stackable: true, giftable: true },
             'lemon-candy': { id: 'lemon-candy', name: '柠檬糖', tags: ['sweet'], description: '凛的特殊礼物测试项。', stackable: true, giftable: true },
             'metal-charm': { id: 'metal-charm', name: '金属护符', tags: ['metal'], description: '用于测试被角色拒绝的礼物。', stackable: true, giftable: true },
-          }, relations: {}, diary: [], settlements: [], map,
+          }, relations: {}, diary: [], settlements: [], morningBriefs: [], map,
           characters: {
             seir: { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '在码头等人的青年。', personality: '安静而敏锐。' }, visuals: { portraits: [], accentColor: '#315efb' }, homeNodeId: 'start', giftPrefs: { likeTags: ['flower'], dislikeTags: ['metal'], specialItems: { 'white-flower': 4 } }, schedule: { grid: { '2:noon': { nodeId: 'docks', activity: '靠着栏杆等人' } }, overrides: {} } },
             rin: { id: 'rin', name: '凛', tier: 'formal', card: { description: '偶尔来码头买花的女孩。', personality: '爽朗。' }, visuals: { portraits: [], accentColor: '#d97706' }, homeNodeId: 'start', giftPrefs: { likeTags: ['sweet'], dislikeTags: ['metal'], specialItems: { 'lemon-candy': 3 } }, schedule: { grid: { '2:noon': { nodeId: 'docks', activity: '在摊位旁挑花' } }, overrides: {} } },
