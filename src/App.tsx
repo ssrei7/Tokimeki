@@ -783,6 +783,7 @@ export function App() {
         topicTreeRequest: {
           day: saveRef.current.world.clock.day,
           slotId: saveRef.current.world.clock.slotId,
+          character: { id: mainCharacter?.id ?? charId, name: mainCharacter?.name ?? charId },
           node: scene ? { id: scene.id, name: scene.name, description: scene.description } : { id: nodeId },
           usedTopics: saveRef.current.world.usedTopics,
         },
