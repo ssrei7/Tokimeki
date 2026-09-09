@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deleteRelationshipMemory, removeRelationshipMemoriesFromMessage } from '../src/core/relationship';
+import { deleteRelationshipMemory, removeRelationshipMemoriesFromMessage, retrieveRelationshipMemories, setRelationshipMemoryArchived, setRelationshipMemoryInject, updateRelationshipMemory } from '../src/core/relationship';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 describe('relationship memory library operations', () => {
@@ -35,5 +35,25 @@ describe('relationship memory library operations', () => {
     ] };
     expect(removeRelationshipMemoriesFromMessage(world, 'seir', 4)).toBe(1);
     expect(world.relations.seir.memories.map((memory) => memory.id)).toEqual(['old', 'reply-2']);
+  });
+
+  it('retrieves memories deterministically and excludes archived or disabled entries', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'relationship-memory-retrieval', title: 'Relationship memory retrieval' }));
+    save.world.relations.seir = { axes: {}, knots: [], memories: [
+      { id: 'old', text: '在码头约好下次见。', day: 1, nodeId: 'docks', type: 'promise', importance: 'high', archived: false, inject: true, source: { kind: 'chat', chatCharacterId: 'seir', chatMessageIndex: 1 } },
+      { id: 'hidden', text: '在码头的旧记忆。', day: 3, nodeId: 'docks', archived: true, inject: true, source: { kind: 'legacy' } },
+      { id: 'disabled', text: '在码头的普通记忆。', day: 4, nodeId: 'docks', archived: false, inject: false, source: { kind: 'manual' } },
+    ] };
+    expect(retrieveRelationshipMemories(save.world, 'seir', { query: '码头', nodeId: 'docks', limit: 5 }).map(({ memory }) => memory.id)).toEqual(['old']);
+    expect(retrieveRelationshipMemories(save.world, 'seir', { includeArchived: true, includeDisabled: true, query: '码头' }).map(({ memory }) => memory.id)).toEqual(['old', 'disabled', 'hidden']);
+  });
+
+  it('supports editing, archiving, restoring, and disabling injection locally', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'relationship-memory-edit', title: 'Relationship memory edit' }));
+    save.world.relations.seir = { axes: {}, knots: [], memories: [{ id: 'm1', text: '旧内容', day: 1, source: { kind: 'legacy' } }] };
+    expect(updateRelationshipMemory(save.world, 'seir', 'm1', { text: '新内容', type: 'event', importance: 'critical' })).toEqual({ ok: true });
+    expect(setRelationshipMemoryArchived(save.world, 'seir', 'm1', true)).toEqual({ ok: true });
+    expect(setRelationshipMemoryInject(save.world, 'seir', 'm1', false)).toEqual({ ok: true });
+    expect(save.world.relations.seir.memories[0]).toMatchObject({ text: '新内容', type: 'event', importance: 'critical', archived: true, inject: false });
   });
 });

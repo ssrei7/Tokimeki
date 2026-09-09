@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 14;
+export const CURRENT_SCHEMA_VERSION = 15;
 
 const IdSchema = z.string().min(1);
 
@@ -271,6 +271,13 @@ export const ItemDefSchema = z.object({
   value: z.number().optional(),
 });
 
+export const MemoryTypeSchema = z.enum(['interaction', 'promise', 'preference', 'event', 'observation', 'other']);
+export const MemorySourceSchema = z.object({
+  kind: z.enum(['chat', 'manual', 'system', 'legacy']),
+  chatCharacterId: IdSchema.optional(),
+  chatMessageIndex: z.number().int().nonnegative().optional(),
+});
+
 export const MemoryEntrySchema = z.object({
   id: IdSchema,
   text: z.string().min(1),
@@ -278,6 +285,11 @@ export const MemoryEntrySchema = z.object({
   nodeId: IdSchema.optional(),
   weight: z.number().optional(),
   sourceChatMessageIndex: z.number().int().nonnegative().optional(),
+  type: MemoryTypeSchema.default('interaction'),
+  source: MemorySourceSchema.default({ kind: 'legacy' }),
+  importance: z.enum(['low', 'normal', 'high', 'critical']).default('normal'),
+  archived: z.boolean().default(false),
+  inject: z.boolean().default(true),
 });
 
 export const CollectionEntrySchema = z.object({
@@ -412,6 +424,7 @@ export const WorldV11Schema = WorldV10Schema.extend({ giftHistory: z.array(GiftH
 export const WorldV12Schema = WorldV11Schema;
 export const WorldV13Schema = WorldV12Schema.extend({ collection: z.array(CollectionEntrySchema).default([]) });
 export const WorldV14Schema = WorldV13Schema;
+export const WorldV15Schema = WorldV14Schema;
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -447,12 +460,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV14Schema,
+  world: WorldV15Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV14Schema>;
+export type WorldState = z.infer<typeof WorldV15Schema>;
 export type WorldV5State = z.infer<typeof WorldV5Schema>;
 export type Topic = z.infer<typeof TopicSchema>;
 export type TopicTree = z.infer<typeof TopicTreeSchema>;
@@ -479,3 +492,6 @@ export type DailySettlement = z.infer<typeof DailySettlementSchema>;
 export type StageRule = z.infer<typeof StageRuleSchema>;
 export type AxisDef = z.infer<typeof AxisDefSchema>;
 export type RelationState = z.infer<typeof RelationStateSchema>;
+export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
+export type MemoryType = z.infer<typeof MemoryTypeSchema>;
+export type MemorySource = z.infer<typeof MemorySourceSchema>;

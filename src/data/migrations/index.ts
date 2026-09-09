@@ -13,6 +13,7 @@ import { migrateV10ToV11 } from './v10-to-v11';
 import { migrateV11ToV12 } from './v11-to-v12';
 import { migrateV12ToV13 } from './v12-to-v13';
 import { migrateV13ToV14 } from './v13-to-v14';
+import { migrateV14ToV15 } from './v14-to-v15';
 import { MigrationError, UnsupportedSchemaVersionError, type Migration } from './types';
 
 export const migrations: Record<number, Migration> = {
@@ -30,6 +31,7 @@ export const migrations: Record<number, Migration> = {
   12: migrateV11ToV12,
   13: migrateV12ToV13,
   14: migrateV13ToV14,
+  15: migrateV14ToV15,
 };
 
 export function migrateSave(input: unknown): SaveFile {

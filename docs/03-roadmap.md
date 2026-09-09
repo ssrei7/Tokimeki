@@ -395,7 +395,7 @@
 7. 喜欢的随机 NPC 转正后有完整卡、独立记忆与日程
 8. 20 个 NPC 时每日调用量不随 NPC 数增长
 
-**schema**：v9 —— `world.morning` / `npcs[].lightMemory`
+**schema**：v15 起 —— `world.morning` / `npcs[].lightMemory`；阶段 6 的记忆元数据切片从当前 v14 迁移至 v15，晨报字段在后续阶段 6 提交继续递增版本。
 
 **空沙盒问题在这一步解决。** 玩家每天早上知道今天可以去干什么了。
 

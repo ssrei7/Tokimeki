@@ -2,6 +2,7 @@ import type { CharacterCard, ChatMessage, Persona, PresetBundle, WorldbookEntry 
 import type { SaveFile } from '../../data/schema/save';
 import type { PromptBlock, PromptFacts } from './assembler';
 import { buildRelationshipStatePrompt, type RelationshipPromptState } from '../relationship';
+import { retrieveRelationshipMemories } from '../relationship';
 
 export const DEFAULT_PROMPT_BLOCK_IDS = [
   'preset_bundle', 'format_contract', 'encounter_participants', 'character_core', 'relationship_state', 'scene_now', 'node_worldbook', 'node_memory',
@@ -100,7 +101,7 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
       const characterNames = new Map(Object.values(world.characters).map((item) => [item.id, item.name]));
       for (const participant of selected) characterNames.set(participant.id, participant.name);
       const sections = [...new Set(selected.map((item) => item.id))].flatMap((charId) => {
-        const memories = world.relations[charId]?.memories.slice(-5) ?? [];
+        const memories = retrieveRelationshipMemories(world, charId, { query: factsOf(facts).input, nodeId: world.player.nodeId, limit: 5 }).map(({ memory }) => memory);
         if (!memories.length) return [];
         const name = characterNames.get(charId) ?? charId;
         return [`${name}：\n${memories.map((memory) => `- 第 ${memory.day} 天${memory.nodeId ? ` · 地点 ${memory.nodeId}` : ''}：${memory.text}`).join('\n')}`];

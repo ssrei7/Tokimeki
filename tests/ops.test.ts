@@ -91,7 +91,7 @@ describe('op registry and built-ins', () => {
     ], state.context, 12);
     expect(result.rejected).toHaveLength(1);
     expect(state.world.relations.unknown).toBeUndefined();
-    expect(state.world.relations.seir.memories[0]).toEqual({ id: 'memory-seir-3-1', text: '在码头交谈', day: 3, nodeId: 'docks' });
+    expect(state.world.relations.seir.memories[0]).toMatchObject({ id: 'memory-seir-3-1', text: '在码头交谈', day: 3, nodeId: 'docks', type: 'interaction', importance: 'normal', archived: false, inject: true, source: { kind: 'system' } });
   });
 
   it('records the source chat message index for generated memories', () => {

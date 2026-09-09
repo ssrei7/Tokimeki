@@ -16,7 +16,11 @@ const SetStatSchema = z.object({ op: z.literal('set_stat'), target: StatTargetSc
 const SetFlagSchema = z.object({ op: z.literal('set_flag'), target: StatTargetSchema.default('world'), key: z.string().min(1), value: z.boolean() });
 const GiveItemSchema = z.object({ op: z.literal('give_item'), id: z.string().min(1), count: z.number().int().positive().default(1), from: z.string().min(1).optional() });
 const TakeItemSchema = z.object({ op: z.literal('take_item'), id: z.string().min(1), count: z.number().int().positive().default(1) });
-const AddMemorySchema = z.object({ op: z.literal('add_memory'), target: z.string().min(1), text: z.string().min(1).max(1000) });
+const AddMemorySchema = z.object({
+  op: z.literal('add_memory'), target: z.string().min(1), text: z.string().min(1).max(1000),
+  type: z.enum(['interaction', 'promise', 'preference', 'event', 'observation', 'other']).default('interaction'),
+  importance: z.enum(['low', 'normal', 'high', 'critical']).default('normal'),
+});
 const AddNodeMemorySchema = z.object({ op: z.literal('add_node_memory'), nodeId: z.string().min(1).optional(), text: z.string().min(1).max(1000), charIds: z.array(z.string().min(1)).max(3).default([]), pinned: z.boolean().optional() });
 const AdvanceTimeSchema = z.object({ op: z.literal('advance_time'), kind: z.string().min(1).optional(), slots: z.number().int().positive().default(1) });
 const MovePlayerSchema = z.object({ op: z.literal('move_player'), nodeId: z.string().min(1) });
@@ -77,7 +81,7 @@ export function registerBuiltInOps(registry: OpRegistry): void {
   });
   registry.register({
     op: 'add_memory', schema: AddMemorySchema, clamp: {},
-    promptDoc: 'add_memory: {"op":"add_memory","target":"current-character-id","text":"fact grounded in this scene"}.',
+    promptDoc: 'add_memory: {"op":"add_memory","target":"current-character-id","text":"fact grounded in this scene","type":"interaction|promise|preference|event|observation|other","importance":"low|normal|high|critical"}.',
     describe: (payload) => `add memory for ${payload.target}: ${payload.text}`,
     apply: (payload, context) => addMemory(payload, context),
   });
@@ -249,7 +253,21 @@ function addMemory(payload: z.infer<typeof AddMemorySchema>, context: OpContext)
   if (!context.actorId || payload.target !== context.actorId) return rejected('Memory target must be the current actor.');
   const relation = context.world.relations[payload.target] ?? { memories: [] };
   context.world.relations[payload.target] = relation;
-  const memory = { id: `memory-${payload.target}-${context.day}-${relation.memories.length + 1}`, text: payload.text, day: context.day, nodeId: context.nodeId, ...(context.memorySource?.chatCharacterId === payload.target ? { sourceChatMessageIndex: context.memorySource.messageIndex } : {}) };
+  const source = context.memorySource?.chatCharacterId === payload.target
+    ? { kind: context.memorySource.kind ?? 'chat', chatCharacterId: payload.target, chatMessageIndex: context.memorySource.messageIndex }
+    : { kind: 'system' as const };
+  const memory = {
+    id: `memory-${payload.target}-${context.day}-${relation.memories.length + 1}`,
+    text: payload.text,
+    day: context.day,
+    nodeId: context.nodeId,
+    type: payload.type,
+    importance: payload.importance,
+    archived: false,
+    inject: true,
+    source,
+    ...(context.memorySource?.chatCharacterId === payload.target ? { sourceChatMessageIndex: context.memorySource.messageIndex } : {}),
+  };
   relation.memories.push(memory);
   return changed(`relations.${payload.target}.memories`, relation.memories.length - 1, relation.memories.length, `Added memory for ${payload.target}.`);
 }

@@ -19,7 +19,7 @@ type Condition = string;   // expr-eval 表达式,禁止 eval
 - 时间坐标统一为 `(day, slotId)`，地点坐标统一为 `nodeId`。
 - 派生值（阶段标签、可达节点、当前在场者）可缓存但必须能重算，且不作为事实来源。
 
-`CURRENT_SCHEMA_VERSION = 9`
+`CURRENT_SCHEMA_VERSION = 15`
 
 ---
 
@@ -108,6 +108,11 @@ interface MemoryEntry {
   nodeId?: NodeId;
   weight?: number;               // 压缩时保留优先级
   sourceChatMessageIndex?: number; // v14：由该角色聊天记录中的哪条回复产生
+  type: 'interaction' | 'promise' | 'preference' | 'event' | 'observation' | 'other';
+  source: { kind: 'chat' | 'manual' | 'system' | 'legacy'; chatCharacterId?: CharId; chatMessageIndex?: number };
+  importance: 'low' | 'normal' | 'high' | 'critical';
+  archived: boolean;
+  inject: boolean;
 }
 
 interface RelationState {

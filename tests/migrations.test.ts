@@ -131,6 +131,14 @@ describe('save migrations', () => {
     expect(migrated.world.encounterLog[0]).toEqual(entry);
   });
 
+  it('migrates v14 memories with safe metadata defaults and preserves provenance', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'memory-migration', title: 'Memory migration' }));
+    const migrated = migrateSave({ ...source, schemaVersion: 14, world: { ...source.world, relations: { seir: { memories: [{ id: 'm1', text: '旧记忆', day: 1, sourceChatMessageIndex: 4 }] } } } });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.relations.seir.memories[0]).toMatchObject({ type: 'interaction', importance: 'normal', archived: false, inject: true, source: { kind: 'chat', chatMessageIndex: 4 } });
+    expect(migrated.world.relations.seir.memories[0].sourceChatMessageIndex).toBe(4);
+  });
+
   it('migrates v10 worlds with an empty gift history', () => {
     const source = seedScenario(createCurrentSaveScenario({ id: 'v10-gifts', title: 'v10 gifts' }));
     const migrated = migrateSave({ ...source, schemaVersion: 10, world: { ...source.world, giftHistory: undefined } });
@@ -153,11 +161,11 @@ describe('save migrations', () => {
     expect(migrated.world.collection[0]).toMatchObject({ itemId: 'keepsake', title: '旧车票', description: '褪色的车票', tags: ['memory'], day: 2, nodeId: 'start' });
   });
 
-  it('migrates v13 saves to v14 without dropping existing memories', () => {
+  it('migrates v13 saves to the current schema without dropping existing memories', () => {
     const save = seedScenario(createCurrentSaveScenario({ id: 'migration-v13', title: 'Migration v13' }));
     const legacy = { ...save, schemaVersion: 13, world: { ...save.world, relations: { ...save.world.relations, seir: { ...save.world.relations.seir, memories: [{ id: 'memory-1', text: '保留', day: 1 }] } } } };
     const migrated = migrateSave(legacy);
-    expect(migrated.schemaVersion).toBe(14);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.relations.seir.memories[0]).toMatchObject({ id: 'memory-1', text: '保留' });
   });
 });

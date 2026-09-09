@@ -212,6 +212,11 @@ button.danger { background: #fee4e2; color: #b42318; }
 .memory-character { border-top: 1px solid #edf0f5; padding-top: 8px; }
 .memory-character summary { cursor: pointer; font-weight: 600; }
 .memory-list { display: grid; gap: 6px; margin-top: 8px; }
+.memory-controls { display: grid; gap: 8px; padding-bottom: 4px; }
+.memory-entry { display: grid; gap: 6px; padding: 10px 0; border-top: 1px solid #f0f2f5; }
+.memory-entry small { display: block; color: #667085; font-size: 11px; line-height: 1.45; }
+.memory-editor { display: grid; gap: 8px; }
+.memory-editor textarea { min-height: 72px; resize: vertical; }
 .collection-library-card { display: grid; gap: 10px; }
 .collection-entry { border-top: 1px solid #edf0f5; padding-top: 10px; }
 .collection-entry small { display: block; color: #667085; font-size: 12px; margin-top: 3px; }

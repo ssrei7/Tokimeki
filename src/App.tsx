@@ -32,7 +32,7 @@ import { ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TAS
 import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from './ui/chat-state';
 import { latestDialogueSpeakerId, splitDialogueMessage } from './ui/dialogue';
 import { deleteChatMessage, isEditableChatMessage, updateChatMessage } from './ui/chat-history';
-import { deleteRelationshipMemory, deriveRelationshipPromptState, removeRelationshipMemoriesFromMessage } from './core/relationship';
+import { deleteRelationshipMemory, deriveRelationshipPromptState, removeRelationshipMemoriesFromMessage, setRelationshipMemoryArchived, setRelationshipMemoryInject, updateRelationshipMemory } from './core/relationship';
 import { markAppointmentOnEnter, markAppointmentOnTimeAdvance, settleAppointments } from './core/appointments';
 import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
 import { PLAYER_ACCENT_COLOR, resolveCharacterAccentColors, resolveSpeakerAccentColor } from './ui/character-color';
@@ -638,10 +638,43 @@ export function App() {
 
   function deleteMemory(charId: string, memoryId: string): void {
     const next = structuredClone(saveRef.current);
+    const result = setRelationshipMemoryArchived(next.world, charId, memoryId, true);
+    if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '无法删除记忆。' }); return; }
+    commitSave(next);
+    setFeedback({ tone: 'success', text: '这条记忆已归档，之后不会再注入角色上下文。' });
+  }
+
+  function editMemory(charId: string, memoryId: string, patch: { text?: string; type?: string; importance?: string }): void {
+    const next = structuredClone(saveRef.current);
+    const result = updateRelationshipMemory(next.world, charId, memoryId, patch);
+    if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '无法编辑记忆。' }); return; }
+    commitSave(next);
+    setFeedback({ tone: 'success', text: '记忆已保存。' });
+  }
+
+  function restoreMemory(charId: string, memoryId: string): void {
+    const next = structuredClone(saveRef.current);
+    const result = setRelationshipMemoryArchived(next.world, charId, memoryId, false);
+    if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '无法恢复记忆。' }); return; }
+    commitSave(next);
+    setFeedback({ tone: 'success', text: '记忆已恢复。' });
+  }
+
+  function toggleMemoryInjection(charId: string, memoryId: string, inject: boolean): void {
+    const next = structuredClone(saveRef.current);
+    const result = setRelationshipMemoryInject(next.world, charId, memoryId, inject);
+    if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '无法更新记忆注入开关。' }); return; }
+    commitSave(next);
+    setFeedback({ tone: 'success', text: inject ? '这条记忆会继续注入角色上下文。' : '这条记忆已停止注入角色上下文。' });
+  }
+
+  function permanentlyDeleteMemory(charId: string, memoryId: string): void {
+    if (!window.confirm('永久删除这条记忆？该操作不会回滚关系、物品、事件或聊天事实。')) return;
+    const next = structuredClone(saveRef.current);
     const result = deleteRelationshipMemory(next.world, charId, memoryId);
     if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '无法删除记忆。' }); return; }
     commitSave(next);
-    setFeedback({ tone: 'success', text: '这条记忆已从记忆库删除，之后不会再注入角色上下文。' });
+    setFeedback({ tone: 'success', text: '这条记忆已永久删除。' });
   }
 
   function updateCollectionEntry(id: string, title: string, description: string): void {
@@ -1484,7 +1517,7 @@ export function App() {
       {tab === 'day' && <DayView save={save} snapshots={snapshots} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} />}
       {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} />}
-      {tab === 'library' && <MemoryLibraryView save={save} onDeleteMemory={deleteMemory} />}
+      {tab === 'library' && <MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} />}
       {tab === 'library' && <CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} />}
       {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} />}
     </main>
@@ -2207,9 +2240,24 @@ function PresetBundleView(props: { presetBundles: PresetBundle[]; selectedPreset
   </div></div></details>;
 }
 
-function MemoryLibraryView(props: { save: SaveFile; onDeleteMemory: (charId: string, memoryId: string) => void }) {
+function MemoryLibraryView(props: {
+  save: SaveFile;
+  onArchiveMemory: (charId: string, memoryId: string) => void;
+  onRestoreMemory: (charId: string, memoryId: string) => void;
+  onDeleteMemory: (charId: string, memoryId: string) => void;
+  onEditMemory: (charId: string, memoryId: string, patch: { text?: string; type?: string; importance?: string }) => void;
+  onToggleInjection: (charId: string, memoryId: string, inject: boolean) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState({ text: '', type: 'interaction', importance: 'normal' });
   const characters = Object.values(props.save.world.characters);
-  return <section className="memory-library-section"><div className="section-heading"><div><span className="eyebrow">长期上下文</span><h2>记忆库</h2><p className="io-scope">这些记忆会在未来对话中作为角色上下文使用；删除后不会改写历史对话。</p></div></div><div className="list-card memory-library-card">{characters.length === 0 ? <p className="empty">当前世界还没有角色。</p> : characters.map((character) => { const memories = props.save.world.relations[character.id]?.memories ?? []; return <details className="memory-character" key={character.id}><summary>{character.name} · {memories.length} 条记忆</summary><div className="memory-list">{memories.length === 0 ? <p className="empty">暂无长期记忆。</p> : memories.map((memory) => <div className="list-row" key={memory.id}><span>{memory.text}<small>第 {memory.day} 天{memory.nodeId ? ` · 地点 ${memory.nodeId}` : ''}</small></span><button className="danger" onClick={() => props.onDeleteMemory(character.id, memory.id)}>删除</button></div>)}</div></details>; })}</div></section>;
+  const beginEdit = (charId: string, memory: { id: string; text: string; type?: string; importance?: string }) => {
+    setEditing(`${charId}:${memory.id}`);
+    setDraft({ text: memory.text, type: memory.type ?? 'interaction', importance: memory.importance ?? 'normal' });
+  };
+  return <section className="memory-library-section"><div className="section-heading"><div><span className="eyebrow">长期上下文</span><h2>记忆库</h2><p className="io-scope">记忆管理只影响未来 Prompt；归档不会改写历史对话或已经发生的世界事实。</p></div></div><div className="list-card memory-library-card"><div className="memory-controls"><input aria-label="搜索记忆" placeholder="按关键词搜索记忆" value={query} onChange={(event) => setQuery(event.target.value)} /><label className="checkbox-line"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />显示已归档</label></div>{characters.length === 0 ? <p className="empty">当前世界还没有角色。</p> : characters.map((character) => { const allMemories = props.save.world.relations[character.id]?.memories ?? []; const memories = allMemories.filter((memory) => (showArchived ? memory.archived === true : memory.archived !== true) && (!query.trim() || memory.text.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))); return <details className="memory-character" key={character.id}><summary>{character.name} · {memories.length} 条{showArchived ? '已归档' : '可用'}记忆</summary><div className="memory-list">{memories.length === 0 ? <p className="empty">没有匹配的记忆。</p> : memories.map((memory) => { const key = `${character.id}:${memory.id}`; return <div className="memory-entry" key={memory.id}>{editing === key ? <div className="memory-editor"><textarea aria-label="记忆内容" value={draft.text} onChange={(event) => setDraft((current) => ({ ...current, text: event.target.value }))} /><div className="button-row"><label>类型<select value={draft.type} onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value }))}><option value="interaction">互动</option><option value="promise">约定</option><option value="preference">偏好</option><option value="event">事件</option><option value="observation">观察</option><option value="other">其他</option></select></label><label>重要性<select value={draft.importance} onChange={(event) => setDraft((current) => ({ ...current, importance: event.target.value }))}><option value="low">低</option><option value="normal">普通</option><option value="high">高</option><option value="critical">关键</option></select></label></div><div className="button-row"><button onClick={() => { props.onEditMemory(character.id, memory.id, draft); setEditing(null); }}>保存</button><button className="secondary" onClick={() => setEditing(null)}>取消</button></div></div> : <><div className="list-heading"><span>{memory.text}<small>第 {memory.day} 天{memory.nodeId ? ` · 地点 ${memory.nodeId}` : ''} · {memory.type ?? 'interaction'} · {memory.importance ?? 'normal'} · 来源：{memory.source?.kind ?? 'legacy'}</small></span><div className="button-row"><button onClick={() => beginEdit(character.id, memory)}>编辑</button>{memory.archived ? <button onClick={() => props.onRestoreMemory(character.id, memory.id)}>恢复</button> : <button className="secondary" onClick={() => props.onArchiveMemory(character.id, memory.id)}>归档</button>}{memory.archived && <button className="danger" onClick={() => props.onDeleteMemory(character.id, memory.id)}>永久删除</button>}</div></div><label className="checkbox-line"><input type="checkbox" checked={memory.inject !== false} onChange={(event) => props.onToggleInjection(character.id, memory.id, event.target.checked)} />允许注入 Prompt</label></>}</div>; })}</div></details>; })}</div></section>;
 }
 
 function CollectionLibraryView(props: { save: SaveFile; onUpdate: (id: string, title: string, description: string) => void; onDelete: (id: string) => void }) {
