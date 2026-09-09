@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLocalChapterSummary, formatEventHistoryArchive, upsertChapterSummary, upsertMilestone } from '../src/core/story';
+import { buildLocalChapterSummary, formatChatArchive, formatEventHistoryArchive, upsertChapterSummary, upsertMilestone } from '../src/core/story';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 describe('local chapter summaries and milestones', () => {
@@ -36,5 +36,17 @@ describe('local chapter summaries and milestones', () => {
     expect(archive).toContain('选择：留下调查');
     expect(archive).toContain('结果：确认仓库开放。');
     expect(archive).not.toContain('eventId');
+  });
+
+  it('renders chat messages verbatim without ops or provider metadata', () => {
+    const archive = formatChatArchive({ title: '港口相遇', playerLabel: '小明', characterName: '星野', messages: [
+      { role: 'user', content: '你今天也在这里。', kind: 'dialogue', speakerId: 'player' },
+      { role: 'assistant', content: '嗯，风很舒服。', kind: 'dialogue', speakerId: 'seir' },
+    ] });
+    expect(archive).toContain('## 1. 小明');
+    expect(archive).toContain('你今天也在这里。');
+    expect(archive).toContain('## 2. 星野');
+    expect(archive).toContain('嗯，风很舒服。');
+    expect(archive).not.toContain('ops');
   });
 });

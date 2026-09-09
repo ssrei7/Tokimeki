@@ -1,4 +1,5 @@
 import type { SaveFile } from '../../data/schema/save';
+import type { ChatMessage } from '../../data/content';
 
 /** Render experienced event history as a standalone, human-readable Markdown archive. */
 export function formatEventHistoryArchive(save: SaveFile): string {
@@ -30,4 +31,14 @@ export function formatEventHistoryArchive(save: SaveFile): string {
   });
 
   return `${lines.join('\n')}\n`;
+}
+
+/** Render one local chat transcript as standalone Markdown while preserving message text verbatim. */
+export function formatChatArchive(options: { title: string; playerLabel: string; characterName: string; messages: readonly ChatMessage[] }): string {
+  const lines = [`# ${options.title} · 聊天档案`, '', `参与角色：${options.characterName}`, `玩家称呼：${options.playerLabel}`, ''];
+  options.messages.forEach((message, index) => {
+    const speaker = message.role === 'user' ? options.playerLabel : message.role === 'assistant' ? options.characterName : '系统';
+    lines.push(`## ${index + 1}. ${speaker}`, '', message.content, '');
+  });
+  return `${lines.join('\n').trimEnd()}\n`;
 }

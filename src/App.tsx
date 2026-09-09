@@ -5,7 +5,7 @@ import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
 import { TOPIC_TREE_PROMPT_BLOCKS } from './core/prompt/topic-tree';
 import { EventBus } from './core/events/bus';
 import { evaluateEvidenceReaction, listPendingEvents, resolveEventChoice, scheduleDirectorEvent, setScheduledEventRevealed, triggerScheduledEvent } from './core/events';
-import { formatEventHistoryArchive } from './core/story';
+import { formatChatArchive, formatEventHistoryArchive } from './core/story';
 import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGeneratedMapExpansion, parseGeneratedNodeSuggestion, updateMapNode, type CreateMapNodeInput, type UpdateMapNodeInput } from './core/map';
 import { parseGeneratedTopicTree } from './core/topics/parser';
 import { isTopicTreeFresh, mergeDailyTopicTree, topicResponse, topicTreeKey, topicVisibility, visibleTopics } from './core/topics';
@@ -470,6 +470,17 @@ export function App() {
     const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
     anchor.href = url; anchor.download = 'tokimeki-event-archive.md'; anchor.click(); URL.revokeObjectURL(url);
     setFeedback({ tone: 'success', text: `已导出 ${history.length} 条可阅读事件档案。` });
+  }
+
+  async function exportChatArchive(): Promise<void> {
+    if (!selectedCharacterId || messages.length === 0) { setFeedback({ tone: 'info', text: '当前没有可导出的聊天记录。' }); return; }
+    await saveChat({ characterId: selectedCharacterId, messages, updatedAt: now() });
+    const characterName = saveRef.current.world.characters[selectedCharacterId]?.name ?? characters.find((item) => item.id === selectedCharacterId)?.name ?? selectedCharacterId;
+    const archive = formatChatArchive({ title: `${characterName}的对话`, playerLabel: activePersona?.displayName ?? saveRef.current.world.player.name, characterName, messages });
+    const blob = new Blob([archive], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
+    anchor.href = url; anchor.download = `tokimeki-chat-${slug(characterName)}.md`; anchor.click(); URL.revokeObjectURL(url);
+    setFeedback({ tone: 'success', text: `已导出 ${messages.length} 条原始聊天记录。` });
   }
 
   function deleteEventHistory(id?: string): void {
@@ -1720,6 +1731,7 @@ export function App() {
     {tab !== 'map' && <header className={`topbar ${tab === 'chat' ? 'chat-topbar' : ''}`}><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small><h1>Tokimeki{tab === 'chat' && <span className="topbar-context"> · 面对面</span>}</h1></div></header>}
     <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''} ${tab === 'map' ? 'map-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
+      {tab === 'chat' && <div className="chat-archive-toolbar"><button className="secondary" onClick={() => void exportChatArchive()} disabled={!selectedCharacterId || messages.length === 0}>导出聊天档案</button><span className="io-scope">保存为独立 Markdown，不包含 ops、状态或 Provider 配置</span></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} morningBriefs={save.world.morningBriefs} morningUpdates={save.world.morningUpdates} morningStyle={save.config.morningStyle} summarizingDay={summarizingDay} onAction={runDayAction} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} onRevealEvent={revealEvent} onResolveEventChoice={resolveChoice} onExportEventHistory={exportEventHistory} onDeleteEventHistory={deleteEventHistory} onMove={(nodeId) => { if (moveToNode(nodeId)) setTab('map'); }} />}
       {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
