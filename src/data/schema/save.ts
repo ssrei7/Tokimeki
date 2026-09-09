@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 15;
+export const CURRENT_SCHEMA_VERSION = 16;
 
 const IdSchema = z.string().min(1);
 
@@ -276,6 +276,7 @@ export const MemorySourceSchema = z.object({
   kind: z.enum(['chat', 'manual', 'system', 'legacy']),
   chatCharacterId: IdSchema.optional(),
   chatMessageIndex: z.number().int().nonnegative().optional(),
+  chatMessageIndices: z.array(z.number().int().nonnegative()).max(200).optional(),
 });
 
 export const MemoryEntrySchema = z.object({
@@ -285,6 +286,7 @@ export const MemoryEntrySchema = z.object({
   nodeId: IdSchema.optional(),
   weight: z.number().optional(),
   sourceChatMessageIndex: z.number().int().nonnegative().optional(),
+  sourceChatMessageIndices: z.array(z.number().int().nonnegative()).max(200).optional(),
   type: MemoryTypeSchema.default('interaction'),
   source: MemorySourceSchema.default({ kind: 'legacy' }),
   importance: z.enum(['low', 'normal', 'high', 'critical']).default('normal'),

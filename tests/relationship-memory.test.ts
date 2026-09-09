@@ -37,6 +37,13 @@ describe('relationship memory library operations', () => {
     expect(world.relations.seir.memories.map((memory) => memory.id)).toEqual(['old', 'reply-2']);
   });
 
+  it('removes consolidated memories when any contributing message is edited', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'relationship-memory-range', title: 'Relationship memory range' }));
+    save.world.relations.seir = { axes: {}, knots: [], memories: [{ id: 'summary', text: '整理结果', day: 2, sourceChatMessageIndices: [1, 3, 5] }] };
+    expect(removeRelationshipMemoriesFromMessage(save.world, 'seir', 3)).toBe(1);
+    expect(save.world.relations.seir.memories).toEqual([]);
+  });
+
   it('retrieves memories deterministically and excludes archived or disabled entries', () => {
     const save = seedScenario(createCurrentSaveScenario({ id: 'relationship-memory-retrieval', title: 'Relationship memory retrieval' }));
     save.world.relations.seir = { axes: {}, knots: [], memories: [

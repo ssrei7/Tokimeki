@@ -254,7 +254,7 @@ function addMemory(payload: z.infer<typeof AddMemorySchema>, context: OpContext)
   const relation = context.world.relations[payload.target] ?? { memories: [] };
   context.world.relations[payload.target] = relation;
   const source = context.memorySource?.chatCharacterId === payload.target
-    ? { kind: context.memorySource.kind ?? 'chat', chatCharacterId: payload.target, chatMessageIndex: context.memorySource.messageIndex }
+    ? { kind: context.memorySource.kind ?? 'chat', chatCharacterId: payload.target, chatMessageIndex: context.memorySource.messageIndex, ...(context.memorySource.messageIndices?.length ? { chatMessageIndices: context.memorySource.messageIndices } : {}) }
     : { kind: 'system' as const };
   const memory = {
     id: `memory-${payload.target}-${context.day}-${relation.memories.length + 1}`,
@@ -267,6 +267,7 @@ function addMemory(payload: z.infer<typeof AddMemorySchema>, context: OpContext)
     inject: true,
     source,
     ...(context.memorySource?.chatCharacterId === payload.target ? { sourceChatMessageIndex: context.memorySource.messageIndex } : {}),
+    ...(context.memorySource?.chatCharacterId === payload.target && context.memorySource.messageIndices?.length ? { sourceChatMessageIndices: context.memorySource.messageIndices } : {}),
   };
   relation.memories.push(memory);
   return changed(`relations.${payload.target}.memories`, relation.memories.length - 1, relation.memories.length, `Added memory for ${payload.target}.`);

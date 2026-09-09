@@ -16,7 +16,7 @@ export interface OpContext {
   axisDefs?: AxisDef[];
   stageRules?: StageRule[];
   events?: EventBus;
-  memorySource?: { chatCharacterId: string; messageIndex: number; kind?: 'chat' | 'manual' | 'system' };
+  memorySource?: { chatCharacterId: string; messageIndex: number; messageIndices?: number[]; kind?: 'chat' | 'manual' | 'system' };
 }
 
 export interface Change {

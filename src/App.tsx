@@ -33,6 +33,7 @@ import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from '
 import { latestDialogueSpeakerId, splitDialogueMessage } from './ui/dialogue';
 import { deleteChatMessage, isEditableChatMessage, updateChatMessage } from './ui/chat-history';
 import { deleteRelationshipMemory, deriveRelationshipPromptState, removeRelationshipMemoriesFromMessage, setRelationshipMemoryArchived, setRelationshipMemoryInject, updateRelationshipMemory } from './core/relationship';
+import { buildMemoryConsolidationPrompt, parseMemoryConsolidationResponse, shouldConsolidateMemories, type MemoryConsolidationCandidate } from './core/relationship/consolidation';
 import { markAppointmentOnEnter, markAppointmentOnTimeAdvance, settleAppointments } from './core/appointments';
 import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
 import { PLAYER_ACCENT_COLOR, resolveCharacterAccentColors, resolveSpeakerAccentColor } from './ui/character-color';
@@ -50,6 +51,7 @@ type CollectionGenerationContext = { entryId: string; itemId: string; title: str
 type TopicRetryContext = { charId: string; nodeId: string; participantIds: string[]; entryId?: string };
 type ActiveEncounter = { entryId: string; nodeId: string; scope: 'formal' | 'peripheral'; candidates: EncounterCandidate[] };
 type EncounterChatSession = { characterId: string; participantIds: string[]; nodeId: string; mode: 'topics' | 'manual' | 'ended'; entryId?: string; lastResponseSource?: 'topic' | 'manual' };
+type PendingMemoryCandidate = MemoryConsolidationCandidate & { sourceMessageIndices: number[] };
 const ENCOUNTER_CHAT_SESSION_KEY = 'tokimeki.encounter-chat-session';
 
 function readEncounterChatSession(): EncounterChatSession | null {
@@ -77,7 +79,7 @@ const newProvider = (): ProviderConfig => ({ id: `provider-${Date.now()}`, name:
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 const TASK_LABELS: Record<TaskId, string> = {
   narrate_main: '主线叙述', narrate_daily: '日常对话', topic_tree: '话题树', world_morning: '晨间世界更新',
-  world_gen: '世界生成', map_gen: '地图生成', npc_batch: 'NPC 批处理', extract_ops: '状态变化整理',
+  world_gen: '世界生成', map_gen: '地图生成', npc_batch: 'NPC 批处理', extract_ops: '状态变化整理', summarize_memory: '记忆整理',
   summarize_day: '日记总结', summarize_chapter: '章节总结', image: '图像生成', tts: '语音生成',
 };
 const MOCK_FIXTURE_DESCRIPTIONS: Record<MockFixtureId, string> = {
@@ -167,6 +169,7 @@ export function App() {
   const [snapshots, setSnapshots] = useState<SaveSnapshot[]>([]);
   const saveRef = useRef(save);
   const pendingDiaryDaysRef = useRef<number[]>([]);
+  const pendingMemoryCandidatesRef = useRef<PendingMemoryCandidate[]>([]);
   const [pendingOps, setPendingOps] = useState<PendingOpsRecovery | null>(null);
   const [manualOps, setManualOps] = useState('[]');
   const [mockFixtureId, setMockFixtureId] = useState<MockFixtureId | ''>('');
@@ -250,6 +253,7 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
+    pendingMemoryCandidatesRef.current = [];
     setLoadedChatCharacterId('');
     if (!selectedCharacterId) { setMessages([]); return () => { cancelled = true; }; }
     setMessages([]);
@@ -877,7 +881,43 @@ export function App() {
     } else setFeedback({ tone: 'info', text: '你决定再陪对方聊一会儿。' });
   }
 
-  function sayGoodbye(): void {
+  async function consolidateEncounterMemories(baseSave: SaveFile, charId: string, transcript: ChatMessage[]): Promise<number> {
+    const pending = pendingMemoryCandidatesRef.current.filter((candidate) => candidate.target === charId);
+    const candidates: PendingMemoryCandidate[] = [...pending];
+    let usedApi = false;
+    const hasExplicitRoute = bindings.some((binding) => binding.taskId === 'summarize_memory') || Boolean(mockFixtureId);
+    if (hasExplicitRoute && shouldConsolidateMemories(transcript)) {
+      const routed = mockFixtureId ? createMockProviderConfig(mockFixtureId) : resolveProviderForTask(providers, bindings, 'summarize_memory', defaultProviderId);
+      if (routed) {
+        try {
+          const parsed = ProviderConfigSchema.parse(routed);
+          const character = characters.find((item) => item.id === charId);
+          let raw = '';
+          await streamChat(parsed, buildMemoryConsolidationPrompt(transcript, charId, character?.name ?? charId), (delta) => { raw += delta; }, { taskId: 'summarize_memory' });
+          const sourceMessageIndices = transcript.map((_message, index) => index);
+          for (const candidate of parseMemoryConsolidationResponse(raw)) candidates.push({ ...candidate, sourceMessageIndices });
+          usedApi = true;
+        } catch (error) {
+          setFeedback({ tone: 'info', text: `记忆整理调用失败，已保留本地候选：${errorMessage(error, '整理失败')}` });
+        }
+      }
+    }
+    const unique = [...new Map(candidates.map((candidate) => [`${candidate.target}:${candidate.text.trim()}`, candidate])).values()];
+    if (!unique.length) { pendingMemoryCandidatesRef.current = []; return 0; }
+    const next = structuredClone(baseSave);
+    const allSourceIndices = [...new Set(unique.flatMap((candidate) => candidate.sourceMessageIndices))].sort((a, b) => a - b);
+    const applied = opRegistry.applyAll(unique.map((candidate) => ({ op: 'add_memory', target: candidate.target, text: candidate.text.trim(), type: candidate.type, importance: candidate.importance })), {
+      world: next.world, actorId: charId, day: next.world.clock.day, slotId: next.world.clock.slotId, nodeId: next.world.player.nodeId,
+      calendar: next.config.calendar, actionCosts: next.config.actionCosts, encounterConfig: next.config.encounter, axisDefs: next.config.axisDefs, stageRules: next.config.stageRules, events: promptEvents,
+      memorySource: { chatCharacterId: charId, messageIndex: allSourceIndices[0] ?? 0, messageIndices: allSourceIndices }, log: () => {},
+    }, next.config.opsLimitPerTurn);
+    if (applied.changes.length) commitSave(next);
+    pendingMemoryCandidatesRef.current = [];
+    if (applied.applied && usedApi) setFeedback({ tone: 'success', text: `本次相遇已整理并保存 ${applied.applied} 条记忆。` });
+    return applied.applied;
+  }
+
+  async function sayGoodbye(): Promise<void> {
     if (!chatEncounterEntryId || busy) return;
     const next = structuredClone(saveRef.current);
     const proposed = proposeDeparture(next.world, chatEncounterEntryId, 'player_farewell');
@@ -887,7 +927,10 @@ export function App() {
     commitSave(next);
     setTopicMode('ended');
     writeEncounterChatSession({ characterId: selectedCharacterId, participantIds: chatParticipantIds, nodeId: next.world.player.nodeId, mode: 'ended', entryId: chatEncounterEntryId });
-    setFeedback({ tone: 'info', text: '你主动结束了这次相遇。' });
+    setBusy(true);
+    setFeedback({ tone: 'info', text: '你主动结束了这次相遇，正在整理本次对话…' });
+    try { await consolidateEncounterMemories(next, selectedCharacterId, messages); }
+    finally { setBusy(false); }
   }
 
   function offerGiftToCurrent(itemId: string, targetId = selectedCharacterId): void {
@@ -958,6 +1001,7 @@ export function App() {
     if (next === messages) return;
     const nextSave = structuredClone(saveRef.current);
     const removedMemories = removeRelationshipMemoriesFromMessage(nextSave.world, selectedCharacterId, index);
+    pendingMemoryCandidatesRef.current = pendingMemoryCandidatesRef.current.filter((candidate) => !candidate.sourceMessageIndices.includes(index));
     if (removedMemories) commitSave(nextSave);
     if (pendingOps?.messageIndex !== undefined && index <= pendingOps.messageIndex) { setPendingOps(null); setManualOps('[]'); }
     setMessages(next);
@@ -971,6 +1015,7 @@ export function App() {
     if (next === messages) return;
     const nextSave = structuredClone(saveRef.current);
     const removedMemories = removeRelationshipMemoriesFromMessage(nextSave.world, selectedCharacterId, index);
+    pendingMemoryCandidatesRef.current = pendingMemoryCandidatesRef.current.filter((candidate) => !candidate.sourceMessageIndices.includes(index)).map((candidate) => ({ ...candidate, sourceMessageIndices: candidate.sourceMessageIndices.map((sourceIndex) => sourceIndex > index ? sourceIndex - 1 : sourceIndex) }));
     if (removedMemories) commitSave(nextSave);
     if (pendingOps?.messageIndex !== undefined && index <= pendingOps.messageIndex) { setPendingOps(null); setManualOps('[]'); }
     setMessages(next);
@@ -1124,10 +1169,20 @@ export function App() {
       return;
     }
 
+    const memoryOps = reply.ops.filter((op) => Boolean(op && typeof op === 'object' && (op as { op?: unknown }).op === 'add_memory'));
+    const stagedMemoryOps: unknown[] = [];
+    if (actorId && messageIndex !== undefined && chatEncounterEntryId) {
+      for (const op of memoryOps) {
+        const candidate = op as Partial<MemoryConsolidationCandidate> & { op?: unknown };
+        if (candidate.target !== actorId || typeof candidate.text !== 'string') continue;
+        const parsedCandidate = parseMemoryConsolidationResponse(JSON.stringify([{ target: candidate.target, text: candidate.text, type: candidate.type, importance: candidate.importance }]));
+        if (parsedCandidate[0]) { pendingMemoryCandidatesRef.current.push({ ...parsedCandidate[0], sourceMessageIndices: [messageIndex] }); stagedMemoryOps.push(op); }
+      }
+    }
     const nextSave = structuredClone(saveRef.current);
     const logs: string[] = [];
     const world = nextSave.world;
-    const applied = opRegistry.applyAll(reply.ops, {
+    const applied = opRegistry.applyAll(reply.ops.filter((op) => !stagedMemoryOps.includes(op)), {
       world,
       actorId,
       day: world.clock.day,
@@ -1142,7 +1197,7 @@ export function App() {
       ...(actorId && messageIndex !== undefined ? { memorySource: { chatCharacterId: actorId, messageIndex } } : {}),
       log: (message) => logs.push(message),
     }, nextSave.config.opsLimitPerTurn);
-    commitSave(nextSave);
+    if (applied.changes.length) commitSave(nextSave);
     promptEvents.emit('onOpsApply', { changes: applied.changes });
     setPendingOps(null);
     setManualOps('[]');
@@ -1154,7 +1209,7 @@ export function App() {
     } else if (giftId) {
       setFeedback({ tone: 'info', text: '角色回复已保留，但本回合没有确认这件礼物的反应；可稍后重试。' });
     } else {
-      setFeedback({ tone: issues ? 'info' : 'success', text: applied.changes.length ? `回复已生成并应用 ${applied.applied} 个状态操作。` : '回复已生成，本回合没有状态变化。' });
+      setFeedback({ tone: issues ? 'info' : 'success', text: applied.changes.length ? `回复已生成并应用 ${applied.applied} 个状态操作。${memoryOps.length ? `另有 ${memoryOps.length} 条记忆候选将在告别时整理。` : ''}` : memoryOps.length ? `回复已生成；${memoryOps.length} 条记忆候选将在告别时整理。` : '回复已生成，本回合没有状态变化。' });
     }
   }
 

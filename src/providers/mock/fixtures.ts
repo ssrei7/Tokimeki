@@ -22,6 +22,7 @@ export interface MockFixture {
 function repliesForTask(taskId: TaskId): Record<MockFixtureId, MockFixture> {
   const prefix = `[mock:${taskId}]`;
   if (taskId === 'topic_tree') return topicTreeFixtures();
+  if (taskId === 'summarize_memory') return memorySummaryFixtures();
   return {
     perfect: {
       id: 'perfect',
@@ -60,6 +61,19 @@ function repliesForTask(taskId: TaskId): Record<MockFixtureId, MockFixture> {
       id: 'gift-reaction',
       chunks: [`${prefix} [说话人:塞伊尔] 谢谢你送来的礼物，我会好好珍惜。\n<ops>\n[{"op":"resolve_gift","giftId":"gift-placeholder","reaction":"liked"}]\n</ops>`],
     },
+  };
+}
+
+function memorySummaryFixtures(): Record<MockFixtureId, MockFixture> {
+  return {
+    perfect: { id: 'perfect', chunks: ['[{"target":"seir","text":"玩家喜欢在下雨天听海浪声。","type":"preference","importance":"normal"}]'] },
+    malformed: { id: 'malformed', chunks: ['['] },
+    fenced: { id: 'fenced', chunks: ['```json\n[]\n```'] },
+    'unregistered-op': { id: 'unregistered-op', chunks: ['[{"target":"seir","text":"玩家曾在码头答应下次再见。","type":"promise","importance":"high"}]'] },
+    'clamp-exceeded': { id: 'clamp-exceeded', chunks: ['[{"target":"seir","text":"可保留的整理结果。","type":"interaction","importance":"critical"},{"target":"seir","text":"第二条。","type":"event","importance":"low"},{"target":"seir","text":"第三条。","type":"observation","importance":"normal"}]'] },
+    'empty-ops': { id: 'empty-ops', chunks: ['[]'] },
+    'interrupted-stream': { id: 'interrupted-stream', chunks: ['[{"target":"seir"'], errorAfterChunks: 'Mock memory summary interrupted' },
+    'gift-reaction': { id: 'gift-reaction', chunks: ['[]'] },
   };
 }
 

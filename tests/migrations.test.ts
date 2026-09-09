@@ -137,6 +137,8 @@ describe('save migrations', () => {
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.relations.seir.memories[0]).toMatchObject({ type: 'interaction', importance: 'normal', archived: false, inject: true, source: { kind: 'chat', chatMessageIndex: 4 } });
     expect(migrated.world.relations.seir.memories[0].sourceChatMessageIndex).toBe(4);
+    expect(migrated.world.relations.seir.memories[0].sourceChatMessageIndices).toEqual([4]);
+    expect(migrated.world.relations.seir.memories[0].source.chatMessageIndices).toEqual([4]);
   });
 
   it('migrates v10 worlds with an empty gift history', () => {

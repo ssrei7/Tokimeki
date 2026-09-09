@@ -13,7 +13,11 @@ export function removeRelationshipMemoriesFromMessage(world: WorldState, charId:
   const relation = world.relations[charId];
   if (!relation) return 0;
   const before = relation.memories.length;
-  relation.memories = relation.memories.filter((memory) => memory.sourceChatMessageIndex === undefined || memory.sourceChatMessageIndex < messageIndex);
+  relation.memories = relation.memories.filter((memory) => {
+    const indices = memory.sourceChatMessageIndices ?? memory.source?.chatMessageIndices;
+    if (indices?.some((index) => index >= messageIndex)) return false;
+    return memory.sourceChatMessageIndex === undefined || memory.sourceChatMessageIndex < messageIndex;
+  });
   return before - relation.memories.length;
 }
 
