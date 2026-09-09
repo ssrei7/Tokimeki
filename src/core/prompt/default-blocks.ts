@@ -36,6 +36,7 @@ export interface DefaultPromptFacts extends PromptFacts {
     title: string;
     description: string;
     tags: string[];
+    evidenceReaction?: { eventId: string; response: string };
   };
   world: SaveFile['world'];
 }
@@ -150,7 +151,8 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
     { id: 'collection_context', role: 'system', priority: 89, order: 16, tasks: ['narrate_main'], build: (facts) => {
       const collection = factsOf(facts).collectionContext;
       if (!collection) return null;
-      return `[收藏出示上下文]\n玩家正在向对方出示收藏条目「${collection.title}」（收藏 id：${collection.entryId}，物品 id：${collection.itemId}）。展示描述：${collection.description || '无'}。规则标签：${collection.tags.length ? collection.tags.join('、') : '无'}。\n请像普通面对面聊天一样描述角色看到这件收藏后的自然反应。出示不等于重新获得、赠送或消耗物品；不要提出 give_item 或 offer_gift，也不要声称库存、关系数值、时间或其他状态已经改变。`;
+      const reaction = collection.evidenceReaction ? `\n内核已根据当前事件（${collection.evidenceReaction.eventId}）确定反应方向：${collection.evidenceReaction.response}。请只将这条已确认反应自然地写进角色叙述，不要自行改变反应结果。` : '';
+      return `[收藏出示上下文]\n玩家正在向对方出示收藏条目「${collection.title}」（收藏 id：${collection.entryId}，物品 id：${collection.itemId}）。展示描述：${collection.description || '无'}。规则标签：${collection.tags.length ? collection.tags.join('、') : '无'}。${reaction}\n请像普通面对面聊天一样描述角色看到这件收藏后的自然反应。出示不等于重新获得、赠送或消耗物品；不要提出 give_item 或 offer_gift，也不要声称库存、关系数值、时间或其他状态已经改变。`;
     } },
   ];
 }

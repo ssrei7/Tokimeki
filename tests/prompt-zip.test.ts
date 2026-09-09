@@ -89,6 +89,18 @@ describe('prompt assembler', () => {
     expect(block?.text).toContain('不要提出 give_item 或 offer_gift');
   });
 
+  it('includes a deterministic evidence reaction without granting AI state authority', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks()) assembler.register(block);
+    const result = assembler.assemble({
+      input: '（你向对方出示了收藏《旧车票》。）', worldbooks: [], history: [], world: undefined,
+      collectionContext: { entryId: 'collection-1', itemId: 'ticket', title: '旧车票', description: '褪色的车票', tags: ['memory'], evidenceReaction: { eventId: 'warehouse-note', response: '角色认出了旧印章。' } },
+    }, { budget: 4096, task: 'narrate_main' });
+    const block = result.blocks.find((item) => item.id === 'collection_context');
+    expect(block?.text).toContain('角色认出了旧印章');
+    expect(block?.text).toContain('不要提出 give_item');
+  });
+
   it('adds gift context only for a gift reaction request', () => {
     const assembler = new PromptAssembler();
     for (const block of createDefaultPromptBlocks('- resolve_gift: confirm gift reaction')) assembler.register(block);

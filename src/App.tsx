@@ -4,7 +4,7 @@ import type { AssembledPrompt } from './core/prompt/assembler';
 import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
 import { TOPIC_TREE_PROMPT_BLOCKS } from './core/prompt/topic-tree';
 import { EventBus } from './core/events/bus';
-import { listPendingEvents, resolveEventChoice, scheduleDirectorEvent, setScheduledEventRevealed, triggerScheduledEvent } from './core/events/director';
+import { evaluateEvidenceReaction, listPendingEvents, resolveEventChoice, scheduleDirectorEvent, setScheduledEventRevealed, triggerScheduledEvent } from './core/events';
 import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGeneratedMapExpansion, parseGeneratedNodeSuggestion, updateMapNode, type CreateMapNodeInput, type UpdateMapNodeInput } from './core/map';
 import { parseGeneratedTopicTree } from './core/topics/parser';
 import { isTopicTreeFresh, mergeDailyTopicTree, topicResponse, topicTreeKey, topicVisibility, visibleTopics } from './core/topics';
@@ -54,7 +54,7 @@ type Feedback = { tone: 'info' | 'success' | 'error'; text: string } | null;
 type DebugState = { prompt: AssembledPrompt | null; raw: string; ops: string; state: string };
 type PendingOpsRecovery = { raw: string; actorId?: string; messageIndex?: number; streamError?: string };
 type GiftGenerationContext = { giftId: string; itemId: string; itemName: string; charId: string; charName: string };
-type CollectionGenerationContext = { entryId: string; itemId: string; title: string; description: string; tags: string[] };
+type CollectionGenerationContext = { entryId: string; itemId: string; title: string; description: string; tags: string[]; evidenceReaction?: { eventId: string; response: string } };
 type TopicRetryContext = { charId: string; nodeId: string; participantIds: string[]; entryId?: string };
 type ActiveEncounter = { entryId: string; nodeId: string; scope: 'formal' | 'peripheral'; candidates: EncounterCandidate[] };
 type EncounterChatSession = { characterId: string; participantIds: string[]; nodeId: string; mode: 'topics' | 'manual' | 'ended'; entryId?: string; lastResponseSource?: 'topic' | 'manual' };
@@ -1105,14 +1105,27 @@ export function App() {
 
   function showCollectionToCurrent(entryId: string): void {
     if (!selectedCharacterId || !chatEncounterEntryId || topicMode !== 'manual' || busy) return;
-    const entry = saveRef.current.world.collection.find((item) => item.id === entryId);
+    const currentSave = saveRef.current;
+    const entry = currentSave.world.collection.find((item) => item.id === entryId);
     if (!entry) { setFeedback({ tone: 'error', text: '找不到这条收藏条目。' }); return; }
+    const recentEvent = [...(currentSave.world.eventHistory ?? [])].reverse().find((history) => history.day === currentSave.world.clock.day && history.nodeId === currentSave.world.player.nodeId && history.charIds.includes(selectedCharacterId));
+    const evidence = recentEvent ? evaluateEvidenceReaction(currentSave.world, recentEvent.id, entry.id) : undefined;
+    if (evidence && !evidence.ok) { setFeedback({ tone: 'error', text: evidence.warning ?? '这条收藏目前无法出示。' }); return; }
+    const next = structuredClone(currentSave);
+    if (evidence?.matched && evidence.ops.length) {
+      const applied = opRegistry.applyAll(evidence.ops, {
+        world: next.world, actorId: selectedCharacterId, day: next.world.clock.day, slotId: next.world.clock.slotId, nodeId: next.world.player.nodeId,
+        calendar: next.config.calendar, actionCosts: next.config.actionCosts, encounterConfig: next.config.encounter, events: promptEvents, log: () => {},
+      }, next.config.opsLimitPerTurn);
+      if (applied.changes.length) promptEvents.emit('onOpsApply', { changes: applied.changes });
+    }
+    if (evidence?.matched) commitSave(next);
     const message: ChatMessage = { role: 'user', content: `（你向对方出示了收藏《${entry.title}》${entry.description ? `：${entry.description}` : ''}。）`, kind: 'dialogue', speakerId: 'player' };
     const nextMessages = [...messages, message];
     setMessages(nextMessages);
     void saveChat({ characterId: selectedCharacterId, messages: nextMessages, updatedAt: now() });
-    setFeedback({ tone: 'info', text: `你出示了收藏《${entry.title}》，正在等待角色回应。` });
-    void generateReply(undefined, nextMessages, true, { entryId: entry.id, itemId: entry.itemId, title: entry.title, description: entry.description, tags: entry.tags });
+    setFeedback({ tone: 'info', text: evidence?.matched ? `你出示了收藏《${entry.title}》，内核已确认对应事件反应，正在等待角色回应。` : `你出示了收藏《${entry.title}》，正在等待角色回应。` });
+    void generateReply(undefined, nextMessages, true, { entryId: entry.id, itemId: entry.itemId, title: entry.title, description: entry.description, tags: entry.tags, ...(evidence?.matched && evidence.response && recentEvent ? { evidenceReaction: { eventId: recentEvent.eventId, response: evidence.response } } : {}) });
   }
 
   function updateChatParticipants(ids: string[]): void {
