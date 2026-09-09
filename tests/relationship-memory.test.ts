@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildVectorMemoryIndex, searchVectorMemoryIndex } from '../src/core/relationship';
-import { deleteRelationshipMemory, removeRelationshipMemoriesFromMessage, retrieveRelationshipMemories, setRelationshipMemoryArchived, setRelationshipMemoryInject, updateRelationshipMemory } from '../src/core/relationship';
+import { deleteRelationshipMemory, removeRelationshipMemoriesFromMessage, retrieveRelationshipMemories, retrieveRelationshipMemoriesHybrid, setRelationshipMemoryArchived, setRelationshipMemoryInject, updateRelationshipMemory } from '../src/core/relationship';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 describe('relationship memory library operations', () => {
@@ -65,6 +65,59 @@ describe('relationship memory library operations', () => {
     ] };
     expect(retrieveRelationshipMemories(save.world, 'seir', { query: '码头', nodeId: 'docks', limit: 5 }).map(({ memory }) => memory.id)).toEqual(['old']);
     expect(retrieveRelationshipMemories(save.world, 'seir', { includeArchived: true, includeDisabled: true, query: '码头' }).map(({ memory }) => memory.id)).toEqual(['old', 'disabled', 'hidden']);
+  });
+
+  it('blends normalized vector scores after deterministic kernel filtering', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'relationship-memory-hybrid', title: 'Relationship memory hybrid' }));
+    save.world.relations.seir = { axes: {}, knots: [], memories: [
+      { id: 'keyword', text: '码头的约定', day: 1, nodeId: 'docks', importance: 'high' },
+      { id: 'semantic', text: '海边的约定', day: 2, nodeId: 'beach', importance: 'normal' },
+      { id: 'archived', text: '码头的旧记忆', day: 3, nodeId: 'docks', archived: true },
+    ] };
+    const result = retrieveRelationshipMemoriesHybrid(save.world, 'seir', {
+      query: '码头',
+      vectorScores: new Map([['keyword', 0.1], ['semantic', 0.9], ['archived', 1]]),
+      keywordWeight: 0.25,
+      vectorWeight: 0.75,
+    });
+    expect(result.map(({ memory }) => memory.id)).toEqual(['keyword']);
+  });
+
+  it('lets vector similarity change ranking among kernel-approved memories', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'relationship-memory-hybrid-order', title: 'Relationship memory hybrid order' }));
+    save.world.relations.seir = { axes: {}, knots: [], memories: [
+      { id: 'first', text: '同一话题', day: 1, importance: 'high' },
+      { id: 'second', text: '同一话题', day: 2, importance: 'normal' },
+    ] };
+    expect(retrieveRelationshipMemoriesHybrid(save.world, 'seir', {
+      query: '话题',
+      vectorScores: new Map([['first', 0], ['second', 1]]),
+      keywordWeight: 0.25,
+      vectorWeight: 0.75,
+    }).map(({ memory }) => memory.id)).toEqual(['second', 'first']);
+  });
+
+  it('falls back to the existing retrieval order without vector scores', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'relationship-memory-hybrid-fallback', title: 'Relationship memory hybrid fallback' }));
+    save.world.relations.seir = { axes: {}, knots: [], memories: [
+      { id: 'newer', text: '同一话题', day: 2 },
+      { id: 'older', text: '同一话题', day: 1 },
+    ] };
+    const options = { query: '话题' };
+    expect(retrieveRelationshipMemoriesHybrid(save.world, 'seir', options)).toEqual(retrieveRelationshipMemories(save.world, 'seir', options));
+  });
+
+  it('keeps stable day and id tie-breaking for equal hybrid scores', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'relationship-memory-hybrid-tie', title: 'Relationship memory hybrid tie' }));
+    save.world.relations.seir = { axes: {}, knots: [], memories: [
+      { id: 'same-a', text: '同一话题', day: 1 },
+      { id: 'same-b', text: '同一话题', day: 1 },
+    ] };
+    const result = retrieveRelationshipMemoriesHybrid(save.world, 'seir', {
+      query: '话题',
+      vectorScores: new Map([['same-a', 0.5], ['same-b', 0.5]]),
+    });
+    expect(result.map(({ memory }) => memory.id)).toEqual(['same-a', 'same-b']);
   });
 
   it('supports editing, archiving, restoring, and disabling injection locally', () => {
