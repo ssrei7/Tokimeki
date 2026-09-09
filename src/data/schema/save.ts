@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 21;
+export const CURRENT_SCHEMA_VERSION = 22;
 
 const IdSchema = z.string().min(1);
 
@@ -486,6 +486,7 @@ export const WorldV18Schema = WorldV17Schema.extend({ hooks: z.array(HookPoolEnt
 export const WorldV19Schema = WorldV18Schema.extend({ morningUpdates: z.array(MorningWorldUpdateSchema).max(200).default([]) });
 export const WorldV20Schema = WorldV19Schema;
 export const WorldV21Schema = WorldV20Schema;
+export const WorldV22Schema = WorldV21Schema;
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -509,6 +510,7 @@ export const ConfigV1Schema = z.object({
 
 export const ConfigV5Schema = ConfigV1Schema.extend({
   encounter: EncounterConfigSchema,
+  morningStyle: z.enum(['newspaper', 'notice_board', 'terminal', 'tavern']).default('newspaper'),
 });
 
 export const SaveFileSchema = z.object({
@@ -521,12 +523,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV21Schema,
+  world: WorldV22Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV21Schema>;
+export type WorldState = z.infer<typeof WorldV22Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;

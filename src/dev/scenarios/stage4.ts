@@ -17,7 +17,7 @@ export function createStage4EncounterScenario(): ScenarioDefinition {
         meta: { id: 'stage4-encounter-demo', title: '阶段 4 相遇测试', createdAt: '2000-01-01T00:00:00.000Z', updatedAt: '2000-01-01T00:00:00.000Z', appVersion: '0.0.1' },
         config: {
           calendar: { slots: [...DEFAULT_SLOT_DEFS], daysPerWeek: 7, weekdayNames: ['一', '二', '三', '四', '五', '六', '日'], preset: 'standard', unlimitedSlots: false },
-          actionCosts: { ...DEFAULT_ACTION_COSTS }, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12,
+          actionCosts: { ...DEFAULT_ACTION_COSTS }, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12, morningStyle: 'newspaper',
           encounter: { enabled: true, triggerOnLeave: true, leaveProbability: 1, guaranteeAfterDays: 3, maxParticipants: 3, weights: {} },
         },
         world: {

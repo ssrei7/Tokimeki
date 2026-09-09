@@ -182,6 +182,20 @@ describe('save migrations', () => {
     expect(migrated.world.hooks).toEqual([]);
   });
 
+  it('migrates v21 saves with the default morning presentation style', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'morning-style-migration', title: 'Morning style migration' }));
+    const { morningStyle: _morningStyle, ...legacyConfig } = source.config;
+    const migrated = migrateSave({ ...source, schemaVersion: 21, config: legacyConfig });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.config.morningStyle).toBe('newspaper');
+  });
+
+  it('preserves an explicitly selected morning presentation style', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'morning-style-preserve', title: 'Morning style preserve' }));
+    const migrated = migrateSave({ ...source, schemaVersion: 21, config: { ...source.config, morningStyle: 'tavern' } });
+    expect(migrated.config.morningStyle).toBe('tavern');
+  });
+
   it('migrates v10 worlds with an empty gift history', () => {
     const source = seedScenario(createCurrentSaveScenario({ id: 'v10-gifts', title: 'v10 gifts' }));
     const migrated = migrateSave({ ...source, schemaVersion: 10, world: { ...source.world, giftHistory: undefined } });
