@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyMorningNpcMoves, buildLocalMorningBrief, buildMorningPrompt, hasMorningBrief, parseMorningResponse, parseMorningUpdate } from '../src/core/world/morning';
+import { applyMorningNpcMoves, buildLocalMorningBrief, buildMorningPrompt, hasMorningBrief, parseMorningResponse, parseMorningUpdate, resolveMorningAdDestination } from '../src/core/world/morning';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 describe('morning brief', () => {
@@ -11,6 +11,14 @@ describe('morning brief', () => {
     expect(entries.every((entry) => entry.day === 2 && entry.source === 'local')).toBe(true);
     save.world.morningBriefs.push(entries[0]);
     expect(hasMorningBrief(save.world, 2)).toBe(true);
+  });
+
+  it('resolves only discovered ad destinations for direct entry buttons', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'morning-ad', title: 'Morning ad' }));
+    const entry = { id: 'ad', day: 1, category: 'ad' as const, title: '公告', body: '去看看。', nodeId: 'start', charIds: [], source: 'local' as const };
+    expect(resolveMorningAdDestination(entry, save.world)).toEqual({ id: 'start', name: '起点街区' });
+    save.world.map.nodes.start.discovered = false;
+    expect(resolveMorningAdDestination(entry, save.world)).toBeUndefined();
   });
 
   it('echoes a triggered location event into the next local morning brief', () => {

@@ -297,6 +297,8 @@ button.danger { background: #fee4e2; color: #b42318; }
 .day-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .day-actions button { height: auto; min-height: 60px; display: grid; place-content: center; gap: 3px; }
 .day-actions small { font-size: 11px; opacity: .78; }
+.morning-entry-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.morning-entry-actions button { min-height: 36px; padding: 0 12px; font-size: 12px; }
 .settlement-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .settlement-grid span { display: grid; gap: 3px; padding: 10px; border-radius: 8px; background: #f8fafc; color: #667085; font-size: 12px; }
 .settlement-grid strong { color: #1d2433; overflow-wrap: anywhere; }

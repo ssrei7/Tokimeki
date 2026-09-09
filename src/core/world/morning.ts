@@ -34,14 +34,22 @@ export function buildLocalMorningBrief(world: WorldState, day: number): MorningB
 export function buildLocalMorningUpdate(world: WorldState, day: number): ParsedMorningUpdate {
   const previous = world.settlements.filter((settlement) => settlement.day < day).at(-1);
   const entries: MorningBriefEntry[] = [];
+  const adNode = Object.values(world.map.nodes).find((node) => node.discovered && node.id !== world.player.nodeId);
   if (previous?.footprint.length) {
     const echo = previous.footprint.flatMap((nodeId) => world.map.nodes[nodeId]?.memories.filter((memory) => memory.day === previous.day) ?? []).at(-1);
     entries.push({ id: `morning-${day}-lead`, day, category: 'lead', title: echo ? '昨日事件仍有回声' : '昨日留下的脚步', body: echo ? `${echo.text} 今天或许还能在那里发现后续。` : `昨天有人在${previous.footprint.join('、')}留下了新的足迹，今天或许还能在那里发现后续。`, nodeId: previous.footprint.at(-1), source: 'local', charIds: echo?.charIds ?? [] });
   }
   if (previous?.met.length) entries.push({ id: `morning-${day}-character`, day, category: 'character', title: '熟悉的名字', body: `昨天遇见过${previous.met.join('、')}，他们的日程仍由世界规则决定。`, charIds: previous.met.slice(0, 3), source: 'local' });
   entries.push({ id: `morning-${day}-ambience`, day, category: 'ambience', title: '街区照常苏醒', body: `第 ${day} 天已经开始。地点开放、角色日程和可触发事件以当前世界状态为准。`, source: 'local', charIds: [] });
-  entries.push({ id: `morning-${day}-ad`, day, category: 'ad', title: '今日可去哪里', body: '打开地图查看已发现地点；前往地点不会因为晨报本身改变任何世界事实。', source: 'local', charIds: [] });
+  entries.push({ id: `morning-${day}-ad`, day, category: 'ad', title: '今日可去哪里', body: '打开地图查看已发现地点；前往地点不会因为晨报本身改变任何世界事实。', ...(adNode ? { nodeId: adNode.id } : {}), source: 'local', charIds: [] });
   return { entries, weather: { id: 'clear', label: '晴朗', tags: [] }, npcMoves: [] };
+}
+
+export function resolveMorningAdDestination(entry: MorningBriefEntry, world: WorldState): { id: string; name: string } | undefined {
+  if (entry.category !== 'ad' || !entry.nodeId) return undefined;
+  const node = world.map.nodes[entry.nodeId];
+  if (!node?.discovered) return undefined;
+  return { id: node.id, name: node.name };
 }
 
 export function buildMorningPrompt(world: WorldState, day: number, previousDiary?: string): { role: 'system' | 'user'; content: string }[] {
