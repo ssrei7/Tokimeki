@@ -27,7 +27,11 @@ import { streamChat, type StreamStatus } from './providers/stream';
 import { createMockProviderConfig } from './providers/adapters/mock';
 import { MOCK_FIXTURE_IDS, type MockFixtureId } from './providers/mock/fixtures';
 import { createStage4EncounterScenario } from './dev/scenarios/stage4';
-import { seedScenario } from './dev/scenarios/seeder';
+import { createCurrentSaveScenario, seedScenario } from './dev/scenarios/seeder';
+import { simulateDays } from './dev/simulator';
+import { simulateEncounterDistribution } from './dev/encounter-simulator';
+import { simulateLeadDistribution } from './dev/lead-simulator';
+import { simulateTopicDistribution } from './dev/topic-simulator';
 import { ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, type ProviderBinding, type ProviderConfig, type TaskId } from './providers/types';
 import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from './ui/chat-state';
 import { latestDialogueSpeakerId, splitDialogueMessage } from './ui/dialogue';
@@ -54,6 +58,7 @@ type TopicRetryContext = { charId: string; nodeId: string; participantIds: strin
 type ActiveEncounter = { entryId: string; nodeId: string; scope: 'formal' | 'peripheral'; candidates: EncounterCandidate[] };
 type EncounterChatSession = { characterId: string; participantIds: string[]; nodeId: string; mode: 'topics' | 'manual' | 'ended'; entryId?: string; lastResponseSource?: 'topic' | 'manual' };
 type PendingMemoryCandidate = MemoryConsolidationCandidate & { sourceMessageIndices: number[] };
+type DevToolReport = { title: string; body: string } | null;
 const ENCOUNTER_CHAT_SESSION_KEY = 'tokimeki.encounter-chat-session';
 
 function readEncounterChatSession(): EncounterChatSession | null {
@@ -194,6 +199,9 @@ export function App() {
   const [lastResponseSource, setLastResponseSource] = useState<'topic' | 'manual' | null>(() => readEncounterChatSession()?.lastResponseSource ?? null);
   const [debugTab, setDebugTab] = useState<'Prompt' | 'Raw' | 'Ops' | 'State'>('Prompt');
   const [debug, setDebug] = useState<DebugState>({ prompt: null, raw: '', ops: '尚未解析状态变化。', state: JSON.stringify(defaultSave, null, 2) });
+  const [devToolSeed, setDevToolSeed] = useState('42');
+  const [devToolDays, setDevToolDays] = useState('30');
+  const [devToolReport, setDevToolReport] = useState<DevToolReport>(null);
 
   function markResponseSource(source: 'topic' | 'manual' | null): void {
     setLastResponseSource(source);
@@ -770,6 +778,30 @@ export function App() {
     next.config.morningStyle = morningStyle;
     commitSave(next);
     setFeedback({ tone: 'success', text: '晨报换皮已更新。' });
+  }
+
+  function runDevTool(kind: 'seed' | 'days' | 'lead' | 'topic' | 'encounter'): void {
+    const seed = Number.isFinite(Number(devToolSeed)) ? Math.floor(Number(devToolSeed)) : 42;
+    const days = Math.max(1, Number.isFinite(Number(devToolDays)) ? Math.floor(Number(devToolDays)) : 30);
+    const current = saveRef.current;
+    if (kind === 'seed') {
+      const seeded = seedScenario(createCurrentSaveScenario({ id: `dev-seed-${seed}`, title: '无头调参台测试场景', day: current.world.clock.day, slotId: current.world.clock.slotId, timestamp: '2000-01-01T00:00:00.000Z' }));
+      setDevToolReport({ title: '播种器结果', body: JSON.stringify({ schemaVersion: seeded.schemaVersion, day: seeded.world.clock.day, slotId: seeded.world.clock.slotId, nodeCount: Object.keys(seeded.world.map.nodes).length, characterCount: Object.keys(seeded.world.characters).length, npcCount: Object.keys(seeded.world.npcs).length, seed }, null, 2) });
+      return;
+    }
+    if (kind === 'days') {
+      setDevToolReport({ title: '多日无头推进结果', body: JSON.stringify(simulateDays(current.world, current.config.calendar, days, seed), null, 2) });
+      return;
+    }
+    if (kind === 'lead') {
+      setDevToolReport({ title: 'Lead 忽略率结果', body: JSON.stringify(simulateLeadDistribution(current.world, current.config.calendar, { seeds: [seed], days }), null, 2) });
+      return;
+    }
+    if (kind === 'topic') {
+      setDevToolReport({ title: '话题消耗结果', body: JSON.stringify(simulateTopicDistribution(current.world, { seeds: [seed], days }), null, 2) });
+      return;
+    }
+    setDevToolReport({ title: '相遇分布结果', body: JSON.stringify(simulateEncounterDistribution(current.world, current.config.calendar, current.config.encounter, { seeds: [seed], days }), null, 2) });
   }
 
   async function loadStage4EncounterFixture(): Promise<void> {
@@ -1631,7 +1663,7 @@ export function App() {
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} />}
       {tab === 'library' && <MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} />}
       {tab === 'library' && <CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} />}
-      {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} />}
+      {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
     </main>
     <nav className="bottom-nav">{([['map', '地图'], ['day', '日程'], ['chat', '聊天'], ['library', '资料'], ['settings', '设置']] as const).map(([id, label]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
   </div>;
@@ -2305,6 +2337,12 @@ function SettingsView(props: {
   mockFixtureId: MockFixtureId | '';
   setMockFixtureId: (value: MockFixtureId | '') => void;
   onLoadStage4Fixture: () => void;
+  devToolSeed: string;
+  setDevToolSeed: (value: string) => void;
+  devToolDays: string;
+  setDevToolDays: (value: string) => void;
+  devToolReport: DevToolReport;
+  onRunDevTool: (kind: 'seed' | 'days' | 'lead' | 'topic' | 'encounter') => void;
 }) {
   const isSaved = props.providers.some((item) => item.id === props.provider.id);
   return <section>
@@ -2351,6 +2389,7 @@ function SettingsView(props: {
     </div></div></details>
     <details className="advanced"><summary>高级与调试</summary><p className="io-scope">生成回复后打开下方“Ops diff”标签，可查看解析阶段、被拒绝操作、clamp 警告和状态前后变化。</p><DebugView debug={props.debug} tab={props.debugTab} setTab={props.setDebugTab} /></details>
     <details className="advanced"><summary>Mock provider 验收工具</summary><div className="provider-card mock-tools"><p className="io-scope">仅开发验收使用，不进入普通 Provider 列表；先在资料页创建角色并进入聊天，选择 fixture 后点击“生成回复”即可零 API 重现。</p><label>fixture<select aria-label="Mock fixture" value={props.mockFixtureId} onChange={(event) => props.setMockFixtureId(event.target.value as MockFixtureId | '')}><option value="">关闭 Mock</option>{MOCK_FIXTURE_IDS.map((id) => <option key={id} value={id}>{id}</option>)}</select></label>{props.mockFixtureId && <div className="fixture-help"><strong>预期结果</strong><p>{MOCK_FIXTURE_DESCRIPTIONS[props.mockFixtureId]}</p></div>}<div className="fixture-list">{MOCK_FIXTURE_IDS.map((id) => <div key={id}><strong>{id}</strong><span>{MOCK_FIXTURE_DESCRIPTIONS[id]}</span></div>)}</div><div className="fixture-help"><strong>阶段 4 相遇测试</strong><p>载入独立测试世界后，第 3 天中午前往西码头，会遇见两位正式角色和一位半正式 NPC。</p><button className="secondary" onClick={props.onLoadStage4Fixture}>载入阶段 4 测试存档</button></div></div></details>
+    <details className="advanced"><summary>播种器与无头调参台</summary><div className="provider-card mock-tools"><p className="io-scope">纯本地开发工具：所有模拟都运行在当前存档的克隆上，不写回正式世界、不调用 API。播种器用于生成可重复的基准场景；调参台用于比较固定 seed 下的多日结果。</p><div className="field-with-action"><label>Seed<input type="number" value={props.devToolSeed} onChange={(event) => props.setDevToolSeed(event.target.value)} /></label><label>天数<input type="number" min="1" value={props.devToolDays} onChange={(event) => props.setDevToolDays(event.target.value)} /></label></div><div className="button-row"><button onClick={() => props.onRunDevTool('seed')}>生成测试场景</button><button className="secondary" onClick={() => props.onRunDevTool('days')}>推进多日</button><button className="secondary" onClick={() => props.onRunDevTool('lead')}>Lead 忽略率</button><button className="secondary" onClick={() => props.onRunDevTool('topic')}>话题消耗</button><button className="secondary" onClick={() => props.onRunDevTool('encounter')}>相遇分布</button></div>{props.devToolReport && <div className="fixture-help"><div className="list-heading"><strong>{props.devToolReport.title}</strong><button className="secondary" onClick={() => props.onRunDevTool('seed')}>生成基准场景</button></div><pre className="debug-output">{props.devToolReport.body}</pre></div>}</div></details>
   </section>;
 }
 
