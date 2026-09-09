@@ -67,6 +67,18 @@ describe('save migrations', () => {
     expect(migrated.world.eventHistory).toEqual([]);
   });
 
+  it('migrates v23 event history into the replay metadata schema', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v23-history', title: 'v23 history' }));
+    const legacy = structuredClone(source) as Record<string, unknown>;
+    legacy.schemaVersion = 23;
+    const world = legacy.world as Record<string, unknown>;
+    world.eventHistory = [{ id: 'event-history-1', eventId: 'e1', title: '旧事件', day: 2, slotId: 'noon', nodeId: 'start', charIds: [], scope: 'formal', content: '旧叙述' }];
+    const migrated = migrateSave(legacy);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.eventHistory[0]).toMatchObject({ eventId: 'e1', content: '旧叙述' });
+    expect(migrated.world.eventHistory[0].choice).toBeUndefined();
+  });
+
   it('rejects malformed migrated data with field-level validation errors', () => {
     expect(() => migrateSave({ schemaVersion: CURRENT_SCHEMA_VERSION, world: {} })).toThrow();
   });

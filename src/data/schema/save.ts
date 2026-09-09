@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 23;
+export const CURRENT_SCHEMA_VERSION = 24;
 
 const IdSchema = z.string().min(1);
 
@@ -240,6 +240,9 @@ export const EventHistoryEntrySchema = z.object({
   charIds: z.array(IdSchema).max(3),
   scope: EventScopeSchema,
   content: z.string().max(10000).optional(),
+  choice: z.string().max(1000).optional(),
+  resultSummary: z.string().max(2000).optional(),
+  narrative: z.string().max(10000).optional(),
 });
 
 export const GiftHistoryEntrySchema = z.object({
@@ -543,6 +546,7 @@ export const WorldV23Schema = WorldV22Schema.extend({
   director: DirectorStateSchema.default({ scheduled: [], lastFiredDay: {}, tension: 0 }),
   eventHistory: z.array(EventHistoryEntrySchema).max(500).default([]),
 });
+export const WorldV24Schema = WorldV23Schema;
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -579,12 +583,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV23Schema,
+  world: WorldV24Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV23Schema>;
+export type WorldState = z.infer<typeof WorldV24Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;

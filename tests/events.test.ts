@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
 import { EventBus } from '../src/core/events/bus';
-import { listPendingEvents, refreshDirectorTension, scheduleDirectorEvent, scheduleEvent, scheduleEventsForCoordinate, setScheduledEventRevealed, triggerScheduledEvent } from '../src/core/events/director';
+import { listPendingEvents, refreshDirectorTension, scheduleDirectorEvent, scheduleEvent, scheduleEventsForCoordinate, setScheduledEventRevealed, triggerScheduledEvent, updateEventHistory } from '../src/core/events/director';
 import { createDefaultOpRegistry } from '../src/core/ops';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import { exportEventPackage, importEventPackage } from '../src/data/io/zip';
@@ -67,6 +67,10 @@ describe('deterministic local story events', () => {
     expect(result.ops).toEqual(event.ops);
     expect(save.world.director?.scheduled).toEqual([]);
     expect(save.world.eventHistory).toEqual([expect.objectContaining({ eventId: event.id, nodeId: 'docks', day: 3, slotId: 'noon', scope: 'formal', content: event.content })]);
+    expect(save.world.eventHistory[0].narrative).toBe(event.content);
+    const updated = updateEventHistory(save.world, save.world.eventHistory[0].id, { choice: '查看告示', resultSummary: '确认了港口的新安排。', narrative: '你在木桩前读完了告示。' });
+    expect(updated.ok).toBe(true);
+    expect(save.world.eventHistory[0]).toMatchObject({ choice: '查看告示', resultSummary: '确认了港口的新安排。', narrative: '你在木桩前读完了告示。' });
   });
 
   it('does not trigger a scheduled event at the wrong time or location', () => {

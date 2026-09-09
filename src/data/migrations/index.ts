@@ -22,6 +22,7 @@ import { migrateV19ToV20 } from './v19-to-v20';
 import { migrateV20ToV21 } from './v20-to-v21';
 import { migrateV21ToV22 } from './v21-to-v22';
 import { migrateV22ToV23 } from './v22-to-v23';
+import { migrateV23ToV24 } from './v23-to-v24';
 import { MigrationError, UnsupportedSchemaVersionError, type Migration } from './types';
 
 export const migrations: Record<number, Migration> = {
@@ -48,6 +49,7 @@ export const migrations: Record<number, Migration> = {
   21: migrateV20ToV21,
   22: migrateV21ToV22,
   23: migrateV22ToV23,
+  24: migrateV23ToV24,
 };
 
 export function migrateSave(input: unknown): SaveFile {

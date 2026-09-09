@@ -369,7 +369,7 @@ interface DirectorState {
   globalCooldownUntilDay?: number;
 }
 
-interface EventHistoryEntry {       // 第一切片保存的最小事件记录
+interface EventHistoryEntry {       // 事件回顾记录；字段由内核/用户确认后写入
   id: Id;
   eventId: Id;
   title: string;
@@ -379,6 +379,9 @@ interface EventHistoryEntry {       // 第一切片保存的最小事件记录
   charIds: CharId[];
   scope: 'formal' | 'peripheral';
   content?: string;
+  choice?: string;                  // 玩家确认的选择或行动
+  resultSummary?: string;           // 确定性结果摘要
+  narrative?: string;               // 可回看的叙事记录
 }
 ```
 

@@ -33,6 +33,12 @@ export interface EventTriggerResult {
   warning?: string;
 }
 
+export interface EventHistoryUpdate {
+  choice?: string;
+  resultSummary?: string;
+  narrative?: string;
+}
+
 export interface EventEligibility {
   eligible: boolean;
   reason?: string;
@@ -185,12 +191,23 @@ export function triggerScheduledEvent(world: WorldState, scheduledId: string, op
     charIds,
     scope,
     ...(event.content ? { content: event.content } : {}),
+    ...(event.content ? { narrative: event.content } : {}),
   };
   director.scheduled = director.scheduled.filter((item) => item.id !== scheduled.id);
   director.lastFiredDay[event.id] = scheduled.day;
   refreshDirectorTension(world, scheduled.day);
   world.eventHistory = [...(world.eventHistory ?? []), history].slice(-500);
   return { ok: true, event, scheduled: structuredClone(scheduled), history, content: event.content, ops: event.ops ? structuredClone(event.ops) : [] };
+}
+
+/** Update replay metadata without changing any deterministic world facts. */
+export function updateEventHistory(world: WorldState, historyId: string, update: EventHistoryUpdate): { ok: boolean; warning?: string; history?: EventHistoryEntry } {
+  const history = (world.eventHistory ?? []).find((entry) => entry.id === historyId);
+  if (!history) return { ok: false, warning: 'Unknown event history entry.' };
+  if (update.choice !== undefined) history.choice = update.choice.slice(0, 1000);
+  if (update.resultSummary !== undefined) history.resultSummary = update.resultSummary.slice(0, 2000);
+  if (update.narrative !== undefined) history.narrative = update.narrative.slice(0, 10000);
+  return { ok: true, history: structuredClone(history) };
 }
 
 function eventMatchesCoordinate(event: EventDef, coordinate: EventCoordinate, world: WorldState): boolean {
