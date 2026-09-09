@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 26;
+export const CURRENT_SCHEMA_VERSION = 28;
 
 const IdSchema = z.string().min(1);
 
@@ -213,6 +213,10 @@ export const EventEvidenceRuleSchema = z.object({
   response: z.string().min(1).max(2000),
   ops: z.array(z.unknown()).max(32).optional(),
 }).refine((rule) => Boolean(rule.itemId || rule.tags?.length), { message: 'Evidence rule must match an item or at least one tag.' });
+export const EventMilestoneSchema = z.object({
+  text: z.string().min(1).max(2000),
+  charIds: z.array(IdSchema).max(3).optional(),
+});
 export const EventDefSchema = z.object({
   id: IdSchema,
   title: z.string().min(1).max(160),
@@ -227,6 +231,7 @@ export const EventDefSchema = z.object({
   ops: z.array(z.unknown()).max(32).optional(),
   choices: z.array(EventChoiceSchema).max(8).optional(),
   evidenceRules: z.array(EventEvidenceRuleSchema).max(32).optional(),
+  milestone: EventMilestoneSchema.optional(),
   packId: IdSchema.optional(),
 }).refine((event) => Boolean(event.content?.trim() || event.prompt?.trim() || event.choices?.length), { message: 'Event must provide content, prompt, or choices.' });
 
@@ -584,6 +589,7 @@ export const WorldV27Schema = WorldV26Schema.extend({
   chapters: z.array(ChapterSummarySchema).max(100).default([]),
   milestones: z.array(MilestoneSchema).max(500).default([]),
 });
+export const WorldV28Schema = WorldV27Schema;
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -620,12 +626,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV27Schema,
+  world: WorldV28Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV27Schema>;
+export type WorldState = z.infer<typeof WorldV28Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;
@@ -663,6 +669,7 @@ export type EventTrigger = z.infer<typeof EventTriggerSchema>;
 export type EventDef = z.infer<typeof EventDefSchema>;
 export type EventChoice = z.infer<typeof EventChoiceSchema>;
 export type EventEvidenceRule = z.infer<typeof EventEvidenceRuleSchema>;
+export type EventMilestone = z.infer<typeof EventMilestoneSchema>;
 export type ScheduledEvent = z.infer<typeof ScheduledEventSchema>;
 export type DirectorState = z.infer<typeof DirectorStateSchema>;
 export type EventHistoryEntry = z.infer<typeof EventHistoryEntrySchema>;

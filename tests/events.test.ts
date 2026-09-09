@@ -155,6 +155,15 @@ describe('deterministic local story events', () => {
     save.world.player.inventory = [];
     expect(evaluateEvidenceReaction(save.world, triggered.history!.id, 'collection-ticket').ok).toBe(false);
   });
+
+  it('records a package-declared milestone when the event triggers', () => {
+    const save = setup();
+    const event: EventDef = { id: 'milestone-event', title: '旧仓库的门', trigger: { nodeIds: ['docks'] }, content: '门后传来脚步声。', milestone: { text: '发现旧仓库仍有人出入。', charIds: ['seir'] } };
+    save.world.eventDefs[event.id] = event;
+    const scheduled = scheduleEvent(save.world, event.id, { nodeId: 'docks', day: 3, slotId: 'noon', charIds: ['seir'] }).scheduled!;
+    expect(triggerScheduledEvent(save.world, scheduled.id).ok).toBe(true);
+    expect(save.world.milestones).toContainEqual({ id: `milestone-${scheduled.id}`, day: 3, text: '发现旧仓库仍有人出入。', charIds: ['seir'] });
+  });
 });
 
 describe('event package IO', () => {

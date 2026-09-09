@@ -114,6 +114,17 @@ describe('save migrations', () => {
     expect(migrated.world.milestones).toEqual([]);
   });
 
+  it('migrates v27 event worlds while keeping chapter and milestone data', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v27-milestone', title: 'v27 milestone' }));
+    const legacy = structuredClone(source) as Record<string, unknown>;
+    legacy.schemaVersion = 27;
+    const world = legacy.world as Record<string, unknown>;
+    world.milestones = [{ id: 'm1', day: 2, text: '旧里程碑', charIds: [] }];
+    const migrated = migrateSave(legacy);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.milestones).toEqual([{ id: 'm1', day: 2, text: '旧里程碑', charIds: [] }]);
+  });
+
   it('rejects malformed migrated data with field-level validation errors', () => {
     expect(() => migrateSave({ schemaVersion: CURRENT_SCHEMA_VERSION, world: {} })).toThrow();
   });

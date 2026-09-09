@@ -351,6 +351,7 @@ interface EventDef {
   ops?: unknown[];
   choices?: EventChoice[];       // 事件包声明的确定性结果选项
   evidenceRules?: EventEvidenceRule[]; // 出示收藏时的确定性反应规则
+  milestone?: { text: string; charIds?: CharId[] }; // 触发时写入里程碑
   packId?: Id;                   // 事件包来源
 }
 

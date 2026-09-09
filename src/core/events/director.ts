@@ -9,6 +9,7 @@ import type {
 } from '../../data/schema/save';
 import { evaluateCondition, type ConditionScope } from '../expr';
 import { deriveNodeScope } from '../encounter/scope';
+import { upsertMilestone } from '../story';
 
 export interface EventCoordinate {
   nodeId: string;
@@ -207,6 +208,7 @@ export function triggerScheduledEvent(world: WorldState, scheduledId: string, op
   director.lastFiredDay[event.id] = scheduled.day;
   refreshDirectorTension(world, scheduled.day);
   world.eventHistory = [...(world.eventHistory ?? []), history].slice(-500);
+  if (event.milestone) upsertMilestone(world, { id: `milestone-${scheduled.id}`, day: scheduled.day, text: event.milestone.text, charIds: event.milestone.charIds ?? charIds });
   return { ok: true, event, scheduled: structuredClone(scheduled), history, content: event.content, ops: event.ops ? structuredClone(event.ops) : [] };
 }
 
