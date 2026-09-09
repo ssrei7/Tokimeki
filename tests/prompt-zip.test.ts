@@ -9,6 +9,7 @@ import type { SaveFile } from '../src/data/schema/save';
 import { createDefaultMap, CURRENT_SCHEMA_VERSION } from '../src/data/schema/save';
 import { createBuiltinNarrationPresetBundle, mergeBuiltinNarrationPresetBundle } from '../src/data/presets/builtins';
 import { buildRelationshipStatePrompt, deriveRelationshipPromptState } from '../src/core/relationship';
+import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 describe('prompt assembler', () => {
   it('orders blocks and reports truncation', () => { const assembler = new PromptAssembler(); assembler.register({ id: 'low', role: 'system', priority: 10, order: 2, build: () => 'low '.repeat(20) }); assembler.register({ id: 'high', role: 'system', priority: 100, order: 1, build: () => 'high' }); const result = assembler.assemble({}, { budget: 4 }); expect(result.blocks.find((b) => b.id === 'high')?.dropped).toBe(false); expect(result.estimatedTokens).toBeLessThanOrEqual(4); });
@@ -99,6 +100,19 @@ describe('prompt assembler', () => {
     const block = result.blocks.find((item) => item.id === 'collection_context');
     expect(block?.text).toContain('角色认出了旧印章');
     expect(block?.text).toContain('不要提出 give_item');
+  });
+
+  it('injects milestones and chapter summaries as separate local context blocks', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks()) assembler.register(block);
+    const save = seedScenario(createCurrentSaveScenario({ id: 'prompt-story', title: 'Prompt story' }));
+    save.world.milestones = [{ id: 'm1', day: 2, text: '发现旧告示。', charIds: [] }];
+    save.world.chapters = [{ id: 'c1', fromDay: 1, toDay: 2, text: '前两天在码头留下了线索。' }];
+    const result = assembler.assemble({
+      input: '继续聊天', worldbooks: [], history: [], world: save.world,
+    }, { budget: 4096, task: 'narrate_main' });
+    expect(result.blocks.find((block) => block.id === 'milestones')?.text).toContain('发现旧告示');
+    expect(result.blocks.find((block) => block.id === 'chapter_summary')?.text).toContain('留下了线索');
   });
 
   it('adds gift context only for a gift reaction request', () => {

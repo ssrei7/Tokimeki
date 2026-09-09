@@ -531,6 +531,8 @@ interface Milestone {
 长期上下文 = 角色卡 + `RelationState` 摘要 + 最近 7 天 `DiaryEntry` + `Milestone[]`；更早压为 `ChapterSummary`，原始对话可丢弃。
 `relationChanges.prose` 是给玩家看的散文，`raw` 仅在 `showNumbers` 开启时显示。
 
+章节摘要首个切片由本地确定性代码从日期范围内的日记与事件回顾压缩生成；不会调用 API，也不会自动推进时间。`Milestone` 与 `ChapterSummary` 均由内核或已校验的数据包写入，允许按稳定 id 更新，保留有界历史。
+
 ---
 
 ## 13. 世界书

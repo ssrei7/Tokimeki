@@ -262,6 +262,20 @@ export const EventHistoryEntrySchema = z.object({
   narrative: z.string().max(10000).optional(),
 });
 
+export const ChapterSummarySchema = z.object({
+  id: IdSchema,
+  fromDay: z.number().int().positive(),
+  toDay: z.number().int().positive(),
+  text: z.string().max(12000),
+});
+
+export const MilestoneSchema = z.object({
+  id: IdSchema,
+  day: z.number().int().positive(),
+  text: z.string().min(1).max(2000),
+  charIds: z.array(IdSchema).max(3),
+});
+
 export const GiftHistoryEntrySchema = z.object({
   id: IdSchema,
   day: z.number().int().positive(),
@@ -566,6 +580,10 @@ export const WorldV23Schema = WorldV22Schema.extend({
 export const WorldV24Schema = WorldV23Schema;
 export const WorldV25Schema = WorldV24Schema;
 export const WorldV26Schema = WorldV25Schema;
+export const WorldV27Schema = WorldV26Schema.extend({
+  chapters: z.array(ChapterSummarySchema).max(100).default([]),
+  milestones: z.array(MilestoneSchema).max(500).default([]),
+});
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -602,12 +620,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV26Schema,
+  world: WorldV27Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV26Schema>;
+export type WorldState = z.infer<typeof WorldV27Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;
@@ -648,5 +666,7 @@ export type EventEvidenceRule = z.infer<typeof EventEvidenceRuleSchema>;
 export type ScheduledEvent = z.infer<typeof ScheduledEventSchema>;
 export type DirectorState = z.infer<typeof DirectorStateSchema>;
 export type EventHistoryEntry = z.infer<typeof EventHistoryEntrySchema>;
+export type ChapterSummary = z.infer<typeof ChapterSummarySchema>;
+export type Milestone = z.infer<typeof MilestoneSchema>;
 export type MemoryType = z.infer<typeof MemoryTypeSchema>;
 export type MemorySource = z.infer<typeof MemorySourceSchema>;

@@ -1,0 +1,28 @@
+import { describe, expect, it } from 'vitest';
+import { buildLocalChapterSummary, upsertChapterSummary, upsertMilestone } from '../src/core/story';
+import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
+
+describe('local chapter summaries and milestones', () => {
+  it('builds a stable summary from diary and event facts', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'story', title: 'Story', day: 4 }));
+    save.world.diary = [{ day: 2, text: '在码头等到潮声。' }];
+    save.world.eventHistory = [{ id: 'event-history-1', eventId: 'dock-note', title: '码头的告示', day: 3, slotId: 'noon', nodeId: 'start', charIds: ['seir'], scope: 'formal', narrative: '你读完了告示。', resultSummary: '确认仓库开放。' }];
+    const first = buildLocalChapterSummary(save.world, 1, 3);
+    const second = buildLocalChapterSummary(save.world, 1, 3);
+    expect(first).toEqual(second);
+    expect(first.summary?.text).toContain('在码头等到潮声');
+    expect(first.summary?.text).toContain('确认仓库开放');
+  });
+
+  it('upserts bounded milestone and chapter records', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'story-upsert', title: 'Story upsert' }));
+    expect(upsertMilestone(save.world, { id: 'first-note', day: 2, text: '发现旧告示。', charIds: [] }).ok).toBe(true);
+    expect(upsertMilestone(save.world, { id: 'first-note', day: 3, text: '确认告示来源。', charIds: ['seir'] }).ok).toBe(true);
+    expect(save.world.milestones).toEqual([{ id: 'first-note', day: 3, text: '确认告示来源。', charIds: ['seir'] }]);
+    const summary = buildLocalChapterSummary(save.world, 1, 3).summary!;
+    expect(upsertChapterSummary(save.world, summary).ok).toBe(true);
+    expect(save.world.chapters).toHaveLength(1);
+    expect(upsertChapterSummary(save.world, { ...summary, text: '已修订摘要。' }).ok).toBe(true);
+    expect(save.world.chapters[0].text).toBe('已修订摘要。');
+  });
+});

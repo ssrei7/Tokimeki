@@ -121,7 +121,12 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
       const diary = factsOf(facts).world?.diary.slice(-7);
       return diary?.length ? `最近日记：\n${diary.map((entry) => `第 ${entry.day} 天：${entry.text}`).join('\n')}` : null;
     } },
-    { id: 'milestones', role: 'system', priority: 55, order: 10, build: missing },
+    { id: 'milestones', role: 'system', priority: 55, order: 10, build: (facts) => {
+      const milestones = [...(factsOf(facts).world?.milestones ?? [])].sort((left, right) => right.day - left.day || left.id.localeCompare(right.id)).slice(0, 12);
+      if (!milestones.length) return null;
+      const names = new Map(Object.values(factsOf(facts).world.characters).map((character) => [character.id, character.name]));
+      return `重要里程碑：\n${milestones.map((milestone) => `- 第 ${milestone.day} 天：${milestone.text}${milestone.charIds.length ? `（${milestone.charIds.map((id) => names.get(id) ?? id).join('、')}）` : ''}`).join('\n')}`;
+    } },
     { id: 'worldbook_keyword', role: 'system', priority: 50, order: 11, build: (facts) => {
       const { input, worldbooks } = factsOf(facts);
       const lowerInput = input.toLocaleLowerCase();
@@ -132,7 +137,10 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
         .sort((a, b) => b.priority - a.priority);
       return matched.map((entry) => `[${entry.name}]\n${entry.content}`).join('\n\n') || null;
     } },
-    { id: 'chapter_summary', role: 'system', priority: 40, order: 12, build: missing },
+    { id: 'chapter_summary', role: 'system', priority: 40, order: 12, build: (facts) => {
+      const chapters = [...(factsOf(facts).world?.chapters ?? [])].sort((left, right) => right.toDay - left.toDay || left.id.localeCompare(right.id)).slice(0, 3);
+      return chapters.length ? `较早章节摘要：\n${chapters.map((chapter) => `- 第 ${chapter.fromDay}–${chapter.toDay} 天：${chapter.text}`).join('\n')}` : null;
+    } },
     { id: 'raw_history', role: 'user', priority: 20, order: 13, build: (facts) => {
       const history = factsOf(facts).history;
       if (!history.length) return null;

@@ -101,6 +101,19 @@ describe('save migrations', () => {
     expect(migrated.world.eventDefs.note.evidenceRules).toBeUndefined();
   });
 
+  it('migrates v26 worlds with empty chapter and milestone archives', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v26-story', title: 'v26 story' }));
+    const legacy = structuredClone(source) as Record<string, unknown>;
+    legacy.schemaVersion = 26;
+    const world = legacy.world as Record<string, unknown>;
+    delete world.chapters;
+    delete world.milestones;
+    const migrated = migrateSave(legacy);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.chapters).toEqual([]);
+    expect(migrated.world.milestones).toEqual([]);
+  });
+
   it('rejects malformed migrated data with field-level validation errors', () => {
     expect(() => migrateSave({ schemaVersion: CURRENT_SCHEMA_VERSION, world: {} })).toThrow();
   });
