@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
 import { EventBus } from '../src/core/events/bus';
 import { listPendingEvents, refreshDirectorTension, resolveEventChoice, scheduleDirectorEvent, scheduleEvent, scheduleEventsForCoordinate, setScheduledEventRevealed, triggerScheduledEvent, updateEventHistory } from '../src/core/events/director';
+import { evaluateEvidenceReaction } from '../src/core/events/evidence';
 import { createDefaultOpRegistry } from '../src/core/ops';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import { exportEventPackage, importEventPackage } from '../src/data/io/zip';
@@ -134,6 +135,25 @@ describe('deterministic local story events', () => {
     expect(resolved.ops).toEqual(event.choices![0].ops);
     expect(save.world.eventHistory[0]).toMatchObject({ choice: '拆开阅读', resultSummary: '你确认信件来自旧仓库。', narrative: '你沿着折痕拆开了信。' });
     expect(resolveEventChoice(save.world, triggered.history!.id, 'read').ok).toBe(false);
+  });
+
+  it('matches owned collection evidence by item tags, participant, and condition', () => {
+    const save = setup();
+    save.world.items.ticket = { id: 'ticket', name: '旧车票', tags: ['memory', 'paper'], description: '褪色的车票' };
+    save.world.player.inventory.push({ itemId: 'ticket', count: 1, gotDay: 2, gotNodeId: 'docks' });
+    save.world.collection.push({ id: 'collection-ticket', itemId: 'ticket', title: '旧车票', description: '褪色的车票', tags: ['memory', 'paper'], day: 2, nodeId: 'docks' });
+    const event: EventDef = {
+      id: 'evidence-event', title: '仓库门前', trigger: { nodeIds: ['docks'], charIds: ['seir'] }, content: '门锁上有新的划痕。',
+      evidenceRules: [{ tags: ['memory'], charIds: ['seir'], when: 'flags.evidence_ready', response: '他认出了车票上的旧印章。', ops: [{ op: 'set_flag', key: 'evidence_seen', value: true }] }],
+    };
+    save.world.flags.evidence_ready = true;
+    save.world.eventDefs[event.id] = event;
+    const scheduled = scheduleEvent(save.world, event.id, { nodeId: 'docks', day: 3, slotId: 'noon', charIds: ['seir'] }).scheduled!;
+    const triggered = triggerScheduledEvent(save.world, scheduled.id);
+    const reaction = evaluateEvidenceReaction(save.world, triggered.history!.id, 'collection-ticket');
+    expect(reaction).toMatchObject({ ok: true, matched: true, response: '他认出了车票上的旧印章。', ops: event.evidenceRules![0].ops });
+    save.world.player.inventory = [];
+    expect(evaluateEvidenceReaction(save.world, triggered.history!.id, 'collection-ticket').ok).toBe(false);
   });
 });
 

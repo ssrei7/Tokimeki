@@ -350,6 +350,7 @@ interface EventDef {
   content?: string;              // 或纯静态文本,不调 API
   ops?: unknown[];
   choices?: EventChoice[];       // 事件包声明的确定性结果选项
+  evidenceRules?: EventEvidenceRule[]; // 出示收藏时的确定性反应规则
   packId?: Id;                   // 事件包来源
 }
 
@@ -359,6 +360,15 @@ interface EventChoice {
   resultSummary?: string;
   narrative?: string;
   ops?: unknown[];                // 仍须经过统一白名单校验
+}
+
+interface EventEvidenceRule {
+  itemId?: ItemId;
+  tags?: string[];
+  charIds?: CharId[];
+  when?: Condition;
+  response: string;
+  ops?: unknown[];
 }
 
 interface ScheduledEvent {       // pending 队列 = 伏笔
