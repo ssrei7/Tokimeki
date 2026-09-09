@@ -43,7 +43,7 @@ describe('save migrations', () => {
     expect(migrated.world.npcTemplates).toEqual({});
     expect(migrated.world.encounterLog).toEqual([]);
     expect(migrated.world.eventDefs).toEqual({});
-    expect(migrated.world.director).toEqual({ scheduled: [], lastFiredDay: {}, tension: 0 });
+    expect(migrated.world.director).toEqual({ scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: 1 });
     expect(migrated.world.eventHistory).toEqual([]);
   });
 
@@ -63,7 +63,7 @@ describe('save migrations', () => {
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.player.name).toBe(source.world.player.name);
     expect(migrated.world.eventDefs).toEqual({});
-    expect(migrated.world.director).toEqual({ scheduled: [], lastFiredDay: {}, tension: 0 });
+    expect(migrated.world.director).toEqual({ scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: 1 });
     expect(migrated.world.eventHistory).toEqual([]);
   });
 
@@ -164,7 +164,7 @@ describe('save migrations', () => {
   it('accepts the stage 7 relationship-gated event schema as the current version', () => {
     const source = seedScenario(createCurrentSaveScenario({ id: 'v29-current', title: 'v29 current' }));
     const migrated = migrateSave({ ...source, schemaVersion: 28, world: { ...source.world, eventDefs: undefined } });
-    expect(migrated.schemaVersion).toBe(29);
+    expect(migrated.schemaVersion).toBe(30);
     expect(migrated.world.eventDefs).toEqual({});
   });
 

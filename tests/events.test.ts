@@ -118,7 +118,33 @@ describe('deterministic local story events', () => {
     onceSave.world.clock.day = 4;
     expect(scheduleDirectorEvent(onceSave.world, { nodeId: 'docks', day: 4, slotId: 'noon' })).toBeUndefined();
     save.world.clock.day = 4;
-    expect(refreshDirectorTension(save.world, 10)).toBe(7);
+    expect(refreshDirectorTension(save.world, 10)).toBe(70);
+  });
+
+  it('raises tension along the quiet-day curve and filters or boosts events deterministically', () => {
+    const save = setup();
+    const quiet = refreshDirectorTension(save.world, 6);
+    expect(quiet).toBe(50);
+    const gated: EventDef = { id: 'high-tension', title: '高张力事件', trigger: { nodeIds: ['docks'] }, tension: { min: 60 }, content: '还不够紧张。' };
+    expect(scheduleEvent(save.world, gated.id, { nodeId: 'docks', day: 6, slotId: 'noon' }).ok).toBe(false);
+    save.world.eventDefs[gated.id] = gated;
+    expect(scheduleEvent(save.world, gated.id, { nodeId: 'docks', day: 7, slotId: 'noon' }).ok).toBe(true);
+    const boosted: EventDef = { id: 'boosted', title: '张力加权事件', trigger: { nodeIds: ['docks'] }, tension: { weightBoost: 2 }, content: '张力越高越容易出现。' };
+    save.world.eventDefs[boosted.id] = boosted;
+    expect(refreshDirectorTension(save.world, 7)).toBeGreaterThan(0);
+    const stable = structuredClone(save.world);
+    stable.director.scheduled = [];
+    expect(scheduleDirectorEvent(save.world, { nodeId: 'docks', day: 7, slotId: 'evening' })?.eventId).toBe(scheduleDirectorEvent(stable, { nodeId: 'docks', day: 7, slotId: 'evening' })?.eventId);
+  });
+
+  it('applies event tension delta and decays positive offset by elapsed days', () => {
+    const save = setup();
+    const event: EventDef = { id: 'tension-spike', title: '突发消息', trigger: { nodeIds: ['docks'] }, tension: { delta: 30 }, content: '气氛骤然变化。' };
+    save.world.eventDefs[event.id] = event;
+    const scheduled = scheduleEvent(save.world, event.id, { nodeId: 'docks', day: 3, slotId: 'noon' }).scheduled!;
+    expect(triggerScheduledEvent(save.world, scheduled.id).ok).toBe(true);
+    expect(save.world.director.tension).toBe(30);
+    expect(refreshDirectorTension(save.world, 5)).toBe(48);
   });
 
   it('resolves a package-declared choice once and returns its ops for deterministic application', () => {

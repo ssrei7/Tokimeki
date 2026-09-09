@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 29;
+export const CURRENT_SCHEMA_VERSION = 30;
 
 const IdSchema = z.string().min(1);
 
@@ -221,6 +221,12 @@ export const EventStageRangeSchema = z.object({
   min: IdSchema.optional(),
   max: IdSchema.optional(),
 });
+export const EventTensionSchema = z.object({
+  min: z.number().finite().min(0).max(100).optional(),
+  max: z.number().finite().min(0).max(100).optional(),
+  weightBoost: z.number().finite().min(0).max(20).optional(),
+  delta: z.number().finite().min(-100).max(100).optional(),
+}).refine((value) => value.min === undefined || value.max === undefined || value.min <= value.max, { message: 'Event tension min must not exceed max.' });
 export const EventDefSchema = z.object({
   id: IdSchema,
   title: z.string().min(1).max(160),
@@ -237,6 +243,7 @@ export const EventDefSchema = z.object({
   evidenceRules: z.array(EventEvidenceRuleSchema).max(32).optional(),
   milestone: EventMilestoneSchema.optional(),
   stageRange: EventStageRangeSchema.optional(),
+  tension: EventTensionSchema.optional(),
   packId: IdSchema.optional(),
 }).refine((event) => Boolean(event.content?.trim() || event.prompt?.trim() || event.choices?.length), { message: 'Event must provide content, prompt, or choices.' });
 
@@ -254,6 +261,8 @@ export const DirectorStateSchema = z.object({
   scheduled: z.array(ScheduledEventSchema).max(500),
   lastFiredDay: z.record(IdSchema, z.number().int().positive()),
   tension: z.number().finite(),
+  tensionOffset: z.number().finite().default(0),
+  tensionUpdatedDay: z.number().int().positive().optional(),
   globalCooldownUntilDay: z.number().int().positive().optional(),
 });
 
@@ -584,7 +593,7 @@ export const WorldV21Schema = WorldV20Schema;
 export const WorldV22Schema = WorldV21Schema;
 export const WorldV23Schema = WorldV22Schema.extend({
   eventDefs: z.record(IdSchema, EventDefSchema).default({}),
-  director: DirectorStateSchema.default({ scheduled: [], lastFiredDay: {}, tension: 0 }),
+  director: DirectorStateSchema.default({ scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: 1 }),
   eventHistory: z.array(EventHistoryEntrySchema).max(500).default([]),
 });
 export const WorldV24Schema = WorldV23Schema;

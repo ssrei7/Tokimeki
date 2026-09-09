@@ -59,7 +59,11 @@ export interface EventEligibility {
 }
 
 export function ensureDirector(world: WorldState): DirectorState {
-  if (!world.director) world.director = { scheduled: [], lastFiredDay: {}, tension: 0 };
+  if (!world.director) world.director = { scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: world.clock.day };
+  else {
+    if (!Number.isFinite(world.director.tensionOffset)) world.director.tensionOffset = 0;
+    if (!Number.isInteger(world.director.tensionUpdatedDay) || world.director.tensionUpdatedDay! < 1) world.director.tensionUpdatedDay = world.clock.day;
+  }
   return world.director;
 }
 
@@ -98,12 +102,12 @@ export function scheduleDirectorEvent(world: WorldState, coordinate: EventCoordi
     .filter((event) => isEventEligible(world, event, coordinate).eligible)
     .sort((left, right) => left.id.localeCompare(right.id));
   if (!candidates.length) return undefined;
-  const totalWeight = candidates.reduce((sum, event) => sum + Math.max(0, event.weight ?? 1), 0);
+  const totalWeight = candidates.reduce((sum, event) => sum + effectiveEventWeight(event, world.director?.tension ?? 0), 0);
   if (totalWeight <= 0) return undefined;
   const roll = stableUnit(`${coordinate.nodeId}:${coordinate.day}:${coordinate.slotId}:${world.director?.tension ?? 0}`) * totalWeight;
   let cursor = 0;
   for (const event of candidates) {
-    cursor += Math.max(0, event.weight ?? 1);
+    cursor += effectiveEventWeight(event, world.director?.tension ?? 0);
     if (roll < cursor) return scheduleEvent(world, event.id, coordinate).scheduled;
   }
   return scheduleEvent(world, candidates.at(-1)!.id, coordinate).scheduled;
@@ -112,11 +116,15 @@ export function scheduleDirectorEvent(world: WorldState, coordinate: EventCoordi
 export function isEventEligible(world: WorldState, event: EventDef, coordinate: EventCoordinate): EventEligibility {
   if (!eventMatchesCoordinate(event, coordinate, world)) return { eligible: false, reason: 'Event trigger does not match this coordinate.' };
   const director = ensureDirector(world);
+  refreshDirectorTension(world, coordinate.day);
   if (event.once && director.lastFiredDay[event.id] !== undefined) return { eligible: false, reason: 'Event has already fired.' };
   const lastFired = director.lastFiredDay[event.id];
   if (event.cooldownDays !== undefined && lastFired !== undefined && coordinate.day - lastFired <= event.cooldownDays) return { eligible: false, reason: 'Event is cooling down.' };
   if (director.globalCooldownUntilDay !== undefined && coordinate.day < director.globalCooldownUntilDay) return { eligible: false, reason: 'Director is in a global cooldown.' };
   if (event.when && !matchesCondition(event.when, world, { id: eventScheduleId(event.id, coordinate), eventId: event.id, day: coordinate.day, slotId: coordinate.slotId, nodeId: coordinate.nodeId, ...(coordinate.charIds?.length ? { charIds: [...coordinate.charIds] } : {}) })) return { eligible: false, reason: 'Event condition is not satisfied.' };
+  const tension = director.tension;
+  if (event.tension?.min !== undefined && tension < event.tension.min) return { eligible: false, reason: 'Event tension is below its minimum.' };
+  if (event.tension?.max !== undefined && tension > event.tension.max) return { eligible: false, reason: 'Event tension is above its maximum.' };
   return { eligible: true };
 }
 
@@ -124,7 +132,12 @@ export function isEventEligible(world: WorldState, event: EventDef, coordinate: 
 export function refreshDirectorTension(world: WorldState, day = world.clock.day): number {
   const director = ensureDirector(world);
   const latestFiredDay = Math.max(0, ...Object.values(director.lastFiredDay));
-  director.tension = Math.max(0, Math.min(100, day - Math.max(1, latestFiredDay)));
+  const previousDay = director.tensionUpdatedDay ?? day;
+  const elapsedDays = Math.max(0, day - previousDay);
+  if (elapsedDays > 0) director.tensionOffset = Math.max(0, director.tensionOffset - elapsedDays);
+  director.tensionUpdatedDay = day;
+  const quietDays = Math.max(0, day - Math.max(1, latestFiredDay));
+  director.tension = Math.max(0, Math.min(100, quietDays * 10 + director.tensionOffset));
   return director.tension;
 }
 
@@ -209,6 +222,7 @@ export function triggerScheduledEvent(world: WorldState, scheduledId: string, op
   };
   director.scheduled = director.scheduled.filter((item) => item.id !== scheduled.id);
   director.lastFiredDay[event.id] = scheduled.day;
+  director.tensionOffset = Math.max(-100, Math.min(100, director.tensionOffset + (event.tension?.delta ?? 0)));
   refreshDirectorTension(world, scheduled.day);
   world.eventHistory = [...(world.eventHistory ?? []), history].slice(-500);
   if (event.milestone) upsertMilestone(world, { id: `milestone-${scheduled.id}`, day: scheduled.day, text: event.milestone.text, charIds: event.milestone.charIds ?? charIds });
@@ -303,6 +317,12 @@ function eventScheduleId(eventId: string, coordinate: EventCoordinate): string {
 
 function compareScheduledEvents(left: ScheduledEvent, right: ScheduledEvent): number {
   return left.day - right.day || left.slotId.localeCompare(right.slotId) || left.nodeId.localeCompare(right.nodeId) || left.eventId.localeCompare(right.eventId);
+}
+
+function effectiveEventWeight(event: EventDef, tension: number): number {
+  const base = Math.max(0, event.weight ?? 1);
+  const boost = Math.max(0, event.tension?.weightBoost ?? 0);
+  return base * (1 + (tension / 100) * boost);
 }
 
 function rejectedEvent(warning: string): EventTriggerResult {

@@ -135,7 +135,7 @@ const defaultSave: SaveFile = SaveFileSchema.parse({
     player: { name: '旅人', nodeId: 'start', stats: { 'custom-reputation': 0 }, flags: {}, inventory: [] },
     stats: {}, flags: {},
     items: { 'white-flower': { id: 'white-flower', name: '白色小花', tags: ['flower'], description: '一朵可用于 Mock 验收的白色小花。', stackable: true, giftable: true } },
-    relations: {}, characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [], topicTrees: {}, usedTopics: {}, appointments: [], eventDefs: {}, director: { scheduled: [], lastFiredDay: {}, tension: 0 }, eventHistory: [], collection: [],
+    relations: {}, characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [], topicTrees: {}, usedTopics: {}, appointments: [], eventDefs: {}, director: { scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: 1 }, eventHistory: [], collection: [],
     map: createDefaultMap(),
     diary: [], settlements: [],
   },

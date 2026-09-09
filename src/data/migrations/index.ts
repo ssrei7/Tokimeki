@@ -28,6 +28,7 @@ import { migrateV25ToV26 } from './v25-to-v26';
 import { migrateV26ToV27 } from './v26-to-v27';
 import { migrateV27ToV28 } from './v27-to-v28';
 import { migrateV28ToV29 } from './v28-to-v29';
+import { migrateV29ToV30 } from './v29-to-v30';
 import { MigrationError, UnsupportedSchemaVersionError, type Migration } from './types';
 
 export const migrations: Record<number, Migration> = {
@@ -60,6 +61,7 @@ export const migrations: Record<number, Migration> = {
   27: migrateV26ToV27,
   28: migrateV27ToV28,
   29: migrateV28ToV29,
+  30: migrateV29ToV30,
 };
 
 export function migrateSave(input: unknown): SaveFile {
