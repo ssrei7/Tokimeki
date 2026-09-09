@@ -22,7 +22,7 @@ function setup() {
 describe('op registry and built-ins', () => {
   it('registers complete prompt documentation for all stage 1 ops', () => {
     const docs = createDefaultOpRegistry().promptDocs();
-    for (const op of ['add_stat', 'set_stat', 'set_flag', 'give_item', 'take_item', 'add_memory', 'add_node_memory', 'move_player', 'reveal_node', 'move_npc', 'make_appointment', 'propose_departure', 'resolve_departure']) expect(docs).toContain(op);
+    for (const op of ['add_stat', 'set_stat', 'set_flag', 'give_item', 'take_item', 'add_memory', 'add_node_memory', 'move_player', 'reveal_node', 'move_npc', 'promote_npc', 'make_appointment', 'propose_departure', 'resolve_departure']) expect(docs).toContain(op);
   });
 
   it('clamps stat deltas and records a diff without hard-coded stat keys', () => {
@@ -250,5 +250,16 @@ describe('op registry and built-ins', () => {
     const result = state.registry.applyAll([{ op: 'move_npc', target: 'seir', nodeId: 'docks', slotId: 'night', activity: '收拾渔网' }], state.context, 12);
     expect(result.applied).toBe(1);
     expect(state.world.characters.seir.schedule?.overrides['3:night']).toEqual({ nodeId: 'docks', activity: '收拾渔网' });
+  });
+
+  it('promotes a semi-formal NPC through the registered op', () => {
+    const state = setup();
+    state.world.npcs['vendor-1'] = { id: 'vendor-1', name: '摊主', tier: 'semi', facts: ['卖花'], tags: ['merchant'], homeNodeId: 'start', lightMemory: ['记得玩家买过花。'], schedule: { grid: {}, overrides: { '3:evening': { nodeId: 'start', activity: '收摊' } } } };
+    const result = state.registry.applyAll([{ op: 'promote_npc', target: 'vendor-1', description: '经营花摊。', personality: '爽朗。' }], state.context, 12);
+    expect(result.applied).toBe(1);
+    expect(state.world.npcs['vendor-1']).toBeUndefined();
+    expect(state.world.characters['vendor-1']).toMatchObject({ tier: 'formal', source: 'promoted', card: { description: '经营花摊。', personality: '爽朗。' } });
+    expect(state.world.characters['vendor-1'].schedule?.overrides['3:evening']).toEqual({ nodeId: 'start', activity: '收摊' });
+    expect(state.world.relations['vendor-1'].memories[0].text).toBe('记得玩家买过花。');
   });
 });

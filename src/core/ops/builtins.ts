@@ -4,7 +4,7 @@ import { OpRegistry } from './registry';
 import type { OpContext, OpResult } from './types';
 import { advanceTime } from '../time';
 import { movePlayer, revealNode } from '../map';
-import { moveNpc, proposeDeparture, resolveDeparture, triggerEncounter } from '../encounter';
+import { moveNpc, promoteNpc, proposeDeparture, resolveDeparture, triggerEncounter } from '../encounter';
 import { canUnlockTopic, topicTreeKey } from '../topics';
 import { evaluateGift, resolveRelationshipStageId } from '../relationship';
 import { evaluateCondition, type ConditionScope } from '../expr';
@@ -26,6 +26,7 @@ const AdvanceTimeSchema = z.object({ op: z.literal('advance_time'), kind: z.stri
 const MovePlayerSchema = z.object({ op: z.literal('move_player'), nodeId: z.string().min(1) });
 const RevealNodeSchema = z.object({ op: z.literal('reveal_node'), nodeId: z.string().min(1) });
 const MoveNpcSchema = z.object({ op: z.literal('move_npc'), target: z.string().min(1), nodeId: z.string().min(1), slotId: z.string().min(1).optional(), activity: z.string().min(1).max(200).optional() });
+const PromoteNpcSchema = z.object({ op: z.literal('promote_npc'), target: z.string().min(1), description: z.string().min(1).max(500).optional(), personality: z.string().min(1).max(500).optional(), scenario: z.string().min(1).max(500).optional(), firstMes: z.string().min(1).max(500).optional(), exampleDialogue: z.string().min(1).max(1000).optional() });
 const UnlockTopicSchema = z.object({ op: z.literal('unlock_topic'), id: z.string().min(1) });
 const MarkTopicUsedSchema = z.object({ op: z.literal('mark_topic_used'), id: z.string().min(1) });
 const SetMoodSchema = z.object({ op: z.literal('set_mood'), target: z.string().min(1), word: z.string().min(1).max(80), decayDays: z.number().int().nonnegative().max(365) });
@@ -139,6 +140,17 @@ export function registerBuiltInOps(registry: OpRegistry): void {
         ? triggerEncounter(context.world, context.encounterConfig, { nodeId: payload.nodeId, trigger: 'character_move', day: context.day, slotId: payload.slotId ?? context.slotId, daysPerWeek: context.calendar?.daysPerWeek, events: context.events })
         : undefined;
       return { ok: true, changes: [...result.changes, ...(encounter?.changes ?? [])], warning: result.warning };
+    },
+  });
+  registry.register({
+    op: 'promote_npc', schema: PromoteNpcSchema, clamp: {},
+    promptDoc: 'promote_npc: {"op":"promote_npc","target":"semi-npc-id","description":"角色简介","personality":"性格","scenario":"当前处境","firstMes":"初次完整对话开场","exampleDialogue":"示例台词"}; converts one known semi-formal NPC into a formal character while preserving schedule and light memories.',
+    describe: (payload) => `promote NPC ${payload.target}`,
+    apply: (payload, context) => {
+      const beforeNpc = context.world.npcs[payload.target] ? structuredClone(context.world.npcs[payload.target]) : undefined;
+      const result = promoteNpc(context.world, payload.target, payload);
+      if (!result.ok || !result.character) return { ok: false, changes: [], warning: result.warning };
+      return { ok: true, changes: [{ path: `world.characters.${payload.target}`, before: undefined, after: result.character, description: `Promoted ${result.character.name} to a formal character.` }, { path: `world.npcs.${payload.target}`, before: beforeNpc, after: undefined, description: `Removed semi-formal NPC ${payload.target} after promotion.` }] };
     },
   });
   registry.register({

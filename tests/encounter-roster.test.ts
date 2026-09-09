@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addCharacterToWorld, formalCharacterFromCard } from '../src/core/encounter';
+import { addCharacterToWorld, formalCharacterFromCard, promoteNpc } from '../src/core/encounter';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import type { CharacterCard } from '../src/data/content';
 
@@ -29,5 +29,20 @@ describe('formal character roster', () => {
   it('rejects a home node that is not on the map', () => {
     const save = seedScenario(createCurrentSaveScenario({ id: 'roster-invalid', title: 'Roster invalid' }));
     expect(addCharacterToWorld(save.world, card, 'missing').ok).toBe(false);
+  });
+
+  it('promotes a semi-formal NPC into a complete character with independent memories and schedule', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'promote', title: 'Promote' }));
+    save.world.npcs['vendor-1'] = {
+      id: 'vendor-1', name: '摊主', tier: 'semi', facts: ['卖花', '认识港口的路'], tags: ['merchant', 'observant'],
+      homeNodeId: 'start', lightMemory: ['玩家曾在雨天来买花。'], schedule: { grid: {}, overrides: { '2:noon': { nodeId: 'start', activity: '整理货架' } } },
+    };
+    const result = promoteNpc(save.world, 'vendor-1', { description: '经营花摊的港口居民。', personality: '细心而健谈。' });
+    expect(result.ok).toBe(true);
+    expect(save.world.npcs['vendor-1']).toBeUndefined();
+    expect(save.world.characters['vendor-1']).toMatchObject({ tier: 'formal', source: 'promoted', homeNodeId: 'start' });
+    expect(save.world.characters['vendor-1'].schedule?.overrides['2:noon']).toEqual({ nodeId: 'start', activity: '整理货架' });
+    expect(save.world.relations['vendor-1'].memories[0]).toMatchObject({ text: '玩家曾在雨天来买花。', type: 'observation', source: { kind: 'system' } });
+    expect(promoteNpc(save.world, 'vendor-1').ok).toBe(false);
   });
 });
