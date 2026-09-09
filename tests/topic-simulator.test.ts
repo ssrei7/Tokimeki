@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { simulateTopicDistribution } from '../src/dev/topic-simulator';
+import { simulateLeadDistribution } from '../src/dev/lead-simulator';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 describe('provider-free topic simulation', () => {
@@ -19,5 +20,20 @@ describe('provider-free topic simulation', () => {
     expect(first.runs[0].availableTopicCounts).toEqual([2, 1]);
     expect(first.runs[0].exhaustionDayByTree['seir:start']).toBeNull();
     expect(first.aggregate.dailyRefreshCoverage).toBe(0.5);
+  });
+});
+
+describe('provider-free lead simulation', () => {
+  it('produces deterministic ignore-rate reports without mutating the source world', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'lead-simulation', title: 'Lead simulation' }));
+    const before = structuredClone(save.world);
+    const options = { seeds: [7, 11], days: 8, followProbability: 0.5 };
+    const first = simulateLeadDistribution(save.world, save.config.calendar, options);
+    const second = simulateLeadDistribution(save.world, save.config.calendar, options);
+    expect(first).toEqual(second);
+    expect(first.aggregate.generatedLeads).toBeGreaterThan(0);
+    expect(first.aggregate.ignoredRate).toBeGreaterThanOrEqual(0);
+    expect(first.aggregate.ignoredRate).toBeLessThanOrEqual(1);
+    expect(save.world).toEqual(before);
   });
 });
