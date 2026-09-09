@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 17;
+export const CURRENT_SCHEMA_VERSION = 18;
 
 const IdSchema = z.string().min(1);
 
@@ -319,6 +319,21 @@ export const MorningBriefEntrySchema = z.object({
   source: z.enum(['local', 'ai']).default('local'),
 });
 
+export const HookPoolEntrySchema = z.object({
+  id: IdSchema,
+  sourceBriefId: IdSchema,
+  category: z.literal('lead'),
+  title: z.string().min(1).max(120),
+  body: z.string().min(1).max(1000),
+  nodeId: IdSchema,
+  slotId: IdSchema.optional(),
+  charIds: z.array(IdSchema).max(3).default([]),
+  createdDay: z.number().int().positive(),
+  expiresDay: z.number().int().positive().optional(),
+  status: z.enum(['available', 'triggered', 'expired']).default('available'),
+  triggerCount: z.number().int().nonnegative().default(0),
+});
+
 export const RelationMemoryStateSchema = z.object({
   memories: z.array(MemoryEntrySchema),
 });
@@ -442,6 +457,7 @@ export const WorldV13Schema = WorldV12Schema.extend({ collection: z.array(Collec
 export const WorldV14Schema = WorldV13Schema;
 export const WorldV15Schema = WorldV14Schema;
 export const WorldV17Schema = WorldV15Schema.extend({ morningBriefs: z.array(MorningBriefEntrySchema).max(200).default([]) });
+export const WorldV18Schema = WorldV17Schema.extend({ hooks: z.array(HookPoolEntrySchema).max(200).default([]) });
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -477,13 +493,14 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV17Schema,
+  world: WorldV18Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV17Schema>;
+export type WorldState = z.infer<typeof WorldV18Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
+export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type WorldV5State = z.infer<typeof WorldV5Schema>;
 export type Topic = z.infer<typeof TopicSchema>;
 export type TopicTree = z.infer<typeof TopicTreeSchema>;

@@ -39,6 +39,7 @@ import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
 import { PLAYER_ACCENT_COLOR, resolveCharacterAccentColors, resolveSpeakerAccentColor } from './ui/character-color';
 import { settlementRelationNumbers } from './ui/settlement';
 import { buildLocalMorningBrief, buildMorningPrompt, hasMorningBrief, parseMorningResponse } from './core/world/morning';
+import { findMatchingHooks, syncLeadHooks, triggerHook } from './core/world/hooks';
 import './ui/theme/app.css';
 
 type Tab = 'map' | 'day' | 'chat' | 'library' | 'settings';
@@ -387,7 +388,11 @@ export function App() {
 
   async function ensureMorningBrief(day: number): Promise<void> {
     const current = saveRef.current;
-    if (hasMorningBrief(current.world, day)) return;
+    if (hasMorningBrief(current.world, day)) {
+      const repaired = structuredClone(current);
+      if (syncLeadHooks(repaired.world, repaired.world.morningBriefs.filter((entry) => entry.day === day))) commitSave(repaired);
+      return;
+    }
     let entries = buildLocalMorningBrief(current.world, day);
     const explicitRoute = bindings.some((binding) => binding.taskId === 'world_morning') || Boolean(mockFixtureId);
     if (explicitRoute) {
@@ -406,6 +411,7 @@ export function App() {
     const next = structuredClone(saveRef.current);
     if (hasMorningBrief(next.world, day)) return;
     next.world.morningBriefs = [...next.world.morningBriefs.filter((entry) => entry.day !== day), ...entries].slice(-200);
+    syncLeadHooks(next.world, entries);
     commitSave(next);
   }
 
@@ -439,13 +445,16 @@ export function App() {
       return;
     }
     const destination = next.world.map.nodes[nodeId];
+    const matchedHooks = findMatchingHooks(next.world, nodeId, next.world.clock.slotId);
+    matchedHooks.forEach(({ hook }) => { triggerHook(next.world, hook.id); });
     const encounter = triggerEncounter(next.world, next.config.encounter, { nodeId, trigger: 'enter', daysPerWeek: next.config.calendar.daysPerWeek, events: promptEvents });
     commitSave(next);
     setActiveEncounter(encounter.triggered && encounter.entry ? { entryId: encounter.entry.id, nodeId, scope: encounter.entry.scope, candidates: encounter.candidates } : null);
     setEncounterParticipantIds(encounter.triggered ? encounter.candidates.filter((candidate) => candidate.tier === 'formal' && characters.some((character) => character.id === candidate.id)).map((candidate) => candidate.id) : []);
     const arrival = result.cost > 0 ? `已抵达${destination?.name ?? nodeId}，消耗 ${result.cost} 个时段。` : `已抵达${destination?.name ?? nodeId}。`;
     const names = encounter.candidates.map((candidate) => candidate.name).join('、');
-    setFeedback({ tone: 'success', text: encounter.triggered ? `${arrival} 遇见了${names}。` : arrival });
+    const hookText = matchedHooks.length ? ` 晨报线索「${matchedHooks.map(({ hook }) => hook.title).join('、')}」在这里触发了。` : '';
+    setFeedback({ tone: 'success', text: `${encounter.triggered ? `${arrival} 遇见了${names}。` : arrival}${hookText}` });
   }
 
   function chooseEncounterOutcome(outcome: 'continued' | 'urgent_leave'): void {
