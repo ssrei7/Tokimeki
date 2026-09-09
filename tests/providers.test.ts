@@ -5,7 +5,7 @@ import { openAiChatUrl, openAiModelsUrl } from '../src/providers/adapters/openai
 import { testProviderConnection } from '../src/providers/connection-test';
 import { ProviderManager } from '../src/providers/manager';
 import { listProviderModels } from '../src/providers/models';
-import { resolveProviderForTask } from '../src/providers/router';
+import { resolveProviderForTask, resolveProviderForTaskGroup } from '../src/providers/router';
 import { streamChat } from '../src/providers/stream';
 import type { ProviderConfig } from '../src/providers/types';
 
@@ -31,6 +31,11 @@ describe('provider adapters and routing', () => {
     expect(resolveProviderForTask(providers, bindings, 'narrate_main', 'primary')?.id).toBe('narrator');
     expect(resolveProviderForTask(providers, bindings, 'summarize_day', 'primary')?.id).toBe('primary');
     expect(resolveProviderForTask(providers, [{ taskId: 'narrate_main', providerId: 'missing' }], 'narrate_main', 'primary')?.id).toBe('primary');
+  });
+  it('resolves a merged world morning request through the first available task binding', () => {
+    const providers = [{ ...base, id: 'primary' }, { ...base, id: 'npc' }];
+    expect(resolveProviderForTaskGroup(providers, [{ taskId: 'npc_batch', providerId: 'npc' }], ['world_morning', 'npc_batch'], 'primary')?.id).toBe('npc');
+    expect(resolveProviderForTaskGroup(providers, [{ taskId: 'world_morning', providerId: 'missing' }, { taskId: 'npc_batch', providerId: 'npc' }], ['world_morning', 'npc_batch'], 'primary')?.id).toBe('npc');
   });
   it('applies generic templates, custom headers, response paths, and framing', () => {
     const config: ProviderConfig = { ...base, kind: 'generic', headers: { 'x-client': 'tokimeki' }, bodyTemplate: '{"model":{{model}},"messages":{{messages}}}', responsePath: '$.output.text', streamFraming: 'sse' };

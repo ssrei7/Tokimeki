@@ -22,7 +22,7 @@ import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT
 import { testProviderConnection } from './providers/connection-test';
 import { providerDb } from './providers/db';
 import { listProviderModels } from './providers/models';
-import { resolveProviderForTask } from './providers/router';
+import { resolveProviderForTask, resolveProviderForTaskGroup } from './providers/router';
 import { streamChat, type StreamStatus } from './providers/stream';
 import { createMockProviderConfig } from './providers/adapters/mock';
 import { MOCK_FIXTURE_IDS, type MockFixtureId } from './providers/mock/fixtures';
@@ -400,9 +400,9 @@ export function App() {
       return;
     }
     let update = buildLocalMorningUpdate(current.world, day);
-    const explicitRoute = bindings.some((binding) => binding.taskId === 'world_morning') || Boolean(mockFixtureId);
+    const explicitRoute = bindings.some((binding) => binding.taskId === 'world_morning' || binding.taskId === 'npc_batch') || Boolean(mockFixtureId);
     if (explicitRoute) {
-      const routed = mockFixtureId ? createMockProviderConfig(mockFixtureId) : resolveProviderForTask(providers, bindings, 'world_morning', defaultProviderId);
+      const routed = mockFixtureId ? createMockProviderConfig(mockFixtureId) : resolveProviderForTaskGroup(providers, bindings, ['world_morning', 'npc_batch'], defaultProviderId);
       if (routed) {
         try {
           const parsed = ProviderConfigSchema.parse(routed);
