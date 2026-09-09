@@ -506,10 +506,10 @@ export function App() {
     const destination = next.world.map.nodes[nodeId];
     const matchedHooks = findMatchingHooks(next.world, nodeId, next.world.clock.slotId);
     matchedHooks.forEach(({ hook }) => { triggerHook(next.world, hook.id); });
-    scheduleDirectorEvent(next.world, { nodeId, day: next.world.clock.day, slotId: next.world.clock.slotId });
+    scheduleDirectorEvent(next.world, { nodeId, day: next.world.clock.day, slotId: next.world.clock.slotId, stageRules: next.config.stageRules });
     const localEvents = (next.world.director?.scheduled ?? [])
       .filter((scheduled) => scheduled.nodeId === nodeId && scheduled.day === next.world.clock.day && scheduled.slotId === next.world.clock.slotId)
-      .map((scheduled) => triggerScheduledEvent(next.world, scheduled.id))
+      .map((scheduled) => triggerScheduledEvent(next.world, scheduled.id, { stageRules: next.config.stageRules }))
       .filter((result) => result.ok && result.event);
     const encounter = triggerEncounter(next.world, next.config.encounter, { nodeId, trigger: 'enter', daysPerWeek: next.config.calendar.daysPerWeek, events: promptEvents });
     commitSave(next);

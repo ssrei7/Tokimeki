@@ -216,7 +216,7 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     apply: (payload, context) => {
       if (payload.day < context.day) return { ok: false, changes: [], warning: 'Event day cannot be earlier than the current day.' };
       const before = structuredClone(context.world.director?.scheduled ?? []);
-      const result = scheduleEvent(context.world, payload.eventId, { nodeId: payload.nodeId, day: payload.day, slotId: payload.slotId, charIds: payload.charIds, revealed: payload.revealed });
+      const result = scheduleEvent(context.world, payload.eventId, { nodeId: payload.nodeId, day: payload.day, slotId: payload.slotId, charIds: payload.charIds, revealed: payload.revealed, stageRules: context.stageRules });
       if (!result.ok || !result.scheduled) return { ok: false, changes: [], warning: result.warning };
       return { ok: true, changes: [{ path: 'world.director.scheduled', before, after: structuredClone(context.world.director?.scheduled ?? []), description: `Queued event ${payload.eventId} for day ${payload.day}.` }] };
     },

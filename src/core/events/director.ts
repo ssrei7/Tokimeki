@@ -5,10 +5,12 @@ import type {
   EventHistoryEntry,
   EventScope,
   ScheduledEvent,
+  StageRule,
   WorldState,
 } from '../../data/schema/save';
 import { evaluateCondition, type ConditionScope } from '../expr';
 import { deriveNodeScope } from '../encounter/scope';
+import { resolveRelationshipStageId } from '../relationship';
 import { upsertMilestone } from '../story';
 
 export interface EventCoordinate {
@@ -17,6 +19,7 @@ export interface EventCoordinate {
   slotId: string;
   charIds?: readonly string[];
   revealed?: boolean;
+  stageRules?: readonly StageRule[];
 }
 
 export interface EventScheduleResult {
@@ -174,7 +177,7 @@ export function setScheduledEventRevealed(world: WorldState, scheduledId: string
   return { ok: true };
 }
 
-export function triggerScheduledEvent(world: WorldState, scheduledId: string, options: { charIds?: readonly string[] } = {}): EventTriggerResult {
+export function triggerScheduledEvent(world: WorldState, scheduledId: string, options: { charIds?: readonly string[]; stageRules?: readonly StageRule[] } = {}): EventTriggerResult {
   const director = ensureDirector(world);
   refreshDirectorTension(world);
   const scheduled = director.scheduled.find((item) => item.id === scheduledId);
@@ -185,10 +188,10 @@ export function triggerScheduledEvent(world: WorldState, scheduledId: string, op
   const event = world.eventDefs?.[scheduled.eventId];
   if (!event) return rejectedEvent(`Event definition is missing: ${scheduled.eventId}.`);
   const charIds = [...new Set(options.charIds ?? scheduled.charIds ?? [])].slice(0, 3);
-  if (!eventMatchesCoordinate(event, { nodeId: scheduled.nodeId, day: scheduled.day, slotId: scheduled.slotId, charIds }, world)) {
+  if (!eventMatchesCoordinate(event, { nodeId: scheduled.nodeId, day: scheduled.day, slotId: scheduled.slotId, charIds, stageRules: options.stageRules }, world)) {
     return rejectedEvent(`Event ${event.id} does not match the current location scope or participants.`);
   }
-  const eligibility = isEventEligible(world, event, { nodeId: scheduled.nodeId, day: scheduled.day, slotId: scheduled.slotId, charIds });
+  const eligibility = isEventEligible(world, event, { nodeId: scheduled.nodeId, day: scheduled.day, slotId: scheduled.slotId, charIds, stageRules: options.stageRules });
   if (!eligibility.eligible) return rejectedEvent(eligibility.reason ?? `Event ${event.id} is not eligible.`);
 
   const scope = deriveNodeScope(world.map.nodes[scheduled.nodeId], scheduled.slotId);
@@ -245,9 +248,28 @@ function eventMatchesCoordinate(event: EventDef, coordinate: EventCoordinate, wo
     const participants = new Set(coordinate.charIds ?? []);
     if (trigger.charIds.some((charId) => !participants.has(charId))) return false;
   }
+  if (event.stageRange && !stageRangeMatches(event, coordinate, world)) return false;
   const expectedScope: EventScope | undefined = trigger.scope ?? (trigger.nodeIds?.length ? 'formal' : undefined);
   if (expectedScope && deriveNodeScope(world.map.nodes[coordinate.nodeId], coordinate.slotId) !== expectedScope) return false;
   return true;
+}
+
+function stageRangeMatches(event: EventDef, coordinate: EventCoordinate, world: WorldState): boolean {
+  const range = event.stageRange;
+  if (!range) return true;
+  const participants = coordinate.charIds ?? [];
+  const rules = [...(coordinate.stageRules ?? [])].sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
+  const minIndex = range.min ? rules.findIndex((rule) => rule.id === range.min) : 0;
+  const maxIndex = range.max ? rules.findIndex((rule) => rule.id === range.max) : rules.length - 1;
+  if (!participants.length || !rules.length || minIndex < 0 || maxIndex < 0 || minIndex > maxIndex) return false;
+  return participants.every((charId) => {
+    const relation = world.relations[charId];
+    if (!relation) return false;
+    const stageId = relation.stageId ?? resolveRelationshipStageId(relation.axes, world, rules);
+    if (!stageId) return false;
+    const index = rules.findIndex((rule) => rule.id === stageId);
+    return index >= minIndex && index <= maxIndex;
+  });
 }
 
 function matchesCondition(condition: string, world: WorldState, scheduled: ScheduledEvent): boolean {

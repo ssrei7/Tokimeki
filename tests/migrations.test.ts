@@ -125,6 +125,15 @@ describe('save migrations', () => {
     expect(migrated.world.milestones).toEqual([{ id: 'm1', day: 2, text: '旧里程碑', charIds: [] }]);
   });
 
+  it('migrates v28 event worlds without requiring stage ranges', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v28-stage', title: 'v28 stage' }));
+    const legacy = structuredClone(source) as Record<string, unknown>;
+    legacy.schemaVersion = 28;
+    const migrated = migrateSave(legacy);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.eventDefs).toEqual({});
+  });
+
   it('rejects malformed migrated data with field-level validation errors', () => {
     expect(() => migrateSave({ schemaVersion: CURRENT_SCHEMA_VERSION, world: {} })).toThrow();
   });

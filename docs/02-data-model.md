@@ -352,6 +352,7 @@ interface EventDef {
   choices?: EventChoice[];       // 事件包声明的确定性结果选项
   evidenceRules?: EventEvidenceRule[]; // 出示收藏时的确定性反应规则
   milestone?: { text: string; charIds?: CharId[] }; // 触发时写入里程碑
+  stageRange?: { min?: Id; max?: Id }; // 按配置中的关系阶段顺序限制事件
   packId?: Id;                   // 事件包来源
 }
 

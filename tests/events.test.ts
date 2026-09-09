@@ -164,6 +164,21 @@ describe('deterministic local story events', () => {
     expect(triggerScheduledEvent(save.world, scheduled.id).ok).toBe(true);
     expect(save.world.milestones).toContainEqual({ id: `milestone-${scheduled.id}`, day: 3, text: '发现旧仓库仍有人出入。', charIds: ['seir'] });
   });
+
+  it('filters events by the configured relationship stage range', () => {
+    const save = setup();
+    save.world.relations.seir = { axes: {}, stageId: 'acquaintance', memories: [] };
+    const stageRules = [
+      { id: 'stranger', name: '初识', when: 'true', order: 0 },
+      { id: 'acquaintance', name: '熟悉', when: 'true', order: 1 },
+      { id: 'lover', name: '亲密', when: 'true', order: 2 },
+    ];
+    const event: EventDef = { id: 'stage-event', title: '熟悉后的桥段', trigger: { nodeIds: ['docks'], charIds: ['seir'] }, stageRange: { min: 'acquaintance', max: 'lover' }, content: '你们已经足够熟悉。' };
+    save.world.eventDefs[event.id] = event;
+    expect(scheduleEvent(save.world, event.id, { nodeId: 'docks', day: 3, slotId: 'noon', charIds: ['seir'], stageRules }).ok).toBe(true);
+    save.world.relations.seir.stageId = 'stranger';
+    expect(scheduleEvent(save.world, event.id, { nodeId: 'docks', day: 4, slotId: 'noon', charIds: ['seir'], stageRules }).ok).toBe(false);
+  });
 });
 
 describe('event package IO', () => {
