@@ -1,8 +1,20 @@
 import { describe, expect, it } from 'vitest';
+import { buildVectorMemoryIndex, searchVectorMemoryIndex } from '../src/core/relationship';
 import { deleteRelationshipMemory, removeRelationshipMemoriesFromMessage, retrieveRelationshipMemories, setRelationshipMemoryArchived, setRelationshipMemoryInject, updateRelationshipMemory } from '../src/core/relationship';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 describe('relationship memory library operations', () => {
+  it('rebuilds and searches a disposable local vector index deterministically', () => {
+    const index = buildVectorMemoryIndex([
+      { id: 'near', vector: [1, 0] },
+      { id: 'far', vector: [0, 1] },
+      { id: 'bad', vector: [Number.NaN, 1] },
+    ]);
+    expect(index.dimensions).toBe(2);
+    expect(searchVectorMemoryIndex(index, [1, 0], 2)).toEqual([{ id: 'near', score: 1 }, { id: 'far', score: 0 }]);
+    expect(searchVectorMemoryIndex(index, [1], 2)).toEqual([]);
+  });
+
   it('deletes one memory without changing other relationship state', () => {
     const save = seedScenario(createCurrentSaveScenario({ id: 'relationship-memory', title: 'Relationship memory' }));
     save.world.relations.seir = { axes: {}, knots: [], memories: [] };
