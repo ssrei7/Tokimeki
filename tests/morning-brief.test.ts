@@ -69,5 +69,7 @@ describe('morning brief', () => {
     expect(parsed.find((entry) => entry.category === 'ad')?.entryKind).toBe('job');
     const housing = parseMorningResponse('[{"category":"ad","entryKind":"housing","title":"住房","body":"租房或买房。"},{"category":"ambience","title":"风","body":"海风。"},{"category":"character","title":"名字","body":"有人经过。"}]', 2);
     expect(housing.find((entry) => entry.category === 'ad')?.entryKind).toBe('housing');
+    const shop = parseMorningResponse('[{"category":"ad","entryKind":"shop_transfer","title":"店铺转让","body":"有人转让店铺。"},{"category":"ambience","title":"风","body":"海风。"},{"category":"character","title":"名字","body":"有人经过。"}]', 2);
+    expect(shop.find((entry) => entry.category === 'ad')?.entryKind).toBe('shop_transfer');
   });
 });
