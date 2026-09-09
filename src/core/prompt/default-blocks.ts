@@ -3,9 +3,10 @@ import type { SaveFile } from '../../data/schema/save';
 import type { PromptBlock, PromptFacts } from './assembler';
 import { buildRelationshipStatePrompt, type RelationshipPromptState } from '../relationship';
 import { retrieveRelationshipMemories } from '../relationship';
+import { weatherForDay } from '../world/weather';
 
 export const DEFAULT_PROMPT_BLOCK_IDS = [
-  'preset_bundle', 'format_contract', 'encounter_participants', 'character_core', 'relationship_state', 'scene_now', 'node_worldbook', 'node_memory',
+  'preset_bundle', 'format_contract', 'encounter_participants', 'character_core', 'relationship_state', 'scene_now', 'weather', 'node_worldbook', 'node_memory',
   'char_memory', 'recent_diary', 'milestones', 'worldbook_keyword', 'chapter_summary', 'raw_history', 'regeneration_request',
   'gift_context', 'collection_context',
 ] as const;
@@ -76,6 +77,13 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
       const persona = factsOf(facts).playerPersona;
       const identity = persona ? `当前面具身份：${persona.displayName}。${persona.description ? ` ${persona.description}` : ''}` : `玩家名为 ${world.player.name}。`;
       return `当前场景：第 ${world.clock.day} 天，时段 ${world.clock.slotId}，地点 ${location}。${identity}`;
+    } },
+    { id: 'weather', role: 'system', priority: 87, order: 6, build: (facts) => {
+      const world = factsOf(facts).world;
+      if (!world) return null;
+      const weather = weatherForDay(world);
+      if (!weather) return null;
+      return `[今日天气]\n${weather.label}（${weather.id}）。天气标签：${weather.tags.length ? weather.tags.join('、') : '无'}。天气是世界事实，只用于背景描写和确定性事件门控；不要自行推断未提供的影响。`;
     } },
     { id: 'node_worldbook', role: 'system', priority: 80, order: 6, build: (facts) => {
       const { world, worldbooks } = factsOf(facts);

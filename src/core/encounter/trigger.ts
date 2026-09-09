@@ -2,6 +2,7 @@ import type { EventBus } from '../events/bus';
 import type { EncounterConfig, EncounterLogEntry, WorldState } from '../../data/schema/save';
 import { deriveNodeScope } from './scope';
 import { encounterRoll, selectEncounterCandidates, type EncounterCandidate } from './selection';
+import { weatherAllows, type WeatherGate } from '../world/weather';
 
 export interface EncounterTriggerOptions {
   nodeId: string;
@@ -12,6 +13,7 @@ export interface EncounterTriggerOptions {
   seed?: number;
   outcome?: EncounterLogEntry['outcome'];
   events?: EventBus;
+  weatherGate?: WeatherGate;
 }
 
 export interface EncounterTriggerResult {
@@ -33,6 +35,7 @@ export function triggerEncounter(world: WorldState, config: EncounterConfig, opt
   const slotId = options.slotId ?? world.clock.slotId;
   if (!config.enabled || (options.trigger !== 'enter' && !config.triggerOnLeave)) return emptyResult();
   if (world.player.nodeId !== options.nodeId) return emptyResult();
+  if (!weatherAllows(world, options.weatherGate, day)) return emptyResult();
   const candidates = selectEncounterCandidates({ world, config, nodeId: options.nodeId, day, slotId, daysPerWeek: options.daysPerWeek, seed: options.seed });
   if (!candidates.length) return emptyResult();
   const guaranteed = config.guaranteeAfterDays > 0 && candidates.some((candidate) => candidate.daysSinceLastEncounter >= config.guaranteeAfterDays);
