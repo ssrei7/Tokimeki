@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 22;
+export const CURRENT_SCHEMA_VERSION = 23;
 
 const IdSchema = z.string().min(1);
 
@@ -189,6 +189,57 @@ export const AppointmentSchema = z.object({
   nodeId: IdSchema,
   status: z.enum(['pending', 'kept', 'late', 'missed']),
   note: z.string().optional(),
+});
+
+export const EventScopeSchema = z.enum(['formal', 'peripheral']);
+export const EventTriggerSchema = z.object({
+  nodeIds: z.array(IdSchema).max(200).optional(),
+  slotIds: z.array(IdSchema).max(50).optional(),
+  charIds: z.array(IdSchema).max(3).optional(),
+  scope: EventScopeSchema.optional(),
+});
+export const EventDefSchema = z.object({
+  id: IdSchema,
+  title: z.string().min(1).max(160),
+  trigger: EventTriggerSchema,
+  when: z.string().min(1).optional(),
+  cooldownDays: z.number().int().nonnegative().optional(),
+  once: z.boolean().optional(),
+  weight: z.number().finite().nonnegative().optional(),
+  slotCost: z.number().finite().nonnegative().optional(),
+  prompt: z.string().max(4000).optional(),
+  content: z.string().max(10000).optional(),
+  ops: z.array(z.unknown()).max(32).optional(),
+  packId: IdSchema.optional(),
+}).refine((event) => Boolean(event.content?.trim() || event.prompt?.trim()), { message: 'Event must provide content or prompt.' });
+
+export const ScheduledEventSchema = z.object({
+  id: IdSchema,
+  eventId: IdSchema,
+  day: z.number().int().positive(),
+  slotId: IdSchema,
+  nodeId: IdSchema,
+  charIds: z.array(IdSchema).max(3).optional(),
+  revealed: z.boolean().optional(),
+});
+
+export const DirectorStateSchema = z.object({
+  scheduled: z.array(ScheduledEventSchema).max(500),
+  lastFiredDay: z.record(IdSchema, z.number().int().positive()),
+  tension: z.number().finite(),
+  globalCooldownUntilDay: z.number().int().positive().optional(),
+});
+
+export const EventHistoryEntrySchema = z.object({
+  id: IdSchema,
+  eventId: IdSchema,
+  title: z.string().min(1).max(160),
+  day: z.number().int().positive(),
+  slotId: IdSchema,
+  nodeId: IdSchema,
+  charIds: z.array(IdSchema).max(3),
+  scope: EventScopeSchema,
+  content: z.string().max(10000).optional(),
 });
 
 export const GiftHistoryEntrySchema = z.object({
@@ -487,6 +538,11 @@ export const WorldV19Schema = WorldV18Schema.extend({ morningUpdates: z.array(Mo
 export const WorldV20Schema = WorldV19Schema;
 export const WorldV21Schema = WorldV20Schema;
 export const WorldV22Schema = WorldV21Schema;
+export const WorldV23Schema = WorldV22Schema.extend({
+  eventDefs: z.record(IdSchema, EventDefSchema).default({}),
+  director: DirectorStateSchema.default({ scheduled: [], lastFiredDay: {}, tension: 0 }),
+  eventHistory: z.array(EventHistoryEntrySchema).max(500).default([]),
+});
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -523,12 +579,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV22Schema,
+  world: WorldV23Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV22Schema>;
+export type WorldState = z.infer<typeof WorldV23Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;
@@ -561,5 +617,11 @@ export type StageRule = z.infer<typeof StageRuleSchema>;
 export type AxisDef = z.infer<typeof AxisDefSchema>;
 export type RelationState = z.infer<typeof RelationStateSchema>;
 export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
+export type EventScope = z.infer<typeof EventScopeSchema>;
+export type EventTrigger = z.infer<typeof EventTriggerSchema>;
+export type EventDef = z.infer<typeof EventDefSchema>;
+export type ScheduledEvent = z.infer<typeof ScheduledEventSchema>;
+export type DirectorState = z.infer<typeof DirectorStateSchema>;
+export type EventHistoryEntry = z.infer<typeof EventHistoryEntrySchema>;
 export type MemoryType = z.infer<typeof MemoryTypeSchema>;
 export type MemorySource = z.infer<typeof MemorySourceSchema>;

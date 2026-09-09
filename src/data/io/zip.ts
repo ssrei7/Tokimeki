@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { migrateSave } from '../migrations';
-import { SaveFileSchema, type SaveFile } from '../schema/save';
-import { PresetBundleSchema, PresetSchema, type Preset, type PresetBundle } from '../content';
+import { CURRENT_SCHEMA_VERSION, SaveFileSchema, type SaveFile } from '../schema/save';
+import { EventPackageSchema, PresetBundleSchema, PresetSchema, type EventPackage, type Preset, type PresetBundle } from '../content';
 import { CURRENT_PRESET_BUNDLE_SCHEMA_VERSION, migratePresetBundle } from '../migrations/preset-bundle';
 
 export interface ZipManifest { type: 'save' | 'character' | 'world' | 'events' | 'preset'; appVersion: string; schemaVersion: number }
@@ -51,4 +51,26 @@ export async function importPresetBundle(input: Blob | ArrayBuffer | Uint8Array)
   if (bundleFile) return migratePresetBundle(value, typeof manifest.schemaVersion === 'number' ? manifest.schemaVersion : 1);
   if (!Array.isArray(value) || value.length === 0) throw new Error('Preset bundle must contain at least one preset.');
   return PresetBundleSchema.parse({ id: 'imported-bundle', name: 'Imported preset bundle', entries: value.map((preset) => PresetSchema.parse(preset)), updatedAt: new Date().toISOString() });
+}
+
+export async function exportEventPackage(pack: EventPackage, appVersion = '0.0.1', schemaVersion = CURRENT_SCHEMA_VERSION): Promise<Blob> {
+  const parsed = EventPackageSchema.parse(pack);
+  const zip = new JSZip();
+  zip.file('manifest.json', JSON.stringify({ type: 'events', appVersion, schemaVersion }, null, 2));
+  zip.file('events.json', JSON.stringify(parsed, null, 2));
+  return zip.generateAsync({ type: 'blob' });
+}
+
+export async function importEventPackage(input: Blob | ArrayBuffer | Uint8Array): Promise<{ manifest: ZipManifest; pack: EventPackage }> {
+  const source = typeof Blob !== 'undefined' && input instanceof Blob ? await input.arrayBuffer() : input;
+  const zip = await JSZip.loadAsync(source);
+  const manifestFile = zip.file('manifest.json');
+  const eventsFile = zip.file('events.json') ?? zip.file('event-package.json');
+  if (!manifestFile || !eventsFile) throw new Error('Event package must contain manifest.json and events.json.');
+  const manifest = JSON.parse(await manifestFile.async('text')) as ZipManifest;
+  if (manifest.type !== 'events') throw new Error('This zip is not an event package.');
+  const schemaVersion = typeof manifest.schemaVersion === 'number' ? manifest.schemaVersion : CURRENT_SCHEMA_VERSION;
+  if (schemaVersion > CURRENT_SCHEMA_VERSION) throw new Error(`事件包 schema v${schemaVersion} 高于当前支持版本 v${CURRENT_SCHEMA_VERSION}，请升级 Tokimeki。`);
+  const pack = EventPackageSchema.parse(JSON.parse(await eventsFile.async('text')));
+  return { manifest, pack };
 }

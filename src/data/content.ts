@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EventDefSchema } from './schema/save';
 
 const Id = z.string().min(1);
 
@@ -49,3 +50,11 @@ export const ChatMessageSchema = z.object({
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export const ChatRecordSchema = z.object({ characterId: Id, messages: z.array(ChatMessageSchema), updatedAt: z.string().datetime() });
 export type ChatRecord = z.infer<typeof ChatRecordSchema>;
+
+export const EventPackageSchema = z.object({
+  id: Id,
+  name: z.string().min(1),
+  events: z.array(EventDefSchema).min(1).max(500),
+  updatedAt: z.string().datetime().optional(),
+});
+export type EventPackage = z.infer<typeof EventPackageSchema>;

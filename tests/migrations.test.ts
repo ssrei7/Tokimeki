@@ -42,10 +42,29 @@ describe('save migrations', () => {
     expect(migrated.world.npcs).toEqual({});
     expect(migrated.world.npcTemplates).toEqual({});
     expect(migrated.world.encounterLog).toEqual([]);
+    expect(migrated.world.eventDefs).toEqual({});
+    expect(migrated.world.director).toEqual({ scheduled: [], lastFiredDay: {}, tension: 0 });
+    expect(migrated.world.eventHistory).toEqual([]);
   });
 
   it('rejects saves from a newer schema', () => {
     expect(() => migrateSave({ schemaVersion: 999 })).toThrow(UnsupportedSchemaVersionError);
+  });
+
+  it('migrates a v22 world into the local event state without changing other facts', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v22-events', title: 'v22 events' }));
+    const legacy = structuredClone(source) as Record<string, unknown>;
+    legacy.schemaVersion = 22;
+    const world = legacy.world as Record<string, unknown>;
+    delete world.eventDefs;
+    delete world.director;
+    delete world.eventHistory;
+    const migrated = migrateSave(legacy);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.player.name).toBe(source.world.player.name);
+    expect(migrated.world.eventDefs).toEqual({});
+    expect(migrated.world.director).toEqual({ scheduled: [], lastFiredDay: {}, tension: 0 });
+    expect(migrated.world.eventHistory).toEqual([]);
   });
 
   it('rejects malformed migrated data with field-level validation errors', () => {

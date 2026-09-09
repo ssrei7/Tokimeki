@@ -19,7 +19,7 @@ type Condition = string;   // expr-eval 表达式,禁止 eval
 - 时间坐标统一为 `(day, slotId)`，地点坐标统一为 `nodeId`。
 - 派生值（阶段标签、可达节点、当前在场者）可缓存但必须能重算，且不作为事实来源。
 
-`CURRENT_SCHEMA_VERSION = 15`
+`CURRENT_SCHEMA_VERSION = 23`
 
 ---
 
@@ -339,6 +339,7 @@ interface EventDef {
     nodeIds?: NodeId[];
     slotIds?: SlotId[];
     charIds?: CharId[];
+    scope?: 'formal' | 'peripheral';
   };
   when?: Condition;
   cooldownDays?: number;
@@ -366,6 +367,18 @@ interface DirectorState {
   lastFiredDay: Record<Id, number>;
   tension: number;               // 张力曲线,连续平淡则上升
   globalCooldownUntilDay?: number;
+}
+
+interface EventHistoryEntry {       // 第一切片保存的最小事件记录
+  id: Id;
+  eventId: Id;
+  title: string;
+  day: number;
+  slotId: SlotId;
+  nodeId: NodeId;
+  charIds: CharId[];
+  scope: 'formal' | 'peripheral';
+  content?: string;
 }
 ```
 
@@ -614,6 +627,7 @@ interface WorldState {
 
   eventDefs: Record<Id, EventDef>;
   director: DirectorState;
+  eventHistory: EventHistoryEntry[];
 
   appointments: Appointment[];
   morning: { today?: MorningUpdate; pool: HookPool };

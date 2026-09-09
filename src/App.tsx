@@ -4,6 +4,7 @@ import type { AssembledPrompt } from './core/prompt/assembler';
 import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
 import { TOPIC_TREE_PROMPT_BLOCKS } from './core/prompt/topic-tree';
 import { EventBus } from './core/events/bus';
+import { scheduleEventsForCoordinate, triggerScheduledEvent } from './core/events/director';
 import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGeneratedMapExpansion, parseGeneratedNodeSuggestion, updateMapNode, type CreateMapNodeInput, type UpdateMapNodeInput } from './core/map';
 import { parseGeneratedTopicTree } from './core/topics/parser';
 import { isTopicTreeFresh, mergeDailyTopicTree, topicResponse, topicTreeKey, topicVisibility, visibleTopics } from './core/topics';
@@ -133,7 +134,7 @@ const defaultSave: SaveFile = SaveFileSchema.parse({
     player: { name: '旅人', nodeId: 'start', stats: { 'custom-reputation': 0 }, flags: {}, inventory: [] },
     stats: {}, flags: {},
     items: { 'white-flower': { id: 'white-flower', name: '白色小花', tags: ['flower'], description: '一朵可用于 Mock 验收的白色小花。', stackable: true, giftable: true } },
-    relations: {}, characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [], topicTrees: {}, usedTopics: {}, appointments: [], collection: [],
+    relations: {}, characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [], topicTrees: {}, usedTopics: {}, appointments: [], eventDefs: {}, director: { scheduled: [], lastFiredDay: {}, tension: 0 }, eventHistory: [], collection: [],
     map: createDefaultMap(),
     diary: [], settlements: [],
   },
@@ -463,6 +464,11 @@ export function App() {
     const destination = next.world.map.nodes[nodeId];
     const matchedHooks = findMatchingHooks(next.world, nodeId, next.world.clock.slotId);
     matchedHooks.forEach(({ hook }) => { triggerHook(next.world, hook.id); });
+    scheduleEventsForCoordinate(next.world, { nodeId, day: next.world.clock.day, slotId: next.world.clock.slotId });
+    const localEvents = (next.world.director?.scheduled ?? [])
+      .filter((scheduled) => scheduled.nodeId === nodeId && scheduled.day === next.world.clock.day && scheduled.slotId === next.world.clock.slotId)
+      .map((scheduled) => triggerScheduledEvent(next.world, scheduled.id))
+      .filter((result) => result.ok && result.event);
     const encounter = triggerEncounter(next.world, next.config.encounter, { nodeId, trigger: 'enter', daysPerWeek: next.config.calendar.daysPerWeek, events: promptEvents });
     commitSave(next);
     setActiveEncounter(encounter.triggered && encounter.entry ? { entryId: encounter.entry.id, nodeId, scope: encounter.entry.scope, candidates: encounter.candidates } : null);
@@ -470,7 +476,8 @@ export function App() {
     const arrival = result.cost > 0 ? `已抵达${destination?.name ?? nodeId}，消耗 ${result.cost} 个时段。` : `已抵达${destination?.name ?? nodeId}。`;
     const names = encounter.candidates.map((candidate) => candidate.name).join('、');
     const hookText = matchedHooks.length ? ` 晨报线索「${matchedHooks.map(({ hook }) => hook.title).join('、')}」在这里触发了。` : '';
-    setFeedback({ tone: 'success', text: `${encounter.triggered ? `${arrival} 遇见了${names}。` : arrival}${hookText}` });
+    const eventText = localEvents.length ? ` 事件「${localEvents.map((result) => result.event?.title).join('、')}」已触发${localEvents.some((result) => result.content) ? `：${localEvents.map((result) => result.content).filter(Boolean).join(' ')}` : '。'}` : '';
+    setFeedback({ tone: 'success', text: `${encounter.triggered ? `${arrival} 遇见了${names}。` : arrival}${hookText}${eventText}` });
     return true;
   }
 

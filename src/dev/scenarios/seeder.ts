@@ -78,6 +78,9 @@ export function createCurrentSaveScenario(options: CurrentSaveScenarioOptions): 
           topicTrees: {},
           usedTopics: {},
           appointments: [],
+          eventDefs: {},
+          director: { scheduled: [], lastFiredDay: {}, tension: 0 },
+          eventHistory: [],
       },
     }),
   };
