@@ -161,6 +161,13 @@ describe('save migrations', () => {
     expect(repaired.config.calendar.slots).toHaveLength(6);
   });
 
+  it('accepts the stage 7 relationship-gated event schema as the current version', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v29-current', title: 'v29 current' }));
+    const migrated = migrateSave({ ...source, schemaVersion: 28, world: { ...source.world, eventDefs: undefined } });
+    expect(migrated.schemaVersion).toBe(29);
+    expect(migrated.world.eventDefs).toEqual({});
+  });
+
   it('migrates v5 persona text without dropping it and accepts a persona binding', () => {
     const migrated = migrateSave({
       schemaVersion: 5,
