@@ -1,6 +1,7 @@
 import type {
   DirectorState,
   EventDef,
+  EventChoice,
   EventHistoryEntry,
   EventScope,
   ScheduledEvent,
@@ -37,6 +38,15 @@ export interface EventHistoryUpdate {
   choice?: string;
   resultSummary?: string;
   narrative?: string;
+}
+
+export interface EventChoiceResult {
+  ok: boolean;
+  event?: EventDef;
+  choice?: EventChoice;
+  history?: EventHistoryEntry;
+  ops: unknown[];
+  warning?: string;
 }
 
 export interface EventEligibility {
@@ -208,6 +218,21 @@ export function updateEventHistory(world: WorldState, historyId: string, update:
   if (update.resultSummary !== undefined) history.resultSummary = update.resultSummary.slice(0, 2000);
   if (update.narrative !== undefined) history.narrative = update.narrative.slice(0, 10000);
   return { ok: true, history: structuredClone(history) };
+}
+
+/** Resolve one package-declared choice and return its whitelisted ops for the caller to apply. */
+export function resolveEventChoice(world: WorldState, historyId: string, choiceId: string): EventChoiceResult {
+  const history = (world.eventHistory ?? []).find((entry) => entry.id === historyId);
+  if (!history) return { ok: false, ops: [], warning: 'Unknown event history entry.' };
+  if (history.choice) return { ok: false, ops: [], warning: 'This event already has a recorded choice.' };
+  const event = world.eventDefs?.[history.eventId];
+  if (!event) return { ok: false, ops: [], warning: `Event definition is missing: ${history.eventId}.` };
+  const choice = event.choices?.find((item) => item.id === choiceId);
+  if (!choice) return { ok: false, ops: [], warning: `Unknown choice for event ${event.id}.` };
+  history.choice = choice.label;
+  if (choice.resultSummary) history.resultSummary = choice.resultSummary;
+  if (choice.narrative) history.narrative = choice.narrative;
+  return { ok: true, event, choice: structuredClone(choice), history: structuredClone(history), ops: choice.ops ? structuredClone(choice.ops) : [] };
 }
 
 function eventMatchesCoordinate(event: EventDef, coordinate: EventCoordinate, world: WorldState): boolean {

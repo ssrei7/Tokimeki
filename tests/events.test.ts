@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
 import { EventBus } from '../src/core/events/bus';
-import { listPendingEvents, refreshDirectorTension, scheduleDirectorEvent, scheduleEvent, scheduleEventsForCoordinate, setScheduledEventRevealed, triggerScheduledEvent, updateEventHistory } from '../src/core/events/director';
+import { listPendingEvents, refreshDirectorTension, resolveEventChoice, scheduleDirectorEvent, scheduleEvent, scheduleEventsForCoordinate, setScheduledEventRevealed, triggerScheduledEvent, updateEventHistory } from '../src/core/events/director';
 import { createDefaultOpRegistry } from '../src/core/ops';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import { exportEventPackage, importEventPackage } from '../src/data/io/zip';
@@ -118,6 +118,22 @@ describe('deterministic local story events', () => {
     expect(scheduleDirectorEvent(onceSave.world, { nodeId: 'docks', day: 4, slotId: 'noon' })).toBeUndefined();
     save.world.clock.day = 4;
     expect(refreshDirectorTension(save.world, 10)).toBe(7);
+  });
+
+  it('resolves a package-declared choice once and returns its ops for deterministic application', () => {
+    const save = setup();
+    const event: EventDef = {
+      id: 'choice-event', title: '码头的选择', trigger: { nodeIds: ['docks'] }, content: '你发现一封未署名的信。',
+      choices: [{ id: 'read', label: '拆开阅读', resultSummary: '你确认信件来自旧仓库。', narrative: '你沿着折痕拆开了信。', ops: [{ op: 'set_flag', key: 'read_letter', value: true }] }],
+    };
+    save.world.eventDefs = { [event.id]: event };
+    const scheduled = scheduleEvent(save.world, event.id, { nodeId: 'docks', day: 3, slotId: 'noon' }).scheduled!;
+    const triggered = triggerScheduledEvent(save.world, scheduled.id);
+    const resolved = resolveEventChoice(save.world, triggered.history!.id, 'read');
+    expect(resolved.ok).toBe(true);
+    expect(resolved.ops).toEqual(event.choices![0].ops);
+    expect(save.world.eventHistory[0]).toMatchObject({ choice: '拆开阅读', resultSummary: '你确认信件来自旧仓库。', narrative: '你沿着折痕拆开了信。' });
+    expect(resolveEventChoice(save.world, triggered.history!.id, 'read').ok).toBe(false);
   });
 });
 

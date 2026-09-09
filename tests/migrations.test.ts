@@ -79,6 +79,17 @@ describe('save migrations', () => {
     expect(migrated.world.eventHistory[0].choice).toBeUndefined();
   });
 
+  it('migrates v24 event definitions without requiring choices', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v24-choice', title: 'v24 choice' }));
+    const legacy = structuredClone(source) as Record<string, unknown>;
+    legacy.schemaVersion = 24;
+    const world = legacy.world as Record<string, unknown>;
+    world.eventDefs = { note: { id: 'note', title: '旧告示', trigger: {}, content: '旧内容' } };
+    const migrated = migrateSave(legacy);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.eventDefs.note.choices).toBeUndefined();
+  });
+
   it('rejects malformed migrated data with field-level validation errors', () => {
     expect(() => migrateSave({ schemaVersion: CURRENT_SCHEMA_VERSION, world: {} })).toThrow();
   });

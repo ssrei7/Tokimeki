@@ -349,7 +349,16 @@ interface EventDef {
   prompt?: string;               // 交给 AI 的场景指令
   content?: string;              // 或纯静态文本,不调 API
   ops?: unknown[];
+  choices?: EventChoice[];       // 事件包声明的确定性结果选项
   packId?: Id;                   // 事件包来源
+}
+
+interface EventChoice {
+  id: Id;
+  label: string;
+  resultSummary?: string;
+  narrative?: string;
+  ops?: unknown[];                // 仍须经过统一白名单校验
 }
 
 interface ScheduledEvent {       // pending 队列 = 伏笔

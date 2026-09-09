@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 24;
+export const CURRENT_SCHEMA_VERSION = 25;
 
 const IdSchema = z.string().min(1);
 
@@ -198,6 +198,13 @@ export const EventTriggerSchema = z.object({
   charIds: z.array(IdSchema).max(3).optional(),
   scope: EventScopeSchema.optional(),
 });
+export const EventChoiceSchema = z.object({
+  id: IdSchema,
+  label: z.string().min(1).max(200),
+  resultSummary: z.string().max(2000).optional(),
+  narrative: z.string().max(10000).optional(),
+  ops: z.array(z.unknown()).max(32).optional(),
+});
 export const EventDefSchema = z.object({
   id: IdSchema,
   title: z.string().min(1).max(160),
@@ -210,8 +217,9 @@ export const EventDefSchema = z.object({
   prompt: z.string().max(4000).optional(),
   content: z.string().max(10000).optional(),
   ops: z.array(z.unknown()).max(32).optional(),
+  choices: z.array(EventChoiceSchema).max(8).optional(),
   packId: IdSchema.optional(),
-}).refine((event) => Boolean(event.content?.trim() || event.prompt?.trim()), { message: 'Event must provide content or prompt.' });
+}).refine((event) => Boolean(event.content?.trim() || event.prompt?.trim() || event.choices?.length), { message: 'Event must provide content, prompt, or choices.' });
 
 export const ScheduledEventSchema = z.object({
   id: IdSchema,
@@ -547,6 +555,7 @@ export const WorldV23Schema = WorldV22Schema.extend({
   eventHistory: z.array(EventHistoryEntrySchema).max(500).default([]),
 });
 export const WorldV24Schema = WorldV23Schema;
+export const WorldV25Schema = WorldV24Schema;
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -583,12 +592,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV24Schema,
+  world: WorldV25Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV24Schema>;
+export type WorldState = z.infer<typeof WorldV25Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;
@@ -624,6 +633,7 @@ export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
 export type EventScope = z.infer<typeof EventScopeSchema>;
 export type EventTrigger = z.infer<typeof EventTriggerSchema>;
 export type EventDef = z.infer<typeof EventDefSchema>;
+export type EventChoice = z.infer<typeof EventChoiceSchema>;
 export type ScheduledEvent = z.infer<typeof ScheduledEventSchema>;
 export type DirectorState = z.infer<typeof DirectorStateSchema>;
 export type EventHistoryEntry = z.infer<typeof EventHistoryEntrySchema>;
