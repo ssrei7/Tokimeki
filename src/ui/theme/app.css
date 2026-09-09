@@ -302,6 +302,11 @@ button.danger { background: #fee4e2; color: #b42318; }
 .morning-ad-entry { display: grid; gap: 10px; margin-top: 12px; padding: 12px; border: 1px solid #cfd8ea; border-radius: 8px; background: #f8faff; }
 .morning-ad-entry p { color: #475467; line-height: 1.5; }
 .morning-ad-entry button { justify-self: start; }
+.morning-housing-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.morning-housing-options button { min-height: 38px; }
+.morning-housing-options button.selected { background: #315efb; color: #fff; }
+.morning-housing-detail { display: grid; gap: 4px; padding-top: 10px; border-top: 1px solid #dce3ef; color: #475467; }
+.morning-housing-detail p { font-size: 12px; }
 .settlement-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .settlement-grid span { display: grid; gap: 3px; padding: 10px; border-radius: 8px; background: #f8fafc; color: #667085; font-size: 12px; }
 .settlement-grid strong { color: #1d2433; overflow-wrap: anywhere; }
