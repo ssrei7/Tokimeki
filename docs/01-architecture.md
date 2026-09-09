@@ -282,7 +282,7 @@ function migrate(save: any): SaveFile {
 - 版本高于当前程序：拒绝加载并提示升级，不尝试降级。
 - 结算时自动快照（保留策略：最近 N 天全量 + 每章一份）。
 
-导出格式为 zip：`save.json` + `assets/` + `manifest.json`。角色包、世界包、事件包同构，靠 `manifest.type` 区分。
+存档与可回装资料包导出格式为 zip：`save.json` + `assets/` + `manifest.json`。角色包、世界包、事件定义包可按 `manifest.type` 区分；玩家亲历剧情另提供独立 Markdown 事件档案，不携带可执行规则。
 
 ---
 

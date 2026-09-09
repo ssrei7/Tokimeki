@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLocalChapterSummary, upsertChapterSummary, upsertMilestone } from '../src/core/story';
+import { buildLocalChapterSummary, formatEventHistoryArchive, upsertChapterSummary, upsertMilestone } from '../src/core/story';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 describe('local chapter summaries and milestones', () => {
@@ -24,5 +24,17 @@ describe('local chapter summaries and milestones', () => {
     expect(save.world.chapters).toHaveLength(1);
     expect(upsertChapterSummary(save.world, { ...summary, text: '已修订摘要。' }).ok).toBe(true);
     expect(save.world.chapters[0].text).toBe('已修订摘要。');
+  });
+
+  it('renders a standalone readable event archive without internal package rules', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'story-archive', title: '我的故事', day: 4 }));
+    save.world.eventHistory = [{ id: 'event-history-1', eventId: 'dock-note', title: '码头的告示', day: 3, slotId: 'noon', nodeId: 'start', charIds: ['seir'], scope: 'formal', narrative: '你读完了告示。', choice: '留下调查', resultSummary: '确认仓库开放。' }];
+    const archive = formatEventHistoryArchive(save);
+    expect(archive).toContain('# 我的故事 · 事件档案');
+    expect(archive).toContain('## 1. 码头的告示');
+    expect(archive).toContain('人物：');
+    expect(archive).toContain('选择：留下调查');
+    expect(archive).toContain('结果：确认仓库开放。');
+    expect(archive).not.toContain('eventId');
   });
 });
