@@ -11,7 +11,9 @@ describe('morning lead hook pool', () => {
     expect(findMatchingHooks(save.world, 'docks', 'morning', 2)).toEqual([]);
     const matches = findMatchingHooks(save.world, 'docks', 'noon', 2);
     expect(matches).toHaveLength(1);
+    save.world.clock.day = 2;
     expect(triggerHook(save.world, matches[0].hook.id).ok).toBe(true);
+    expect(save.world.map.nodes.docks.memories.at(-1)).toMatchObject({ day: 2, charIds: [], text: expect.stringContaining('码头动静') });
     expect(findMatchingHooks(save.world, 'docks', 'noon', 2)).toEqual([]);
   });
 

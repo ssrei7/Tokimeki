@@ -35,5 +35,18 @@ export function triggerHook(world: WorldState, hookId: string): { ok: boolean; w
   if (hook.status !== 'available') return { ok: false, warning: '这条世界线索已经触发或过期。' };
   hook.status = 'triggered';
   hook.triggerCount += 1;
+  const node = world.map.nodes[hook.nodeId];
+  if (node && !node.memories.some((memory) => memory.id === `node-memory-hook-${hook.id}`)) {
+    if (node.memories.length >= 5) {
+      const removeIndex = node.memories.findIndex((memory) => !memory.pinned);
+      if (removeIndex >= 0) node.memories.splice(removeIndex, 1);
+    }
+    if (node.memories.length < 5) node.memories.push({
+      id: `node-memory-hook-${hook.id}`,
+      text: `晨报线索「${hook.title}」在这里落地：${hook.body}`,
+      day: world.clock.day,
+      charIds: hook.charIds,
+    });
+  }
   return { ok: true, hook };
 }
