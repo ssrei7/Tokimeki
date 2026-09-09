@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 19;
+export const CURRENT_SCHEMA_VERSION = 20;
 
 const IdSchema = z.string().min(1);
 
@@ -307,12 +307,14 @@ export const CollectionEntrySchema = z.object({
 });
 
 export const MorningBriefCategorySchema = z.enum(['lead', 'ambience', 'character', 'ad']);
+export const MorningAdEntryKindSchema = z.enum(['job', 'housing', 'shop_transfer']);
 export const MorningBriefEntrySchema = z.object({
   id: IdSchema,
   day: z.number().int().positive(),
   category: MorningBriefCategorySchema,
   title: z.string().min(1).max(120),
   body: z.string().min(1).max(1000),
+  entryKind: MorningAdEntryKindSchema.optional(),
   nodeId: IdSchema.optional(),
   slotId: IdSchema.optional(),
   charIds: z.array(IdSchema).max(3).default([]),
@@ -480,6 +482,7 @@ export const WorldV15Schema = WorldV14Schema;
 export const WorldV17Schema = WorldV15Schema.extend({ morningBriefs: z.array(MorningBriefEntrySchema).max(200).default([]) });
 export const WorldV18Schema = WorldV17Schema.extend({ hooks: z.array(HookPoolEntrySchema).max(200).default([]) });
 export const WorldV19Schema = WorldV18Schema.extend({ morningUpdates: z.array(MorningWorldUpdateSchema).max(200).default([]) });
+export const WorldV20Schema = WorldV19Schema;
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -515,12 +518,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV19Schema,
+  world: WorldV20Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV19Schema>;
+export type WorldState = z.infer<typeof WorldV20Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;

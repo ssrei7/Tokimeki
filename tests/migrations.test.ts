@@ -168,6 +168,13 @@ describe('save migrations', () => {
     expect(migrated.world.morningUpdates).toEqual([]);
   });
 
+  it('migrates v19 worlds to typed morning advertisement metadata', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'ad-migration', title: 'Ad migration' }));
+    const migrated = migrateSave({ ...source, schemaVersion: 19 });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.morningBriefs).toEqual([]);
+  });
+
   it('migrates v10 worlds with an empty gift history', () => {
     const source = seedScenario(createCurrentSaveScenario({ id: 'v10-gifts', title: 'v10 gifts' }));
     const migrated = migrateSave({ ...source, schemaVersion: 10, world: { ...source.world, giftHistory: undefined } });

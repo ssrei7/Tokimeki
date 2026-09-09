@@ -34,7 +34,7 @@ describe('morning brief', () => {
     const prompt = buildMorningPrompt(save.world, 2, '昨天在码头遇见了凛。');
     expect(prompt[1].content).toContain('昨天在码头遇见了凛');
     expect(parseMorningResponse('[{"category":"ad","title":"公告","body":"去看看。"}]', 2)).toEqual([]);
-    expect(parseMorningResponse('[{"category":"lead","title":"头条","body":"西码头有动静。","nodeId":"docks","slotId":"noon"},{"category":"ambience","title":"风","body":"海风。"},{"category":"ad","title":"招募","body":"找帮工。"}]', 2)).toHaveLength(3);
+    expect(parseMorningResponse('[{"category":"lead","title":"头条","body":"西码头有动静。","nodeId":"docks","slotId":"noon"},{"category":"ambience","title":"风","body":"海风。"},{"category":"ad","entryKind":"job","title":"招募","body":"找帮工。"}]', 2)).toHaveLength(3);
   });
 
   it('parses one merged update and filters untrusted references', () => {
@@ -61,5 +61,11 @@ describe('morning brief', () => {
     expect(update?.worldNote).toContain('港口');
     expect(applyMorningNpcMoves(save.world, 2, update?.npcMoves ?? [])).toBe(1);
     expect(save.world.npcs['vendor-1'].schedule?.overrides['2:noon']).toEqual({ nodeId: 'docks', activity: '整理货物' });
+  });
+
+  it('keeps typed advertisement entry kinds only for ads', () => {
+    const parsed = parseMorningResponse('[{"category":"lead","entryKind":"job","title":"错误类型","body":"应忽略该类型。"},{"category":"ambience","title":"风","body":"海风。"},{"category":"ad","entryKind":"job","title":"招聘","body":"找帮工。"}]', 2);
+    expect(parsed.find((entry) => entry.category === 'lead')?.entryKind).toBeUndefined();
+    expect(parsed.find((entry) => entry.category === 'ad')?.entryKind).toBe('job');
   });
 });
