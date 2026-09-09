@@ -81,7 +81,7 @@ function memorySummaryFixtures(): Record<MockFixtureId, MockFixture> {
 function morningFixtures(): Record<MockFixtureId, MockFixture> {
   const entries = JSON.stringify({
     news: [
-      { category: 'lead', title: '码头边的风声', body: '西码头今天仍在中午开放，那里有值得留意的动静。', nodeId: 'docks', slotId: 'noon' },
+      { category: 'lead', title: '码头边的风声', body: '西码头今天仍在中午开放，那里有值得留意的动静。', eventText: '有人在木栈桥下留下了一张新的告示。', nodeId: 'docks', slotId: 'noon' },
       { category: 'ambience', title: '潮气沿街', body: '海风把潮湿的气息带进了起点街区。' },
       { category: 'ad', entryKind: 'job', title: '临时帮工', body: '有人在码头附近寻找短时帮工，前往地点即可查看。', nodeId: 'docks', expiresDay: 5 },
     ],

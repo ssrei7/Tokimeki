@@ -63,6 +63,18 @@ describe('morning brief', () => {
     expect(save.world.npcs['vendor-1'].schedule?.overrides['2:noon']).toEqual({ nodeId: 'docks', activity: '整理货物' });
   });
 
+  it('preserves lead event text while ignoring it on non-lead entries', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'morning-event-text', title: 'Morning event text' }));
+    const raw = JSON.stringify({ news: [
+      { category: 'lead', title: '告示', body: '去起点看看。', eventText: '有人把一盏灯挂到了门口。', nodeId: 'start' },
+      { category: 'ambience', title: '风', body: '海风。', eventText: '不应进入记忆。' },
+      { category: 'ad', title: '工作', body: '找帮工。' },
+    ], weather: { id: 'clear', label: '晴朗', tags: [] }, npcMoves: [] });
+    const update = parseMorningUpdate(raw, 2, save.world, ['morning', 'noon']);
+    expect(update?.entries.find((entry) => entry.category === 'lead')?.eventText).toContain('一盏灯');
+    expect(update?.entries.find((entry) => entry.category === 'ambience')?.eventText).toBeUndefined();
+  });
+
   it('keeps typed advertisement entry kinds only for ads', () => {
     const parsed = parseMorningResponse('[{"category":"lead","entryKind":"job","title":"错误类型","body":"应忽略该类型。"},{"category":"ambience","title":"风","body":"海风。"},{"category":"ad","entryKind":"job","title":"招聘","body":"找帮工。"}]', 2);
     expect(parsed.find((entry) => entry.category === 'lead')?.entryKind).toBeUndefined();

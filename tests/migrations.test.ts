@@ -175,6 +175,13 @@ describe('save migrations', () => {
     expect(migrated.world.morningBriefs).toEqual([]);
   });
 
+  it('migrates v20 worlds to lead event text metadata', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'event-text-migration', title: 'Event text migration' }));
+    const migrated = migrateSave({ ...source, schemaVersion: 20 });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.hooks).toEqual([]);
+  });
+
   it('migrates v10 worlds with an empty gift history', () => {
     const source = seedScenario(createCurrentSaveScenario({ id: 'v10-gifts', title: 'v10 gifts' }));
     const migrated = migrateSave({ ...source, schemaVersion: 10, world: { ...source.world, giftHistory: undefined } });

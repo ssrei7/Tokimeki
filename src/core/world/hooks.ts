@@ -10,7 +10,7 @@ export function syncLeadHooks(world: WorldState, entries: readonly MorningBriefE
   let added = 0;
   for (const entry of entries) {
     if (entry.category !== 'lead' || !entry.nodeId || world.hooks.some((hook) => hook.sourceBriefId === entry.id)) continue;
-    world.hooks.push({ id: `hook-${entry.id}`, sourceBriefId: entry.id, category: 'lead', title: entry.title, body: entry.body, nodeId: entry.nodeId, ...(entry.slotId ? { slotId: entry.slotId } : {}), charIds: entry.charIds, createdDay: entry.day, ...(entry.expiresDay ? { expiresDay: entry.expiresDay } : {}), status: 'available', triggerCount: 0 });
+    world.hooks.push({ id: `hook-${entry.id}`, sourceBriefId: entry.id, category: 'lead', title: entry.title, body: entry.body, ...(entry.eventText ? { eventText: entry.eventText } : {}), nodeId: entry.nodeId, ...(entry.slotId ? { slotId: entry.slotId } : {}), charIds: entry.charIds, createdDay: entry.day, ...(entry.expiresDay ? { expiresDay: entry.expiresDay } : {}), status: 'available', triggerCount: 0 });
     added += 1;
   }
   return added;
@@ -43,7 +43,7 @@ export function triggerHook(world: WorldState, hookId: string): { ok: boolean; w
     }
     if (node.memories.length < 5) node.memories.push({
       id: `node-memory-hook-${hook.id}`,
-      text: `晨报线索「${hook.title}」在这里落地：${hook.body}`,
+      text: `晨报线索「${hook.title}」在这里落地：${hook.eventText ?? hook.body}`,
       day: world.clock.day,
       charIds: hook.charIds,
     });

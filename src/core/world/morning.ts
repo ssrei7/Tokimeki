@@ -6,6 +6,7 @@ const MorningNewsSchema = z.object({
   title: z.string().min(1).max(120),
   body: z.string().min(1).max(1000),
   entryKind: z.enum(['job', 'housing', 'shop_transfer']).optional(),
+  eventText: z.string().min(1).max(1000).optional(),
   nodeId: z.string().min(1).optional(),
   slotId: z.string().min(1).optional(),
   charIds: z.array(z.string().min(1)).max(3).default([]),
@@ -56,7 +57,7 @@ export function resolveMorningAdDestination(entry: MorningBriefEntry, world: Wor
 export function buildMorningPrompt(world: WorldState, day: number, previousDiary?: string): { role: 'system' | 'user'; content: string }[] {
   const prior = previousDiary?.trim() ? `\n前一天日记（仅作叙事回声，不是新的事实来源）：\n${previousDiary.trim()}` : '';
   return [
-    { role: 'system', content: '你是世界晨报整理器。根据确定性世界事实，返回严格 JSON 对象，包含 news、weather、npcMoves、可选 worldNote。news 必须是 3–6 条，每条包含 category、title、body，可选 entryKind、nodeId、slotId、charIds、expiresDay。category 只能是 lead、ambience、character、ad；entryKind 只能是 job、housing、shop_transfer，且只用于 ad。不要创造不存在的地点、角色、时间或状态；lead 必须指向已知地点和可验证时段；ad 只写成入口描述，不直接改变世界。npcMoves 只能安排列出的角色去列出的地点和时段。' },
+    { role: 'system', content: '你是世界晨报整理器。根据确定性世界事实，返回严格 JSON 对象，包含 news、weather、npcMoves、可选 worldNote。news 必须是 3–6 条，每条包含 category、title、body，可选 entryKind、eventText、nodeId、slotId、charIds、expiresDay。category 只能是 lead、ambience、character、ad；entryKind 只能是 job、housing、shop_transfer，且只用于 ad；eventText 只用于 lead，描述线索触发后可验证的叙事事件。不要创造不存在的地点、角色、时间或状态；lead 必须指向已知地点和可验证时段；ad 只写成入口描述，不直接改变世界。npcMoves 只能安排列出的角色去列出的地点和时段。' },
     { role: 'user', content: JSON.stringify({ day, clock: world.clock, nodes: Object.values(world.map.nodes).map((node) => ({ id: node.id, name: node.name, openSlots: node.openSlots ?? [] })), characters: Object.values(world.characters).map((character) => ({ id: character.id, name: character.name })), npcs: Object.values(world.npcs).map((npc) => ({ id: npc.id, name: npc.name, tags: npc.tags, homeNodeId: npc.homeNodeId })), settlements: world.settlements.slice(-3), diary: previousDiary ?? '' }) + prior },
   ];
 }
@@ -82,8 +83,8 @@ export function parseMorningResponse(raw: string, day: number): MorningBriefEntr
   const result = MorningBriefResponseSchema.safeParse(source);
   if (!result.success) return [];
   return result.data.map((entry, index) => {
-    const { entryKind, ...rest } = entry;
-    return { ...rest, ...(entryKind && entry.category === 'ad' ? { entryKind } : {}), id: `morning-${day}-${index + 1}`, day, source: 'ai' as const };
+    const { entryKind, eventText, ...rest } = entry;
+    return { ...rest, ...(entryKind && entry.category === 'ad' ? { entryKind } : {}), ...(eventText && entry.category === 'lead' ? { eventText } : {}), id: `morning-${day}-${index + 1}`, day, source: 'ai' as const };
   });
 }
 
@@ -118,7 +119,7 @@ function normalizeNews(news: z.infer<typeof MorningBriefResponseSchema>, day: nu
     const isLeadWithoutNode = entry.category === 'lead' && !entry.nodeId;
     const category = isLeadWithoutNode ? 'ambience' : entry.category;
     const expiresDay = entry.expiresDay ?? (category === 'lead' || category === 'ad' ? day + 3 : undefined);
-    return [{ id: `morning-${day}-${index + 1}`, day, category, title: entry.title, body: entry.body, ...(entry.entryKind && category === 'ad' ? { entryKind: entry.entryKind } : {}), ...(entry.nodeId ? { nodeId: entry.nodeId } : {}), ...(entry.slotId ? { slotId: entry.slotId } : {}), charIds: entry.charIds, ...(expiresDay ? { expiresDay } : {}), source: 'ai' as const }];
+    return [{ id: `morning-${day}-${index + 1}`, day, category, title: entry.title, body: entry.body, ...(entry.entryKind && category === 'ad' ? { entryKind: entry.entryKind } : {}), ...(entry.eventText && category === 'lead' ? { eventText: entry.eventText } : {}), ...(entry.nodeId ? { nodeId: entry.nodeId } : {}), ...(entry.slotId ? { slotId: entry.slotId } : {}), charIds: entry.charIds, ...(expiresDay ? { expiresDay } : {}), source: 'ai' as const }];
   });
 }
 
