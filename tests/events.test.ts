@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
 import { EventBus } from '../src/core/events/bus';
-import { listPendingEvents, scheduleEvent, scheduleEventsForCoordinate, setScheduledEventRevealed, triggerScheduledEvent } from '../src/core/events/director';
+import { listPendingEvents, refreshDirectorTension, scheduleDirectorEvent, scheduleEvent, scheduleEventsForCoordinate, setScheduledEventRevealed, triggerScheduledEvent } from '../src/core/events/director';
 import { createDefaultOpRegistry } from '../src/core/ops';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import { exportEventPackage, importEventPackage } from '../src/data/io/zip';
@@ -90,6 +90,30 @@ describe('deterministic local story events', () => {
     expect(pending).toHaveLength(1);
     expect(setScheduledEventRevealed(save.world, pending[0].id)).toEqual({ ok: true });
     expect(listPendingEvents(save.world, { revealed: true })[0].revealed).toBe(true);
+  });
+
+  it('uses stable weighted selection and filters once/cooldown/condition eligibility', () => {
+    const save = setup();
+    const once: EventDef = { id: 'once', title: '一次事件', once: true, trigger: { nodeIds: ['docks'] }, content: '只发生一次。' };
+    const blocked: EventDef = { id: 'blocked', title: '被条件挡住', trigger: { nodeIds: ['docks'] }, when: 'flags.never', content: '不会发生。' };
+    const weighted: EventDef = { id: 'weighted', title: '加权事件', weight: 4, trigger: { nodeIds: ['docks'] }, content: '加权选择。' };
+    save.world.eventDefs = { once, blocked, weighted };
+    const first = scheduleDirectorEvent(save.world, { nodeId: 'docks', day: 3, slotId: 'noon' });
+    const clone = structuredClone(save.world);
+    clone.director.scheduled = [];
+    const second = scheduleDirectorEvent(clone, { nodeId: 'docks', day: 3, slotId: 'noon' });
+    expect(first?.eventId).toBe(second?.eventId);
+    const trigger = first && triggerScheduledEvent(save.world, first.id);
+    expect(trigger?.ok).toBe(true);
+    const onceSave = setup();
+    onceSave.world.eventDefs = { once };
+    const onceScheduled = scheduleEvent(onceSave.world, once.id, { nodeId: 'docks', day: 3, slotId: 'noon' });
+    expect(onceScheduled.ok).toBe(true);
+    expect(triggerScheduledEvent(onceSave.world, onceScheduled.scheduled!.id).ok).toBe(true);
+    onceSave.world.clock.day = 4;
+    expect(scheduleDirectorEvent(onceSave.world, { nodeId: 'docks', day: 4, slotId: 'noon' })).toBeUndefined();
+    save.world.clock.day = 4;
+    expect(refreshDirectorTension(save.world, 10)).toBe(7);
   });
 });
 

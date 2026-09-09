@@ -33,6 +33,11 @@ export interface EventTriggerResult {
   warning?: string;
 }
 
+export interface EventEligibility {
+  eligible: boolean;
+  reason?: string;
+}
+
 export function ensureDirector(world: WorldState): DirectorState {
   if (!world.director) world.director = { scheduled: [], lastFiredDay: {}, tension: 0 };
   return world.director;
@@ -56,7 +61,7 @@ export function scheduleEventsForCoordinate(world: WorldState, coordinate: Event
   const node = world.map.nodes[coordinate.nodeId];
   if (!node || coordinate.day < 1 || !coordinate.slotId) return [];
   const candidates = Object.values(world.eventDefs ?? {})
-    .filter((event) => eventMatchesCoordinate(event, coordinate, world))
+    .filter((event) => isEventEligible(world, event, coordinate).eligible)
     .sort((left, right) => (right.weight ?? 1) - (left.weight ?? 1) || left.id.localeCompare(right.id));
   const scheduled: ScheduledEvent[] = [];
   for (const event of candidates) {
@@ -64,6 +69,43 @@ export function scheduleEventsForCoordinate(world: WorldState, coordinate: Event
     if (result.ok && result.scheduled) scheduled.push(result.scheduled);
   }
   return scheduled;
+}
+
+/** Choose one eligible event with a stable weighted roll for this coordinate. */
+export function scheduleDirectorEvent(world: WorldState, coordinate: EventCoordinate): ScheduledEvent | undefined {
+  refreshDirectorTension(world, coordinate.day);
+  const candidates = Object.values(world.eventDefs ?? {})
+    .filter((event) => isEventEligible(world, event, coordinate).eligible)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  if (!candidates.length) return undefined;
+  const totalWeight = candidates.reduce((sum, event) => sum + Math.max(0, event.weight ?? 1), 0);
+  if (totalWeight <= 0) return undefined;
+  const roll = stableUnit(`${coordinate.nodeId}:${coordinate.day}:${coordinate.slotId}:${world.director?.tension ?? 0}`) * totalWeight;
+  let cursor = 0;
+  for (const event of candidates) {
+    cursor += Math.max(0, event.weight ?? 1);
+    if (roll < cursor) return scheduleEvent(world, event.id, coordinate).scheduled;
+  }
+  return scheduleEvent(world, candidates.at(-1)!.id, coordinate).scheduled;
+}
+
+export function isEventEligible(world: WorldState, event: EventDef, coordinate: EventCoordinate): EventEligibility {
+  if (!eventMatchesCoordinate(event, coordinate, world)) return { eligible: false, reason: 'Event trigger does not match this coordinate.' };
+  const director = ensureDirector(world);
+  if (event.once && director.lastFiredDay[event.id] !== undefined) return { eligible: false, reason: 'Event has already fired.' };
+  const lastFired = director.lastFiredDay[event.id];
+  if (event.cooldownDays !== undefined && lastFired !== undefined && coordinate.day - lastFired <= event.cooldownDays) return { eligible: false, reason: 'Event is cooling down.' };
+  if (director.globalCooldownUntilDay !== undefined && coordinate.day < director.globalCooldownUntilDay) return { eligible: false, reason: 'Director is in a global cooldown.' };
+  if (event.when && !matchesCondition(event.when, world, { id: eventScheduleId(event.id, coordinate), eventId: event.id, day: coordinate.day, slotId: coordinate.slotId, nodeId: coordinate.nodeId, ...(coordinate.charIds?.length ? { charIds: [...coordinate.charIds] } : {}) })) return { eligible: false, reason: 'Event condition is not satisfied.' };
+  return { eligible: true };
+}
+
+/** Derive a bounded quiet-period tension value from the last fired event day. */
+export function refreshDirectorTension(world: WorldState, day = world.clock.day): number {
+  const director = ensureDirector(world);
+  const latestFiredDay = Math.max(0, ...Object.values(director.lastFiredDay));
+  director.tension = Math.max(0, Math.min(100, day - Math.max(1, latestFiredDay)));
+  return director.tension;
 }
 
 export function scheduleEvent(world: WorldState, eventId: string, coordinate: EventCoordinate): EventScheduleResult {
@@ -117,6 +159,7 @@ export function setScheduledEventRevealed(world: WorldState, scheduledId: string
 
 export function triggerScheduledEvent(world: WorldState, scheduledId: string, options: { charIds?: readonly string[] } = {}): EventTriggerResult {
   const director = ensureDirector(world);
+  refreshDirectorTension(world);
   const scheduled = director.scheduled.find((item) => item.id === scheduledId);
   if (!scheduled) return rejectedEvent('Unknown scheduled event.');
   if (scheduled.day !== world.clock.day || scheduled.slotId !== world.clock.slotId || scheduled.nodeId !== world.player.nodeId) {
@@ -128,12 +171,8 @@ export function triggerScheduledEvent(world: WorldState, scheduledId: string, op
   if (!eventMatchesCoordinate(event, { nodeId: scheduled.nodeId, day: scheduled.day, slotId: scheduled.slotId, charIds }, world)) {
     return rejectedEvent(`Event ${event.id} does not match the current location scope or participants.`);
   }
-  if (event.once && director.lastFiredDay[event.id] !== undefined) return rejectedEvent(`Event ${event.id} can only trigger once.`);
-  const lastFired = director.lastFiredDay[event.id];
-  if (event.cooldownDays !== undefined && lastFired !== undefined && scheduled.day - lastFired <= event.cooldownDays) {
-    return rejectedEvent(`Event ${event.id} is cooling down.`);
-  }
-  if (event.when && !matchesCondition(event.when, world, scheduled)) return rejectedEvent(`Event ${event.id} condition is not satisfied.`);
+  const eligibility = isEventEligible(world, event, { nodeId: scheduled.nodeId, day: scheduled.day, slotId: scheduled.slotId, charIds });
+  if (!eligibility.eligible) return rejectedEvent(eligibility.reason ?? `Event ${event.id} is not eligible.`);
 
   const scope = deriveNodeScope(world.map.nodes[scheduled.nodeId], scheduled.slotId);
   const history: EventHistoryEntry = {
@@ -149,6 +188,7 @@ export function triggerScheduledEvent(world: WorldState, scheduledId: string, op
   };
   director.scheduled = director.scheduled.filter((item) => item.id !== scheduled.id);
   director.lastFiredDay[event.id] = scheduled.day;
+  refreshDirectorTension(world, scheduled.day);
   world.eventHistory = [...(world.eventHistory ?? []), history].slice(-500);
   return { ok: true, event, scheduled: structuredClone(scheduled), history, content: event.content, ops: event.ops ? structuredClone(event.ops) : [] };
 }
@@ -180,6 +220,15 @@ function matchesCondition(condition: string, world: WorldState, scheduled: Sched
   } catch {
     return false;
   }
+}
+
+function stableUnit(source: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967296;
 }
 
 function eventScheduleId(eventId: string, coordinate: EventCoordinate): string {

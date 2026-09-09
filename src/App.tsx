@@ -4,7 +4,7 @@ import type { AssembledPrompt } from './core/prompt/assembler';
 import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
 import { TOPIC_TREE_PROMPT_BLOCKS } from './core/prompt/topic-tree';
 import { EventBus } from './core/events/bus';
-import { scheduleEventsForCoordinate, triggerScheduledEvent } from './core/events/director';
+import { scheduleDirectorEvent, triggerScheduledEvent } from './core/events/director';
 import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGeneratedMapExpansion, parseGeneratedNodeSuggestion, updateMapNode, type CreateMapNodeInput, type UpdateMapNodeInput } from './core/map';
 import { parseGeneratedTopicTree } from './core/topics/parser';
 import { isTopicTreeFresh, mergeDailyTopicTree, topicResponse, topicTreeKey, topicVisibility, visibleTopics } from './core/topics';
@@ -464,7 +464,7 @@ export function App() {
     const destination = next.world.map.nodes[nodeId];
     const matchedHooks = findMatchingHooks(next.world, nodeId, next.world.clock.slotId);
     matchedHooks.forEach(({ hook }) => { triggerHook(next.world, hook.id); });
-    scheduleEventsForCoordinate(next.world, { nodeId, day: next.world.clock.day, slotId: next.world.clock.slotId });
+    scheduleDirectorEvent(next.world, { nodeId, day: next.world.clock.day, slotId: next.world.clock.slotId });
     const localEvents = (next.world.director?.scheduled ?? [])
       .filter((scheduled) => scheduled.nodeId === nodeId && scheduled.day === next.world.clock.day && scheduled.slotId === next.world.clock.slotId)
       .map((scheduled) => triggerScheduledEvent(next.world, scheduled.id))
