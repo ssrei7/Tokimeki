@@ -9,6 +9,7 @@ import { canUnlockTopic, topicTreeKey } from '../topics';
 import { evaluateGift, resolveRelationshipStageId } from '../relationship';
 import { evaluateCondition, type ConditionScope } from '../expr';
 import { makeAppointment } from '../appointments/op';
+import { scheduleEvent } from '../events/director';
 
 const StatTargetSchema = z.enum(['player', 'world']);
 const AddStatSchema = z.object({ op: z.literal('add_stat'), target: StatTargetSchema, key: z.string().min(1), delta: z.number().finite() });
@@ -38,6 +39,7 @@ const ResolveGiftSchema = z.object({ op: z.literal('resolve_gift'), giftId: z.st
 const MakeAppointmentSchema = z.object({ op: z.literal('make_appointment'), id: z.string().min(1), charId: z.string().min(1), day: z.number().int().positive(), slotId: z.string().min(1), nodeId: z.string().min(1), note: z.string().min(1).max(200).optional() });
 const ProposeDepartureSchema = z.object({ op: z.literal('propose_departure'), entryId: z.string().min(1), kind: z.enum(['player_farewell', 'character_request']), speakerId: z.string().min(1).optional(), reason: z.string().min(1).max(300).optional() });
 const ResolveDepartureSchema = z.object({ op: z.literal('resolve_departure'), entryId: z.string().min(1), outcome: z.enum(['stayed', 'left']) });
+const QueueEventSchema = z.object({ op: z.literal('queue_event'), eventId: z.string().min(1), day: z.number().int().positive(), slotId: z.string().min(1), nodeId: z.string().min(1), charIds: z.array(z.string().min(1)).max(3).optional(), revealed: z.boolean().optional() });
 
 export function createDefaultOpRegistry(): OpRegistry {
   const registry = new OpRegistry();
@@ -206,6 +208,18 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     promptDoc: 'make_appointment: {"op":"make_appointment","id":"appointment-id","charId":"character-id","day":future-day,"slotId":"calendar-slot-id","nodeId":"known-node-id","note":"optional reminder"}; creates a pending appointment without consuming time.',
     describe: (payload) => `make appointment ${payload.id} with ${payload.charId} on day ${payload.day}`,
     apply: (payload, context) => makeAppointment(payload, context),
+  });
+  registry.register({
+    op: 'queue_event', schema: QueueEventSchema, clamp: {},
+    promptDoc: 'queue_event: {"op":"queue_event","eventId":"known-event-id","day":future-day,"slotId":"calendar-slot-id","nodeId":"known-node-id","charIds":["participant-id"],"revealed":false}; schedules a known event without calling an API or applying its result.',
+    describe: (payload) => `queue event ${payload.eventId} on day ${payload.day}`,
+    apply: (payload, context) => {
+      if (payload.day < context.day) return { ok: false, changes: [], warning: 'Event day cannot be earlier than the current day.' };
+      const before = structuredClone(context.world.director?.scheduled ?? []);
+      const result = scheduleEvent(context.world, payload.eventId, { nodeId: payload.nodeId, day: payload.day, slotId: payload.slotId, charIds: payload.charIds, revealed: payload.revealed });
+      if (!result.ok || !result.scheduled) return { ok: false, changes: [], warning: result.warning };
+      return { ok: true, changes: [{ path: 'world.director.scheduled', before, after: structuredClone(context.world.director?.scheduled ?? []), description: `Queued event ${payload.eventId} for day ${payload.day}.` }] };
+    },
   });
   registry.register({
     op: 'propose_departure', schema: ProposeDepartureSchema, clamp: {},

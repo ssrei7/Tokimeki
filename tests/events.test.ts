@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
 import { EventBus } from '../src/core/events/bus';
-import { scheduleEvent, scheduleEventsForCoordinate, triggerScheduledEvent } from '../src/core/events/director';
+import { listPendingEvents, scheduleEvent, scheduleEventsForCoordinate, setScheduledEventRevealed, triggerScheduledEvent } from '../src/core/events/director';
+import { createDefaultOpRegistry } from '../src/core/ops';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import { exportEventPackage, importEventPackage } from '../src/data/io/zip';
 import type { EventDef } from '../src/data/schema/save';
@@ -75,6 +76,20 @@ describe('deterministic local story events', () => {
     const scheduled = scheduleEvent(save.world, event.id, { nodeId: 'docks', day: 4, slotId: 'noon' }).scheduled!;
     expect(triggerScheduledEvent(save.world, scheduled.id)).toMatchObject({ ok: false });
     expect(save.world.eventHistory ?? []).toHaveLength(0);
+  });
+
+  it('queues future events through the whitelisted op and exposes pending/revealed views locally', () => {
+    const save = setup();
+    const event: EventDef = { id: 'future-note', title: '三日后的告示', trigger: { nodeIds: ['docks'], slotIds: ['noon'] }, content: '届时再来。' };
+    save.world.eventDefs = { [event.id]: event };
+    const result = createDefaultOpRegistry().applyAll([{ op: 'queue_event', eventId: event.id, day: 6, slotId: 'noon', nodeId: 'docks' }], {
+      world: save.world, day: 3, slotId: 'noon', nodeId: 'docks', log: () => undefined,
+    }, 12);
+    expect(result.applied).toBe(1);
+    const pending = listPendingEvents(save.world, { revealed: false });
+    expect(pending).toHaveLength(1);
+    expect(setScheduledEventRevealed(save.world, pending[0].id)).toEqual({ ok: true });
+    expect(listPendingEvents(save.world, { revealed: true })[0].revealed).toBe(true);
   });
 });
 

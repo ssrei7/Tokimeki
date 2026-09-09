@@ -99,6 +99,22 @@ export function listScheduledEvents(world: WorldState, coordinate?: Partial<Even
   )).map((item) => structuredClone(item));
 }
 
+export function listPendingEvents(world: WorldState, options: { fromDay?: number; toDay?: number; revealed?: boolean } = {}): ScheduledEvent[] {
+  const fromDay = options.fromDay ?? world.clock.day;
+  return listScheduledEvents(world).filter((item) => (
+    item.day >= fromDay
+    && (options.toDay === undefined || item.day <= options.toDay)
+    && (options.revealed === undefined || Boolean(item.revealed) === options.revealed)
+  ));
+}
+
+export function setScheduledEventRevealed(world: WorldState, scheduledId: string, revealed = true): { ok: boolean; warning?: string } {
+  const scheduled = ensureDirector(world).scheduled.find((item) => item.id === scheduledId);
+  if (!scheduled) return { ok: false, warning: 'Unknown scheduled event.' };
+  scheduled.revealed = revealed;
+  return { ok: true };
+}
+
 export function triggerScheduledEvent(world: WorldState, scheduledId: string, options: { charIds?: readonly string[] } = {}): EventTriggerResult {
   const director = ensureDirector(world);
   const scheduled = director.scheduled.find((item) => item.id === scheduledId);
