@@ -39,6 +39,19 @@ export const PresetBundleSchema = z.object({
 });
 export type PresetBundle = z.infer<typeof PresetBundleSchema>;
 
+export const StoryScenePresetStageSchema = z.object({ id: Id, title: z.string().min(1).max(160), contentTemplate: z.string().min(1).max(10000) });
+export const StoryScenePresetSchema = z.object({
+  id: Id,
+  name: z.string().min(1).max(160),
+  titleTemplate: z.string().min(1).max(1000),
+  outlineTemplate: z.string().min(1).max(10000),
+  stages: z.array(StoryScenePresetStageSchema).min(1).max(50),
+  builtin: z.boolean(),
+  sourcePresetId: Id.optional(),
+});
+export type StoryScenePresetStageRecord = z.infer<typeof StoryScenePresetStageSchema>;
+export type StoryScenePresetRecord = z.infer<typeof StoryScenePresetSchema>;
+
 export const DialogueKindSchema = z.enum(['dialogue', 'narration']);
 export type DialogueKind = z.infer<typeof DialogueKindSchema>;
 export const ChatMessageSchema = z.object({

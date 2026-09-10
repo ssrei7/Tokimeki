@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import { CharacterCardSchema, ChatRecordSchema, PersonaSchema, PresetBundleSchema, PresetSchema, WorldbookEntrySchema, type CharacterCard, type ChatRecord, type Persona, type Preset, type PresetBundle, type WorldbookEntry } from '../content';
+import { CharacterCardSchema, ChatRecordSchema, PersonaSchema, PresetBundleSchema, PresetSchema, StoryScenePresetSchema, WorldbookEntrySchema, type CharacterCard, type ChatRecord, type Persona, type Preset, type PresetBundle, type StoryScenePresetRecord, type WorldbookEntry } from '../content';
 
 export class ContentDatabase extends Dexie {
   characters!: Table<CharacterCard, string>;
@@ -7,6 +7,7 @@ export class ContentDatabase extends Dexie {
   worldbooks!: Table<WorldbookEntry, string>;
   presets!: Table<Preset, string>;
   presetBundles!: Table<PresetBundle, string>;
+  storyScenePresets!: Table<StoryScenePresetRecord, string>;
   chats!: Table<ChatRecord, string>;
   constructor(name = 'tokimeki-content') {
     super(name);
@@ -20,6 +21,7 @@ export class ContentDatabase extends Dexie {
         for (const entry of bundle.entries ?? []) if (typeof entry.enabled !== 'boolean') entry.enabled = true;
       });
     });
+    this.version(6).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId' });
   }
 }
 
@@ -35,6 +37,8 @@ export async function savePreset(preset: Preset): Promise<Preset> { const parsed
 export async function deletePreset(id: string): Promise<void> { await contentDb.presets.delete(id); }
 export async function savePresetBundle(bundle: PresetBundle): Promise<PresetBundle> { const parsed = PresetBundleSchema.parse(bundle); await contentDb.presetBundles.put(parsed); await Promise.all(parsed.entries.map((entry) => contentDb.presets.put(entry))); return parsed; }
 export async function deletePresetBundle(id: string): Promise<void> { await contentDb.presetBundles.delete(id); }
+export async function saveStoryScenePreset(preset: StoryScenePresetRecord): Promise<StoryScenePresetRecord> { const parsed = StoryScenePresetSchema.parse(preset); await contentDb.storyScenePresets.put(parsed); return parsed; }
+export async function deleteStoryScenePreset(id: string): Promise<void> { await contentDb.storyScenePresets.delete(id); }
 export async function saveChat(record: ChatRecord): Promise<ChatRecord> { const parsed = ChatRecordSchema.parse(record); await contentDb.chats.put(parsed); return parsed; }
 export async function loadChat(characterId: string): Promise<ChatRecord | undefined> { return contentDb.chats.get(characterId); }
 export async function clearChats(): Promise<void> { await contentDb.chats.clear(); }
