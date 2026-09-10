@@ -183,6 +183,14 @@ describe('save migrations', () => {
     expect(migrated.world.storyScenes[0].stages).toEqual([{ id: 'opening', title: '开场', content: '旧大纲正文' }]);
   });
 
+  it('migrates v32 StoryScene stages with a fresh reading position', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v33-story-reading', title: 'v33 story reading' }));
+    const legacyScene = { id: 'legacy-scene', title: '旧剧情', intent: '调查', outline: '旧大纲正文', participantIds: ['seir'], nodeId: 'start', startDay: 1, startSlotId: 'morning', currentStageId: 'opening', stages: [{ id: 'opening', title: '开场', content: '旧大纲正文' }], status: 'draft', source: 'manual', createdDay: 1, updatedDay: 1 };
+    const migrated = migrateSave({ ...source, schemaVersion: 32, world: { ...source.world, storyScenes: [legacyScene] } });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.storyScenes[0]).toMatchObject({ readingStageId: 'opening', readStageIds: [] });
+  });
+
   it('migrates v5 persona text without dropping it and accepts a persona binding', () => {
     const migrated = migrateSave({
       schemaVersion: 5,

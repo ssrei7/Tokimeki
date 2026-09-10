@@ -61,6 +61,8 @@ export function createStorySceneDraft(world: WorldState, calendar: CalendarConfi
     startSlotId: input.startSlotId ?? world.clock.slotId,
     currentStageId: input.currentStageId?.trim() || stages[0].id,
     stages,
+    readingStageId: stages[0].id,
+    readStageIds: [],
     status: 'draft',
     source: input.source ?? 'manual',
     createdDay: day,
@@ -68,6 +70,48 @@ export function createStorySceneDraft(world: WorldState, calendar: CalendarConfi
   };
   world.storyScenes = [...(world.storyScenes ?? []), scene].slice(-100);
   return { ok: true, scene };
+}
+
+export interface StorySceneReadingResult extends StorySceneResult {
+  stage?: StorySceneStage;
+  nextUnreadStage?: StorySceneStage;
+}
+
+/** Read the persisted resume position without changing any world fact. */
+export function getStorySceneReading(world: WorldState, sceneId: string): StorySceneReadingResult {
+  const scene = (world.storyScenes ?? []).find((entry) => entry.id === sceneId);
+  if (!scene) return { ok: false, warning: 'StoryScene 不存在。' };
+  const stage = scene.stages.find((entry) => entry.id === scene.readingStageId);
+  if (!stage) return { ok: false, scene, warning: 'StoryScene 阅读位置不存在。' };
+  const nextUnreadStage = scene.stages.find((entry) => !scene.readStageIds.includes(entry.id));
+  return { ok: true, scene, stage, nextUnreadStage };
+}
+
+/** Mark one stage as read in declaration order and update the resume pointer. */
+export function readStorySceneStage(world: WorldState, sceneId: string, stageId: string): StorySceneReadingResult {
+  const scene = (world.storyScenes ?? []).find((entry) => entry.id === sceneId);
+  if (!scene) return { ok: false, warning: 'StoryScene 不存在。' };
+  if (scene.status !== 'active' && scene.status !== 'completed') return { ok: false, scene, warning: '只有已启动的 StoryScene 可以阅读。' };
+  const index = scene.stages.findIndex((entry) => entry.id === stageId);
+  if (index < 0) return { ok: false, scene, warning: 'StoryScene 阅读阶段不存在。' };
+  const previousIds = scene.stages.slice(0, index).map((entry) => entry.id);
+  if (previousIds.some((id) => !scene.readStageIds.includes(id))) return { ok: false, scene, warning: '必须按顺序阅读 StoryScene 阶段。' };
+  const readStageIds = scene.readStageIds.includes(stageId) ? [...scene.readStageIds] : [...scene.readStageIds, stageId];
+  const updated: StoryScene = { ...scene, readingStageId: stageId, readStageIds, updatedDay: world.clock.day };
+  world.storyScenes = world.storyScenes.map((entry) => entry.id === sceneId ? updated : entry);
+  return { ok: true, scene: updated, stage: updated.stages[index], nextUnreadStage: updated.stages.find((entry) => !readStageIds.includes(entry.id)) };
+}
+
+/** Move the local reading cursor to an already-read stage for review. */
+export function selectStorySceneReadingStage(world: WorldState, sceneId: string, stageId: string): StorySceneReadingResult {
+  const scene = (world.storyScenes ?? []).find((entry) => entry.id === sceneId);
+  if (!scene) return { ok: false, warning: 'StoryScene 不存在。' };
+  if (!scene.readStageIds.includes(stageId)) return { ok: false, scene, warning: '只能回看已经读过的 StoryScene 阶段。' };
+  const stage = scene.stages.find((entry) => entry.id === stageId);
+  if (!stage) return { ok: false, scene, warning: 'StoryScene 阅读阶段不存在。' };
+  const updated: StoryScene = { ...scene, readingStageId: stageId, updatedDay: world.clock.day };
+  world.storyScenes = world.storyScenes.map((entry) => entry.id === sceneId ? updated : entry);
+  return { ok: true, scene: updated, stage, nextUnreadStage: updated.stages.find((entry) => !updated.readStageIds.includes(entry.id)) };
 }
 
 /** Advance to the next declared stage only when its safe expression condition is satisfied. */

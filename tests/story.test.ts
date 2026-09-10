@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { advanceStorySceneStage, buildLocalChapterSummary, confirmStoryScene, copyStoryScenePreset, createBuiltinStoryScenePresets, createStorySceneDraft, formatChatArchive, formatEventHistoryArchive, generateStorySceneDraftInput, updateStorySceneStatus, upsertChapterSummary, upsertMilestone } from '../src/core/story';
+import { advanceStorySceneStage, buildLocalChapterSummary, confirmStoryScene, copyStoryScenePreset, createBuiltinStoryScenePresets, createStorySceneDraft, formatChatArchive, formatEventHistoryArchive, generateStorySceneDraftInput, getStorySceneReading, readStorySceneStage, selectStorySceneReadingStage, updateStorySceneStatus, upsertChapterSummary, upsertMilestone } from '../src/core/story';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 describe('local chapter summaries and milestones', () => {
@@ -38,6 +38,28 @@ describe('local chapter summaries and milestones', () => {
     save.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '码头青年', personality: '安静' }, visuals: { portraits: [] } };
     const generated = generateStorySceneDraftInput({ id: 'generated-valid', intent: '一起等待日出', participantIds: ['seir'], nodeId: 'start' });
     expect(createStorySceneDraft(save.world, save.config.calendar, generated)).toMatchObject({ ok: true, scene: { status: 'draft', source: 'keywords' } });
+  });
+
+  it('persists StoryScene reading progress separately from plot stage progression', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'story-scene-reading', title: 'Story scene reading' }));
+    save.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '码头青年', personality: '安静' }, visuals: { portraits: [] } };
+    createStorySceneDraft(save.world, save.config.calendar, {
+      id: 'reading-scene', title: '阅读测试', intent: '阅读', outline: '三段故事。', participantIds: ['seir'], nodeId: 'start',
+      stages: [
+        { id: 'opening', title: '开场', content: '第一段。' },
+        { id: 'middle', title: '中段', content: '第二段。' },
+        { id: 'ending', title: '结尾', content: '第三段。' },
+      ],
+    });
+    expect(confirmStoryScene(save.world, save.config.calendar, 'reading-scene').ok).toBe(true);
+    expect(getStorySceneReading(save.world, 'reading-scene')).toMatchObject({ ok: true, stage: { id: 'opening' }, nextUnreadStage: { id: 'opening' } });
+    expect(readStorySceneStage(save.world, 'reading-scene', 'middle')).toMatchObject({ ok: false });
+    expect(readStorySceneStage(save.world, 'reading-scene', 'opening')).toMatchObject({ ok: true, stage: { id: 'opening' }, nextUnreadStage: { id: 'middle' } });
+    expect(readStorySceneStage(save.world, 'reading-scene', 'middle')).toMatchObject({ ok: true, stage: { id: 'middle' }, nextUnreadStage: { id: 'ending' } });
+    expect(selectStorySceneReadingStage(save.world, 'reading-scene', 'opening')).toMatchObject({ ok: true, stage: { id: 'opening' } });
+    expect(save.world.storyScenes[0].currentStageId).toBe('opening');
+    expect(save.world.storyScenes[0].readingStageId).toBe('opening');
+    expect(save.world.storyScenes[0].readStageIds).toEqual(['opening', 'middle']);
   });
 
   it('persists a reviewable StoryScene draft and confirms it only after deterministic validation', () => {
