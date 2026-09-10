@@ -355,4 +355,20 @@ describe('save migrations', () => {
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.relations.seir.memories[0]).toMatchObject({ id: 'memory-1', text: '保留' });
   });
+
+  it('migrates v34 saves with a stat-backed default job rule and no forced employment', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v34-job', title: 'v34 job', slotId: 'noon' }));
+    const { jobRules: _jobRules, ...legacyEconomy } = source.world.economy;
+    const legacyStats = { ...source.world.player.stats };
+    delete legacyStats['economy.job.wage'];
+    const migrated = migrateSave({
+      ...source,
+      schemaVersion: 34,
+      world: { ...source.world, economy: legacyEconomy, player: { ...source.world.player, job: undefined, stats: legacyStats } },
+    });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.economy.jobRules.standard).toMatchObject({ currencyId: 'default', wageStatKey: 'economy.job.wage', shiftSlotId: 'noon' });
+    expect(migrated.world.player.stats['economy.job.wage']).toBe(18);
+    expect(migrated.world.player.job).toBeUndefined();
+  });
 });

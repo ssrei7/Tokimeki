@@ -19,7 +19,7 @@ type Condition = string;   // expr-eval 表达式,禁止 eval
 - 时间坐标统一为 `(day, slotId)`，地点坐标统一为 `nodeId`。
 - 派生值（阶段标签、可达节点、当前在场者）可缓存但必须能重算，且不作为事实来源。
 
-`CURRENT_SCHEMA_VERSION = 34`
+`CURRENT_SCHEMA_VERSION = 35`
 
 ---
 
@@ -606,6 +606,7 @@ interface PlayerState {
   nodeId: NodeId;
   homeNodeId?: NodeId;           // 邻近度加权偶遇
   housing?: HousingContract;     // 阶段 8：当前唯一生效租约
+  job?: JobContract;             // 阶段 8：当前唯一生效工作契约
   stats: Record<string, number>; // money / energy / reputation ...
   flags: Record<string, boolean>;
   inventory: InventoryEntry[];
@@ -615,7 +616,7 @@ interface PlayerState {
 
 `PlayerPersona` 保存在本地资料库；一个 `SaveFile` 通过 `player.personaId` 绑定一个当前身份。旧存档的 `persona` 文本必须保留，不能静默丢弃；当前版本提供设置页补创建/绑定面具身份的入口，后续可再增加旧文本自动转为默认身份。`displayName` 只影响面对面/事件对话框的玩家名牌，`name` 仍是世界事实中的玩家姓名。
 
-`job` / `shop` 将在阶段 8 后续切片绑定节点并占用时段——玩家因此成为地图上的一个点，角色会路过来找；不得通过带专用工资数值的硬编码字段接入。
+`job` 已在 v35 绑定节点并占用既有 `work.slotCost`；`shop` 将在阶段 8 后续切片接入营业时段与反向偶遇。工资金额不得写进契约或广告正文，必须由岗位规则指向 `player.stats` 中的通用数值。
 
 向量记忆属于阶段 7 的可选外部检索索引，不是事实字段。浏览器只保存索引状态、Provider 引用和可重建的向量缓存；embedding 文本必须经过用户选择的 Provider，默认不发送。Prompt 组装仍以确定性筛选后的记忆正文为准，向量 API 不得直接修改 `WorldState`。
 
@@ -644,6 +645,7 @@ interface EconomyState {
   defaultCurrencyId: Id;
   currencies: Record<Id, CurrencyDef>;
   rentRules: Record<Id, RentRule>;
+  jobRules: Record<Id, JobRule>;
 }
 
 interface HousingContract {
@@ -653,9 +655,23 @@ interface HousingContract {
   nextDueDayStatKey: string;     // 下次到期日仍由通用 stat 持有
 }
 
+interface JobRule {
+  id: Id;
+  name: string;
+  currencyId: Id;
+  wageStatKey: string;           // 工资来自 player.stats
+  shiftSlotId: Id;               // 每日确定性开班时段
+}
+
+interface JobContract {
+  id: Id;
+  nodeId: NodeId;                // 必须到岗才可开始班次
+  jobRuleId: Id;
+}
+
 interface EconomyTransaction {
   id: Id;
-  kind: 'rent';
+  kind: 'rent' | 'wage';
   currencyId: Id;
   statKey: string;
   amount: number;
@@ -666,6 +682,8 @@ interface EconomyTransaction {
 ```
 
 v34 首个生活切片只支持一个生效租约。签约由用户明确确认的本地白名单 op 写入 `homeNodeId` / `housing`，租金通过 `onDaySettle` 的内部 op 扣除；广告正文中的金额不参与计算。余额不足允许进入负数但不阻断时间、移动或对话。
+
+v35 增加一个生效工作契约。接受岗位、开始班次和工资结算分别通过本地白名单 op / `onDaySettle` 内部 op 完成；玩家必须在规则声明的时段位于绑定节点，班次消耗既有 `work.slotCost`，错过时段只损失当日工资，不阻断其他玩法。完成标记使用当日布尔 flag 并在结算后清理，历史收入保留在 `DailySettlement.economyTransactions`。
 
 ---
 

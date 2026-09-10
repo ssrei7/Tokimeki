@@ -33,6 +33,7 @@ import { migrateV30ToV31 } from './v30-to-v31';
 import { migrateV31ToV32 } from './v31-to-v32';
 import { migrateV32ToV33 } from './v32-to-v33';
 import { migrateV33ToV34 } from './v33-to-v34';
+import { migrateV34ToV35 } from './v34-to-v35';
 import { MigrationError, UnsupportedSchemaVersionError, type Migration } from './types';
 
 export const migrations: Record<number, Migration> = {
@@ -70,6 +71,7 @@ export const migrations: Record<number, Migration> = {
   32: migrateV31ToV32,
   33: migrateV32ToV33,
   34: migrateV33ToV34,
+  35: migrateV34ToV35,
 };
 
 export function migrateSave(input: unknown): SaveFile {

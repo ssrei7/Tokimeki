@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 34;
+export const CURRENT_SCHEMA_VERSION = 35;
 
 const IdSchema = z.string().min(1);
 
@@ -363,7 +363,15 @@ export const RentRuleSchema = z.object({
   intervalDaysStatKey: StatKeySchema,
 });
 
-export const EconomyStateSchema = z.object({
+export const JobRuleSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(120),
+  currencyId: IdSchema,
+  wageStatKey: StatKeySchema,
+  shiftSlotId: IdSchema,
+});
+
+export const EconomyStateV34Schema = z.object({
   defaultCurrencyId: IdSchema,
   currencies: z.record(IdSchema, CurrencyDefSchema),
   rentRules: z.record(IdSchema, RentRuleSchema),
@@ -380,13 +388,29 @@ export const EconomyStateSchema = z.object({
   }
 });
 
-export const DEFAULT_ECONOMY_STATE = {
+export const EconomyStateSchema = EconomyStateV34Schema.extend({
+  jobRules: z.record(IdSchema, JobRuleSchema),
+}).superRefine((economy, context) => {
+  for (const [id, rule] of Object.entries(economy.jobRules)) {
+    if (rule.id !== id) context.addIssue({ code: 'custom', path: ['jobRules', id, 'id'], message: 'Job rule record key must match its stable id.' });
+    if (!economy.currencies[rule.currencyId]) context.addIssue({ code: 'custom', path: ['jobRules', id, 'currencyId'], message: 'Job rule must reference a configured currency.' });
+  }
+});
+
+export const DEFAULT_ECONOMY_V34_STATE = {
   defaultCurrencyId: 'default',
   currencies: {
     default: { id: 'default', name: '通用货币', symbol: '¤', decimals: 0, statKey: 'money' },
   },
   rentRules: {
     standard: { id: 'standard', name: '标准租约', currencyId: 'default', amountStatKey: 'economy.rent.amount', intervalDaysStatKey: 'economy.rent.interval-days' },
+  },
+} satisfies z.input<typeof EconomyStateV34Schema>;
+
+export const DEFAULT_ECONOMY_STATE = {
+  ...DEFAULT_ECONOMY_V34_STATE,
+  jobRules: {
+    standard: { id: 'standard', name: '街区杂务班', currencyId: 'default', wageStatKey: 'economy.job.wage', shiftSlotId: 'morning' },
   },
 } satisfies z.input<typeof EconomyStateSchema>;
 
@@ -397,9 +421,15 @@ export const HousingContractSchema = z.object({
   nextDueDayStatKey: StatKeySchema,
 });
 
+export const JobContractSchema = z.object({
+  id: IdSchema,
+  nodeId: IdSchema,
+  jobRuleId: IdSchema,
+});
+
 export const EconomyTransactionSchema = z.object({
   id: IdSchema,
-  kind: z.enum(['rent']),
+  kind: z.enum(['rent', 'wage']),
   currencyId: IdSchema,
   statKey: StatKeySchema,
   amount: z.number().finite().nonnegative(),
@@ -415,6 +445,7 @@ export const PlayerStateSchema = z.object({
   nodeId: IdSchema,
   homeNodeId: IdSchema.optional(),
   housing: HousingContractSchema.optional(),
+  job: JobContractSchema.optional(),
   stats: z.record(z.string(), z.number()),
   flags: z.record(z.string(), z.boolean()),
   inventory: z.array(InventoryEntrySchema),
@@ -703,6 +734,9 @@ export const WorldV31Schema = WorldV30Schema.extend({
 export const WorldV32Schema = WorldV31Schema;
 export const WorldV33Schema = WorldV32Schema;
 export const WorldV34Schema = WorldV33Schema.extend({
+  economy: EconomyStateV34Schema,
+});
+export const WorldV35Schema = WorldV34Schema.extend({
   economy: EconomyStateSchema,
 });
 
@@ -741,12 +775,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV34Schema,
+  world: WorldV35Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV34Schema>;
+export type WorldState = z.infer<typeof WorldV35Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;
@@ -780,6 +814,8 @@ export type EconomyState = z.infer<typeof EconomyStateSchema>;
 export type EconomyTransaction = z.infer<typeof EconomyTransactionSchema>;
 export type HousingContract = z.infer<typeof HousingContractSchema>;
 export type RentRule = z.infer<typeof RentRuleSchema>;
+export type JobContract = z.infer<typeof JobContractSchema>;
+export type JobRule = z.infer<typeof JobRuleSchema>;
 export type StageRule = z.infer<typeof StageRuleSchema>;
 export type AxisDef = z.infer<typeof AxisDefSchema>;
 export type RelationState = z.infer<typeof RelationStateSchema>;

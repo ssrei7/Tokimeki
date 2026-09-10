@@ -24,4 +24,12 @@ describe('settlement relation display', () => {
     };
     expect(settlementFinancialSummary(settlement, DEFAULT_ECONOMY_STATE)).toBe('房租 -¤10');
   });
+
+  it('formats wages as positive income using world currency metadata', () => {
+    const settlement: DailySettlement = {
+      day: 8, footprint: ['start'], met: [], relationChanges: [], income: 18, expense: 0, itemsGained: [], appointmentsTomorrow: [], diary: '',
+      economyTransactions: [{ id: 'wage-8-1', kind: 'wage', currencyId: 'default', statKey: 'money', amount: 18, balanceBefore: 0, balanceAfter: 18, description: '工资 ¤18' }],
+    };
+    expect(settlementFinancialSummary(settlement, DEFAULT_ECONOMY_STATE)).toBe('工资 +¤18');
+  });
 });

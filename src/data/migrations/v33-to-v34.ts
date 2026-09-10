@@ -1,4 +1,4 @@
-import { DEFAULT_ECONOMY_STATE } from '../schema/save';
+import { DEFAULT_ECONOMY_V34_STATE } from '../schema/save';
 import type { Migration } from './types';
 
 /** v34 adds data-driven currencies, rent rules, housing contracts, and currency-aware settlement records. */
@@ -15,7 +15,7 @@ export const migrateV33ToV34: Migration = (input) => {
   if (typeof stats['economy.rent.interval-days'] !== 'number') stats['economy.rent.interval-days'] = 7;
   player.stats = stats;
   world.player = player;
-  world.economy = structuredClone(DEFAULT_ECONOMY_STATE);
+  world.economy = structuredClone(DEFAULT_ECONOMY_V34_STATE);
 
   if (Array.isArray(world.settlements)) {
     world.settlements = world.settlements.map((value) => {

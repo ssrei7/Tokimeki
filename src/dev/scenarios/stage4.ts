@@ -23,7 +23,7 @@ export function createStage4EncounterScenario(): ScenarioDefinition {
         world: {
           clock: { day: 3, slotId: 'noon' }, slotsUsedToday: 0,
           player: {
-            name: '测试玩家', nodeId: 'start', stats: { money: 0, 'economy.rent.amount': 10, 'economy.rent.interval-days': 7 }, flags: {},
+            name: '测试玩家', nodeId: 'start', stats: { money: 0, 'economy.rent.amount': 10, 'economy.rent.interval-days': 7, 'economy.job.wage': 18 }, flags: {},
             inventory: [
               { itemId: 'white-flower', count: 1, gotDay: 3, gotNodeId: 'start' },
               { itemId: 'lemon-candy', count: 1, gotDay: 3, gotNodeId: 'start' },
