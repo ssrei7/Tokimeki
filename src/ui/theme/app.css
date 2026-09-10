@@ -217,6 +217,9 @@ button.danger { background: #fee4e2; color: #b42318; }
 .story-reader-stage-actions { display: flex; gap: 8px; margin-top: 12px; }
 .story-reader-stage-actions button { min-height: 36px; padding: 0 12px; font-size: 12px; }
 .story-reader-hint { color: #7b7467; font-size: 12px; line-height: 1.5; }
+.story-scene-library { margin-bottom: 14px; }
+.story-scene-draft-row { display: grid; gap: 4px; padding: 12px 0; border-top: 1px solid #eef0f3; }
+.story-scene-draft-row small { color: #667085; }
 .composer { flex: 0 0 auto; display: grid; gap: 4px; padding-top: 4px; background: #f8fafc; }
 .composer textarea { min-height: 52px; resize: vertical; }
 .composer-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
