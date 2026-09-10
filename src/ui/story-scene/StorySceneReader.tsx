@@ -2,6 +2,7 @@ import type { StoryScene, StorySceneStage } from '../../data/schema/save';
 
 export interface StorySceneReaderProps {
   scene: StoryScene;
+  onAdvanceStage?: () => void;
   onReadStage: (stageId: string) => void;
   onSelectStage?: (stageId: string) => void;
 }
@@ -12,7 +13,7 @@ export function getReadableStorySceneStages(scene: StoryScene): StorySceneStage[
   return scene.stages.slice(0, frontier < 0 ? 1 : frontier + 1);
 }
 
-export function StorySceneReader({ scene, onReadStage, onSelectStage }: StorySceneReaderProps) {
+export function StorySceneReader({ scene, onAdvanceStage, onReadStage, onSelectStage }: StorySceneReaderProps) {
   const readableStages = getReadableStorySceneStages(scene);
   const nextUnread = readableStages.find((stage) => !scene.readStageIds.includes(stage.id));
   const resumeStage = readableStages.find((stage) => stage.id === scene.readingStageId) ?? readableStages[0];
@@ -52,7 +53,7 @@ export function StorySceneReader({ scene, onReadStage, onSelectStage }: StorySce
           );
         })}
       </div>
-      {nextUnread ? <p className="story-reader-hint">下一阶段：{nextUnread.title}。剧情推进后才会解锁更远内容。</p> : <p className="story-reader-hint">当前已解锁内容均已读完。</p>}
+      <div className="story-reader-footer">{nextUnread ? <p className="story-reader-hint">下一阶段：{nextUnread.title}。剧情推进后才会解锁更远内容。</p> : <p className="story-reader-hint">当前已解锁内容均已读完。</p>}{onAdvanceStage && scene.status === 'active' && scene.stages[scene.stages.length - 1]?.id !== scene.currentStageId && <button type="button" onClick={onAdvanceStage}>推进下一阶段</button>}</div>
     </article>
   );
 }
