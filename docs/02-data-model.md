@@ -19,7 +19,7 @@ type Condition = string;   // expr-eval 表达式,禁止 eval
 - 时间坐标统一为 `(day, slotId)`，地点坐标统一为 `nodeId`。
 - 派生值（阶段标签、可达节点、当前在场者）可缓存但必须能重算，且不作为事实来源。
 
-`CURRENT_SCHEMA_VERSION = 35`
+`CURRENT_SCHEMA_VERSION = 36`
 
 ---
 
@@ -60,7 +60,7 @@ type ActionKind = string;
 
 interface ActionCost {
   slotCost: number;
-  energyCost?: number;           // 阶段 8 启用,现在只占位
+  energyCost?: number;           // v36 启用；数值从成本表读取
 }
 
 type ActionCostTable = Record<ActionKind, ActionCost>;
@@ -69,11 +69,12 @@ type ActionCostTable = Record<ActionKind, ActionCost>;
 内置 kind 与默认值：
 
 ```
-move_cross_region   1
-move_within_region  0
-work                2
-explore             1
-rest                1
+                    slotCost   energyCost
+move_cross_region       1           1
+move_within_region      0           0
+work                    2           2
+explore                 1           1
+rest                    1           0
 ```
 
 免费（不进成本表，硬性零消耗）：偶遇、对话、点击已生成话题、查看地图/物品栏/日记/手机。
@@ -646,6 +647,14 @@ interface EconomyState {
   currencies: Record<Id, CurrencyDef>;
   rentRules: Record<Id, RentRule>;
   jobRules: Record<Id, JobRule>;
+  energyRule: EnergyRule;
+}
+
+interface EnergyRule {
+  statKey: string;               // 当前体力
+  maxStatKey: string;            // 体力上限
+  restRestoreStatKey: string;    // 单次休息恢复量
+  enabledFlagKey: string;        // 是否启用体力消耗
 }
 
 interface HousingContract {
@@ -684,6 +693,8 @@ interface EconomyTransaction {
 v34 首个生活切片只支持一个生效租约。签约由用户明确确认的本地白名单 op 写入 `homeNodeId` / `housing`，租金通过 `onDaySettle` 的内部 op 扣除；广告正文中的金额不参与计算。余额不足允许进入负数但不阻断时间、移动或对话。
 
 v35 增加一个生效工作契约。接受岗位、开始班次和工资结算分别通过本地白名单 op / `onDaySettle` 内部 op 完成；玩家必须在规则声明的时段位于绑定节点，班次消耗既有 `work.slotCost`，错过时段只损失当日工资，不阻断其他玩法。完成标记使用当日布尔 flag 并在结算后清理，历史收入保留在 `DailySettlement.economyTransactions`。
+
+v36 启用成本表中的 `energyCost`。体力当前值、上限与休息恢复量仍是 `player.stats` 中的普通数值，开关仍是 `player.flags` 中的普通布尔值；`EnergyRule` 只保存这些 key，不新增专用数值字段。默认体力为 6/6，休息恢复 2；跨区域移动、工作、探索默认分别消耗 1、2、1，区内移动和休息不消耗。体力不足时只阻止对应行动，休息始终可恢复，设置页可关闭限制且保留现有数值。UI 本地行动与叙事 `advance_time` / `move_player` ops 使用同一确定性校验，AI 不能通过提出已有 op 绕过成本。
 
 ---
 

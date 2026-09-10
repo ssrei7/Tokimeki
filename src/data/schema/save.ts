@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 35;
+export const CURRENT_SCHEMA_VERSION = 36;
 
 const IdSchema = z.string().min(1);
 
@@ -36,11 +36,11 @@ export const ActionCostSchema = z.object({
 export const ActionCostTableSchema = z.record(z.string(), ActionCostSchema);
 
 export const DEFAULT_ACTION_COSTS = {
-  move_cross_region: { slotCost: 1 },
-  move_within_region: { slotCost: 0 },
-  work: { slotCost: 2 },
-  explore: { slotCost: 1 },
-  rest: { slotCost: 1 },
+  move_cross_region: { slotCost: 1, energyCost: 1 },
+  move_within_region: { slotCost: 0, energyCost: 0 },
+  work: { slotCost: 2, energyCost: 2 },
+  explore: { slotCost: 1, energyCost: 1 },
+  rest: { slotCost: 1, energyCost: 0 },
 } satisfies z.input<typeof ActionCostTableSchema>;
 
 export const AxisDefSchema = z.object({
@@ -371,6 +371,13 @@ export const JobRuleSchema = z.object({
   shiftSlotId: IdSchema,
 });
 
+export const EnergyRuleSchema = z.object({
+  statKey: StatKeySchema,
+  maxStatKey: StatKeySchema,
+  restRestoreStatKey: StatKeySchema,
+  enabledFlagKey: StatKeySchema,
+});
+
 export const EconomyStateV34Schema = z.object({
   defaultCurrencyId: IdSchema,
   currencies: z.record(IdSchema, CurrencyDefSchema),
@@ -388,7 +395,7 @@ export const EconomyStateV34Schema = z.object({
   }
 });
 
-export const EconomyStateSchema = EconomyStateV34Schema.extend({
+export const EconomyStateV35Schema = EconomyStateV34Schema.extend({
   jobRules: z.record(IdSchema, JobRuleSchema),
 }).superRefine((economy, context) => {
   for (const [id, rule] of Object.entries(economy.jobRules)) {
@@ -407,11 +414,27 @@ export const DEFAULT_ECONOMY_V34_STATE = {
   },
 } satisfies z.input<typeof EconomyStateV34Schema>;
 
-export const DEFAULT_ECONOMY_STATE = {
+export const DEFAULT_ECONOMY_V35_STATE = {
   ...DEFAULT_ECONOMY_V34_STATE,
   jobRules: {
     standard: { id: 'standard', name: '街区杂务班', currencyId: 'default', wageStatKey: 'economy.job.wage', shiftSlotId: 'morning' },
   },
+} satisfies z.input<typeof EconomyStateV35Schema>;
+
+export const DEFAULT_ENERGY_RULE = {
+  statKey: 'energy',
+  maxStatKey: 'economy.energy.max',
+  restRestoreStatKey: 'economy.energy.rest-restore',
+  enabledFlagKey: 'economy.energy.enabled',
+} satisfies z.input<typeof EnergyRuleSchema>;
+
+export const EconomyStateSchema = EconomyStateV35Schema.extend({
+  energyRule: EnergyRuleSchema,
+});
+
+export const DEFAULT_ECONOMY_STATE = {
+  ...DEFAULT_ECONOMY_V35_STATE,
+  energyRule: DEFAULT_ENERGY_RULE,
 } satisfies z.input<typeof EconomyStateSchema>;
 
 export const HousingContractSchema = z.object({
@@ -737,6 +760,9 @@ export const WorldV34Schema = WorldV33Schema.extend({
   economy: EconomyStateV34Schema,
 });
 export const WorldV35Schema = WorldV34Schema.extend({
+  economy: EconomyStateV35Schema,
+});
+export const WorldV36Schema = WorldV35Schema.extend({
   economy: EconomyStateSchema,
 });
 
@@ -775,12 +801,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV35Schema,
+  world: WorldV36Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV35Schema>;
+export type WorldState = z.infer<typeof WorldV36Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;
@@ -816,6 +842,7 @@ export type HousingContract = z.infer<typeof HousingContractSchema>;
 export type RentRule = z.infer<typeof RentRuleSchema>;
 export type JobContract = z.infer<typeof JobContractSchema>;
 export type JobRule = z.infer<typeof JobRuleSchema>;
+export type EnergyRule = z.infer<typeof EnergyRuleSchema>;
 export type StageRule = z.infer<typeof StageRuleSchema>;
 export type AxisDef = z.infer<typeof AxisDefSchema>;
 export type RelationState = z.infer<typeof RelationStateSchema>;

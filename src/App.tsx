@@ -48,6 +48,7 @@ import { settlementFinancialSummary, settlementRelationNumbers } from './ui/sett
 import { applyMorningNpcMoves, buildLocalMorningUpdate, buildMorningPrompt, hasMorningBrief, hasMorningUpdate, parseMorningUpdate, resolveMorningAdDestination } from './core/world/morning';
 import { findMatchingHooks, syncLeadHooks, triggerHook } from './core/world/hooks';
 import { createEconomyOpRegistry, formatCurrency, getJobQuote, getJobShiftStatus, getRentalQuote, injectEconomyMorningAds, registerEconomyHooks } from './features/economy';
+import { canAffordEnergy, energyCostForAction, getEnergyState, movementEnergyKind, registerEnergyOps } from './features/energy';
 import './ui/theme/app.css';
 
 type Tab = 'map' | 'day' | 'chat' | 'library' | 'settings';
@@ -134,7 +135,7 @@ const defaultSave: SaveFile = SaveFileSchema.parse({
   world: {
     clock: { day: 1, slotId: 'morning' },
     slotsUsedToday: 0,
-    player: { name: '旅人', nodeId: 'start', stats: { 'custom-reputation': 0, money: 0, 'economy.rent.amount': 10, 'economy.rent.interval-days': 7, 'economy.job.wage': 18 }, flags: {}, inventory: [] },
+    player: { name: '旅人', nodeId: 'start', stats: { 'custom-reputation': 0, money: 0, 'economy.rent.amount': 10, 'economy.rent.interval-days': 7, 'economy.job.wage': 18, energy: 6, 'economy.energy.max': 6, 'economy.energy.rest-restore': 2 }, flags: { 'economy.energy.enabled': true }, inventory: [] },
     stats: {}, flags: {},
     items: { 'white-flower': { id: 'white-flower', name: '白色小花', tags: ['flower'], description: '一朵可用于 Mock 验收的白色小花。', stackable: true, giftable: true } },
     relations: {}, characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [], topicTrees: {}, usedTopics: {}, appointments: [], eventDefs: {}, director: { scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: 1 }, eventHistory: [], chapters: [], milestones: [], storyScenes: [], collection: [], economy: structuredClone(DEFAULT_ECONOMY_STATE),
@@ -300,7 +301,11 @@ export function App() {
   }, [presentChatCharacters, selectedCharacterId]);
   const promptEvents = useMemo(() => new EventBus(), []);
   const opRegistry = useMemo(() => createDefaultOpRegistry(), []);
-  const economyOpRegistry = useMemo(() => createEconomyOpRegistry(), []);
+  const lifeOpRegistry = useMemo(() => {
+    const registry = createEconomyOpRegistry();
+    registerEnergyOps(registry);
+    return registry;
+  }, []);
   const assembler = useMemo(() => {
     const instance = new PromptAssembler();
     for (const block of createDefaultPromptBlocks(opRegistry.promptDocs())) instance.register(block);
@@ -324,9 +329,9 @@ export function App() {
     const unsubscribeSettle = promptEvents.subscribe('onDaySettle', ({ day, settlement, world }) => {
       settleAppointments(world ?? saveRef.current.world, day, settlement);
     });
-    const unsubscribeEconomy = registerEconomyHooks(promptEvents, economyOpRegistry);
+    const unsubscribeEconomy = registerEconomyHooks(promptEvents, lifeOpRegistry);
     return () => { unsubscribeEnter(); unsubscribeTime(); unsubscribeSettle(); unsubscribeEconomy(); };
-  }, [economyOpRegistry, promptEvents]);
+  }, [lifeOpRegistry, promptEvents]);
 
   function commitSave(next: SaveFile): void {
     const parsed = SaveFileSchema.parse({ ...next, meta: { ...next.meta, updatedAt: now() } });
@@ -529,6 +534,19 @@ export function App() {
 
   function runDayAction(kind: string): void {
     const next = structuredClone(saveRef.current);
+    const energyOp = kind === 'rest' ? { op: 'restore_energy' } : { op: 'spend_energy', kind };
+    const energyApplied = lifeOpRegistry.applyAll([energyOp], {
+      world: next.world,
+      day: next.world.clock.day,
+      slotId: next.world.clock.slotId,
+      nodeId: next.world.player.nodeId,
+      actionCosts: next.config.actionCosts,
+      log: () => undefined,
+    }, 1);
+    if (energyApplied.applied !== 1) {
+      setFeedback({ tone: 'error', text: energyApplied.rejected[0]?.reason ?? energyApplied.warnings[0] ?? '无法结算本次行动的体力。' });
+      return;
+    }
     const result = advanceAction(next.world, next.config.calendar, next.config.actionCosts, kind, promptEvents);
     commitSave(next);
     if (result.settledDays.length) void ensureMorningBrief(next.world.clock.day);
@@ -543,7 +561,7 @@ export function App() {
   function acceptRental(nodeId: string, rentRuleId = 'standard'): void {
     const next = structuredClone(saveRef.current);
     const logs: string[] = [];
-    const applied = economyOpRegistry.applyAll([{ op: 'accept_rental', nodeId, rentRuleId }], {
+    const applied = lifeOpRegistry.applyAll([{ op: 'accept_rental', nodeId, rentRuleId }], {
       world: next.world,
       day: next.world.clock.day,
       slotId: next.world.clock.slotId,
@@ -560,7 +578,7 @@ export function App() {
 
   function acceptJob(nodeId: string, jobRuleId = 'standard'): void {
     const next = structuredClone(saveRef.current);
-    const applied = economyOpRegistry.applyAll([{ op: 'accept_job', nodeId, jobRuleId }], {
+    const applied = lifeOpRegistry.applyAll([{ op: 'accept_job', nodeId, jobRuleId }], {
       world: next.world,
       day: next.world.clock.day,
       slotId: next.world.clock.slotId,
@@ -581,7 +599,7 @@ export function App() {
 
   function workJob(): void {
     const next = structuredClone(saveRef.current);
-    const applied = economyOpRegistry.applyAll([{ op: 'work_job' }], {
+    const applied = lifeOpRegistry.applyAll([{ op: 'spend_energy', kind: 'work' }, { op: 'work_job' }], {
       world: next.world,
       day: next.world.clock.day,
       slotId: next.world.clock.slotId,
@@ -590,8 +608,8 @@ export function App() {
       actionCosts: next.config.actionCosts,
       events: promptEvents,
       log: () => undefined,
-    }, 1);
-    if (applied.applied !== 1) {
+    }, 2);
+    if (applied.applied !== 2) {
       setFeedback({ tone: 'error', text: applied.rejected[0]?.reason ?? applied.warnings[0] ?? '当前无法开始班次。' });
       return;
     }
@@ -670,6 +688,21 @@ export function App() {
 
   function moveToNode(nodeId: string): boolean {
     const next = structuredClone(saveRef.current);
+    const energyKind = movementEnergyKind(next.world, nodeId);
+    if (energyKind) {
+      const energyApplied = lifeOpRegistry.applyAll([{ op: 'spend_energy', kind: energyKind }], {
+        world: next.world,
+        day: next.world.clock.day,
+        slotId: next.world.clock.slotId,
+        nodeId: next.world.player.nodeId,
+        actionCosts: next.config.actionCosts,
+        log: () => undefined,
+      }, 1);
+      if (energyApplied.applied !== 1) {
+        setFeedback({ tone: 'error', text: energyApplied.rejected[0]?.reason ?? energyApplied.warnings[0] ?? '体力不足，无法移动。' });
+        return false;
+      }
+    }
     const result = movePlayer(next.world, next.config.calendar, nodeId, promptEvents);
     if (!result.ok) {
       setFeedback({ tone: 'error', text: result.warning ?? '无法前往该地点。' });
@@ -687,7 +720,8 @@ export function App() {
     commitSave(next);
     setActiveEncounter(encounter.triggered && encounter.entry ? { entryId: encounter.entry.id, nodeId, scope: encounter.entry.scope, candidates: encounter.candidates } : null);
     setEncounterParticipantIds(encounter.triggered ? encounter.candidates.filter((candidate) => candidate.tier === 'formal' && characters.some((character) => character.id === candidate.id)).map((candidate) => candidate.id) : []);
-    const arrival = result.cost > 0 ? `已抵达${destination?.name ?? nodeId}，消耗 ${result.cost} 个时段。` : `已抵达${destination?.name ?? nodeId}。`;
+    const moveEnergyCost = energyKind ? energyCostForAction(saveRef.current.world, saveRef.current.config.actionCosts, energyKind) : 0;
+    const arrival = result.cost > 0 ? `已抵达${destination?.name ?? nodeId}，消耗 ${result.cost} 个时段${moveEnergyCost ? `、${moveEnergyCost} 点体力` : ''}。` : `已抵达${destination?.name ?? nodeId}${moveEnergyCost ? `，消耗 ${moveEnergyCost} 点体力` : ''}。`;
     const names = encounter.candidates.map((candidate) => candidate.name).join('、');
     const hookText = matchedHooks.length ? ` 晨报线索「${matchedHooks.map(({ hook }) => hook.title).join('、')}」在这里触发了。` : '';
     const eventText = localEvents.length ? ` 事件「${localEvents.map((result) => result.event?.title).join('、')}」已触发${localEvents.some((result) => result.content) ? `：${localEvents.map((result) => result.content).filter(Boolean).join(' ')}` : '。'}` : '';
@@ -1004,6 +1038,23 @@ export function App() {
     next.config.showNumbers = showNumbers;
     commitSave(next);
     setFeedback({ tone: 'success', text: showNumbers ? '结算页将显示关系数值明细。' : '结算页将只显示关系变化散文。' });
+  }
+
+  function setEnergyEnabled(enabled: boolean): void {
+    const next = structuredClone(saveRef.current);
+    const applied = lifeOpRegistry.applyAll([{ op: 'set_energy_enabled', enabled }], {
+      world: next.world,
+      day: next.world.clock.day,
+      slotId: next.world.clock.slotId,
+      nodeId: next.world.player.nodeId,
+      log: () => undefined,
+    }, 1);
+    if (applied.applied !== 1) {
+      setFeedback({ tone: 'error', text: applied.rejected[0]?.reason ?? applied.warnings[0] ?? '无法更新体力设置。' });
+      return;
+    }
+    commitSave(next);
+    setFeedback({ tone: 'success', text: enabled ? '体力限制已开启；行动会按成本表扣除体力。' : '体力限制已关闭；当前体力数值会保留。' });
   }
 
   function setMorningStyle(morningStyle: SaveFile['config']['morningStyle']): void {
@@ -1910,7 +1961,7 @@ export function App() {
       {tab === 'library' && <StorySceneLibraryView save={save} storyScenePresets={storyScenePresets} onSavePreset={saveStoryScenePresetCopy} onUpdatePreset={updateStoryScenePreset} onDeletePreset={removeStoryScenePreset} onCreateDraft={createStorySceneDraftFromInput} onEditDraft={editStorySceneDraft} onDeleteDraft={removeStorySceneDraft} onConfirmDraft={confirmStorySceneDraft} onAdvanceStage={advanceStoryScene} onSetStatus={setStorySceneStatus} onReadStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'read')} onSelectStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'select')} />}
       {tab === 'library' && <MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} />}
       {tab === 'library' && <CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} />}
-      {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
+      {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
     </main>
     <nav className="bottom-nav">{([['map', '地图'], ['day', '日程'], ['chat', '聊天'], ['library', '资料'], ['settings', '设置']] as const).map(([id, label]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
   </div>;
@@ -2093,6 +2144,10 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, o
   };
   const currentSlotName = save.config.calendar.slots.find((slot) => slot.id === save.world.clock.slotId)?.name ?? save.world.clock.slotId;
   const selectedMapNode = (selectedMapNodeId ? map.nodes[selectedMapNodeId] : undefined) ?? currentNode;
+  const energy = getEnergyState(save.world);
+  const selectedMoveEnergyKind = selectedMapNode ? movementEnergyKind(save.world, selectedMapNode.id) : undefined;
+  const selectedMoveEnergyCost = selectedMoveEnergyKind ? energyCostForAction(save.world, save.config.actionCosts, selectedMoveEnergyKind) : 0;
+  const selectedMoveAffordable = selectedMoveEnergyKind ? canAffordEnergy(save.world, save.config.actionCosts, selectedMoveEnergyKind) : true;
   const selectedScope = nodeScopeLabel(deriveNodeScope(selectedMapNode, save.world.clock.slotId));
   const progressForState = (state: MapSheetState) => state === 'expanded' ? 1 : state === 'half' ? 0.5 : 0;
   const stateForProgress = (progress: number): MapSheetState => progress >= 0.72 ? 'expanded' : progress > 0.04 ? 'half' : 'collapsed';
@@ -2155,7 +2210,7 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, o
   const sheetStyle = (progress: number) => ({ '--sheet-progress': progress } as CSSProperties);
   return <section className="map-screen">
     <div className="map-top-panel">
-      <div className="map-toolbar"><div className="map-title"><strong>{currentNode?.name ?? save.world.player.nodeId}</strong></div><div className="map-toolbar-meta"><span>第 {save.world.clock.day} 天 · {currentSlotName}</span><span>{map.view.mode === 'graph' ? 'Graph' : 'Hotspot'} · {Math.round(zoom * 100)}%</span></div></div>
+      <div className="map-toolbar"><div className="map-title"><strong>{currentNode?.name ?? save.world.player.nodeId}</strong></div><div className="map-toolbar-meta"><span>第 {save.world.clock.day} 天 · {currentSlotName}</span>{energy?.enabled && <span>体力 {energy.current}/{energy.max}</span>}<span>{map.view.mode === 'graph' ? 'Graph' : 'Hotspot'} · {Math.round(zoom * 100)}%</span></div></div>
       <div className="map-quick-actions" aria-label="地图快捷操作"><button type="button" className={`map-icon-button ${editorMode ? 'active' : ''}`} aria-label={editorMode ? '退出编辑地图' : '编辑地图'} title={editorMode ? '退出编辑地图' : '编辑地图'} onClick={() => { setEditorMode((value) => !value); closeEditor(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16.5V20h3.5L18.8 8.7l-3.5-3.5L4 16.5Z" /><path d="m14.3 6.7 3.5 3.5M4 20h16" /></svg></button><button type="button" className="map-icon-button" aria-label={`切换到 ${map.view.mode === 'graph' ? 'Hotspot' : 'Graph'}`} title={`切换到 ${map.view.mode === 'graph' ? 'Hotspot' : 'Graph'}`} onClick={onToggleMode}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5 12 3l8 2.5L12 8 4 5.5Z" /><path d="m4 12 8 3.5 8-3.5M4 16.5 12 20l8-3.5" /></svg></button></div>
     </div>
     <div ref={mapCanvasRef} className="map-canvas" onClick={handleMapCanvasClick} onWheel={mapWheel} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
@@ -2189,7 +2244,7 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, o
     </details>
     {selectedMapNodeId && <details ref={detailSheetRef} open={detailSheetProgress > 0.001} data-sheet-state={detailSheetState} data-sheet-dragging={sheetDraggingKind === 'detail' ? 'true' : undefined} style={sheetStyle(detailSheetProgress)} className="map-menu map-bottom-sheet map-detail-sheet">
       <summary onPointerDown={beginSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={handleSheetClick('detail')}><span>{selectedMapNode?.name ?? '地点详情'}</span><span>{detailSheetState === 'expanded' ? '向下收起' : '继续展开'}</span></summary>
-      <div className="map-menu-content"><div className="place-card"><span className="eyebrow">{selectedMapNode?.id === currentNode?.id ? '当前位置' : '地点详情'}</span><h2>{selectedMapNode?.name ?? save.world.player.nodeId}</h2><p>{selectedMapNode?.description ?? '从地图出发，去遇见今天的世界。'}</p>{selectedMapNode && <div className="place-details"><span>区域<strong>{map.regions[selectedMapNode.regionId]?.name ?? selectedMapNode.regionId}</strong></span><span>类型<strong>{selectedMapNode.kind.length ? selectedMapNode.kind.join('、') : '未分类'}</strong></span><span>开放<strong>{selectedMapNode.openSlots?.length ? selectedMapNode.openSlots.map((id) => save.config.calendar.slots.find((slot) => slot.id === id)?.name ?? id).join('、') : '始终开放'}</strong></span><span>范围<strong>{selectedScope}</strong></span></div>}<div className="button-row">{selectedMapNode && selectedMapNode.id !== currentNode?.id && <button onClick={() => onMove(selectedMapNode.id)}>前往此地</button>}{selectedMapNode && <span className="map-meta">访问 {selectedMapNode.visitCount} 次</span>}</div>{selectedMapNode && <PresenceList people={whoIsHere(save.world, selectedMapNode.id, save.world.clock.day, save.world.clock.slotId, save.config.calendar.daysPerWeek)} scope={selectedScope} />}<EncounterTraceList traces={selectedMapNode ? encounterTraces[selectedMapNode.id] ?? [] : []} /></div></div>
+      <div className="map-menu-content"><div className="place-card"><span className="eyebrow">{selectedMapNode?.id === currentNode?.id ? '当前位置' : '地点详情'}</span><h2>{selectedMapNode?.name ?? save.world.player.nodeId}</h2><p>{selectedMapNode?.description ?? '从地图出发，去遇见今天的世界。'}</p>{selectedMapNode && <div className="place-details"><span>区域<strong>{map.regions[selectedMapNode.regionId]?.name ?? selectedMapNode.regionId}</strong></span><span>类型<strong>{selectedMapNode.kind.length ? selectedMapNode.kind.join('、') : '未分类'}</strong></span><span>开放<strong>{selectedMapNode.openSlots?.length ? selectedMapNode.openSlots.map((id) => save.config.calendar.slots.find((slot) => slot.id === id)?.name ?? id).join('、') : '始终开放'}</strong></span><span>范围<strong>{selectedScope}</strong></span></div>}<div className="button-row">{selectedMapNode && selectedMapNode.id !== currentNode?.id && <button onClick={() => onMove(selectedMapNode.id)} disabled={!selectedMoveAffordable}>前往此地{energy?.enabled && <small>{selectedMoveAffordable ? `体力 -${selectedMoveEnergyCost}` : `体力不足 · 需要 ${selectedMoveEnergyCost}`}</small>}</button>}{selectedMapNode && <span className="map-meta">访问 {selectedMapNode.visitCount} 次</span>}</div>{selectedMapNode && <PresenceList people={whoIsHere(save.world, selectedMapNode.id, save.world.clock.day, save.world.clock.slotId, save.config.calendar.daysPerWeek)} scope={selectedScope} />}<EncounterTraceList traces={selectedMapNode ? encounterTraces[selectedMapNode.id] ?? [] : []} /></div></div>
     </details>}
   </section>;
 }
@@ -2234,13 +2289,14 @@ function DayView(props: { save: SaveFile; snapshots: SaveSnapshot[]; morningBrie
   const capacity = availableSlots(calendar);
   const used = props.save.world.slotsUsedToday;
   const remaining = Math.max(0, capacity - used);
+  const energy = getEnergyState(props.save.world);
   const latestSettlement = props.save.world.settlements.at(-1);
   const latestDiary = latestSettlement ? props.save.world.diary.find((entry) => entry.day === latestSettlement.day) : undefined;
   const archivedDiaries = [...props.save.world.diary].filter((entry) => entry.day !== latestDiary?.day).sort((a, b) => b.day - a.day);
   const slotName = calendar.slots.find((slot) => slot.id === props.save.world.clock.slotId)?.name ?? props.save.world.clock.slotId;
   const actionButtons = [
-    { kind: 'explore', label: '探索', cost: props.save.config.actionCosts.explore?.slotCost ?? 0 },
-    { kind: 'rest', label: '休息', cost: props.save.config.actionCosts.rest?.slotCost ?? 0 },
+    { kind: 'explore', label: '探索', cost: props.save.config.actionCosts.explore?.slotCost ?? 0, energyCost: energyCostForAction(props.save.world, props.save.config.actionCosts, 'explore'), affordable: canAffordEnergy(props.save.world, props.save.config.actionCosts, 'explore') },
+    { kind: 'rest', label: '休息', cost: props.save.config.actionCosts.rest?.slotCost ?? 0, energyCost: energyCostForAction(props.save.world, props.save.config.actionCosts, 'rest'), affordable: canAffordEnergy(props.save.world, props.save.config.actionCosts, 'rest') },
   ];
   const todayBriefs = props.morningBriefs.filter((entry) => entry.day === props.save.world.clock.day);
   const todayUpdate = props.morningUpdates.find((entry) => entry.day === props.save.world.clock.day);
@@ -2262,16 +2318,19 @@ function DayView(props: { save: SaveFile; snapshots: SaveSnapshot[]; morningBrie
   const jobShift = jobQuote ? calendar.slots.find((slot) => slot.id === jobQuote.rule.shiftSlotId) : undefined;
   const jobStatus = getJobShiftStatus(props.save.world, calendar);
   const workCost = props.save.config.actionCosts.work?.slotCost ?? 0;
-  const canWork = jobStatus === 'ready' && (calendar.unlimitedSlots || workCost <= remaining);
+  const workEnergyCost = energyCostForAction(props.save.world, props.save.config.actionCosts, 'work');
+  const hasWorkEnergy = canAffordEnergy(props.save.world, props.save.config.actionCosts, 'work');
+  const canWork = jobStatus === 'ready' && hasWorkEnergy && (calendar.unlimitedSlots || workCost <= remaining);
   const jobStatusText = {
     unemployed: '先在晨报接受岗位', invalid: '岗位配置无效', upcoming: `等待${jobShift?.name ?? '班次'}开始`, ready: '现在可以上班',
     wrong_node: `需先到${jobNode?.name ?? job?.nodeId ?? '工作地点'}`, worked: '今日班次已完成', missed: '今日班次已错过',
   }[jobStatus];
+  const workStatusText = jobStatus === 'ready' && !hasWorkEnergy ? `体力不足 · 需要 ${workEnergyCost}` : jobStatusText;
   const jobOfferNodeId = activeAd?.nodeId && props.save.world.map.nodes[activeAd.nodeId] ? activeAd.nodeId : props.save.world.player.nodeId;
   const jobOffer = getJobQuote(props.save.world, jobOfferNodeId);
   return <section>
     <div className="section-heading"><div><span className="eyebrow">生活节奏</span><h2>第 {props.save.world.clock.day} 天 · {slotName}</h2></div><span className="slot-count">{calendar.unlimitedSlots ? '无限时段' : `${used} / ${capacity}`}</span></div>
-    <div className="day-card"><label>每日节奏<select value={calendar.preset} disabled={used > 0} onChange={(event) => props.onPresetChange(event.target.value as SaveFile['config']['calendar']['preset'])}><option value="leisure">悠闲 · 6 时段</option><option value="standard">标准 · 4 时段</option><option value="tight">紧凑 · 3 时段</option><option value="sandbox">沙盒 · 不消耗</option></select></label><p className="io-scope">行动只修改本地确定性状态，不调用 API。节奏仅能在当天尚未行动时切换。</p>{housing && <p className="io-scope">住所：{housingNode?.name ?? housing.nodeId}{Number.isFinite(nextRentDay) ? ` · 下次租金第 ${nextRentDay} 天结算` : ''}</p>}{job && <p className="io-scope">工作：{jobQuote?.rule.name ?? job.jobRuleId} · {jobNode?.name ?? job.nodeId} · {jobShift?.name ?? jobQuote?.rule.shiftSlotId ?? '未知班次'}开班{jobQuote ? ` · 工资 ${formatCurrency(jobQuote.wage, jobQuote.currency)}` : ''}</p>}<div className="day-actions">{actionButtons.map((action) => <button key={action.kind} onClick={() => props.onAction(action.kind)} disabled={!calendar.unlimitedSlots && action.cost > remaining}>{action.label}<small>{calendar.unlimitedSlots ? '不消耗' : `${action.cost} 时段`}</small></button>)}<button onClick={props.onWorkJob} disabled={!canWork}>上班<small>{jobStatusText}{jobStatus === 'ready' ? ` · ${calendar.unlimitedSlots ? '不消耗' : `${workCost} 时段`}` : ''}</small></button><button className="secondary" onClick={props.onSleep}>推进世界<small>结算今天 · 进入下一天</small></button></div></div>
+    <div className="day-card"><label>每日节奏<select value={calendar.preset} disabled={used > 0} onChange={(event) => props.onPresetChange(event.target.value as SaveFile['config']['calendar']['preset'])}><option value="leisure">悠闲 · 6 时段</option><option value="standard">标准 · 4 时段</option><option value="tight">紧凑 · 3 时段</option><option value="sandbox">沙盒 · 不消耗</option></select></label><p className="io-scope">行动只修改本地确定性状态，不调用 API。节奏仅能在当天尚未行动时切换。</p>{energy && <p className="io-scope">体力：{energy.enabled ? `${energy.current} / ${energy.max} · 休息恢复 ${energy.restRestore}` : '限制已关闭 · 数值保留'}</p>}{housing && <p className="io-scope">住所：{housingNode?.name ?? housing.nodeId}{Number.isFinite(nextRentDay) ? ` · 下次租金第 ${nextRentDay} 天结算` : ''}</p>}{job && <p className="io-scope">工作：{jobQuote?.rule.name ?? job.jobRuleId} · {jobNode?.name ?? job.nodeId} · {jobShift?.name ?? jobQuote?.rule.shiftSlotId ?? '未知班次'}开班{jobQuote ? ` · 工资 ${formatCurrency(jobQuote.wage, jobQuote.currency)}` : ''}</p>}<div className="day-actions">{actionButtons.map((action) => <button key={action.kind} onClick={() => props.onAction(action.kind)} disabled={(!calendar.unlimitedSlots && action.cost > remaining) || !action.affordable}>{action.label}<small>{calendar.unlimitedSlots ? '不消耗时段' : `${action.cost} 时段`}{energy?.enabled ? ` · ${action.kind === 'rest' ? `恢复 ${energy.restRestore}` : `体力 -${action.energyCost}`}` : ''}</small></button>)}<button onClick={props.onWorkJob} disabled={!canWork}>上班<small>{workStatusText}{jobStatus === 'ready' && hasWorkEnergy ? ` · ${calendar.unlimitedSlots ? '不消耗时段' : `${workCost} 时段`}${energy?.enabled ? ` · 体力 -${workEnergyCost}` : ''}` : ''}</small></button><button className="secondary" onClick={props.onSleep}>推进世界<small>结算今天 · 进入下一天</small></button></div></div>
     <div className="morning-brief-card"><div className="list-heading"><div><span className="eyebrow">{morningPresentation.eyebrow}</span><h3>{morningPresentation.title}</h3></div><span className="io-scope">最多每日一次合并更新</span></div>{todayUpdate && <div className="morning-world-meta"><span>天气：{todayUpdate.weather.label}</span>{todayUpdate.worldNote && <span>{todayUpdate.worldNote}</span>}</div>}{todayBriefs.length ? <div className="morning-brief-list">{todayBriefs.map((entry) => { const destination = resolveMorningAdDestination(entry, props.save.world); const isJobAd = entry.category === 'ad' && entry.entryKind === 'job'; const isHousingAd = entry.category === 'ad' && entry.entryKind === 'housing'; const isShopTransferAd = entry.category === 'ad' && entry.entryKind === 'shop_transfer'; return <article key={entry.id} className={`morning-brief-entry morning-${entry.category}`}><span className="eyebrow">{entry.category}</span><strong>{entry.title}</strong><p>{entry.body}</p>{(destination || isJobAd || isHousingAd || isShopTransferAd) && <div className="morning-entry-actions">{destination && <button className="secondary" onClick={() => props.onMove(destination.id)}>前往{destination.name}</button>}{isJobAd && <button onClick={() => openAd(entry)}>查看招聘</button>}{isHousingAd && <button onClick={() => openAd(entry)}>查看住房</button>}{isShopTransferAd && <button onClick={() => openAd(entry)}>查看转让</button>}</div>}</article>; })}</div> : <p className="empty">{morningPresentation.empty}</p>}{activeAd?.entryKind === 'job' && <div className="morning-ad-entry"><div className="list-heading"><h3>招聘入口</h3><button className="secondary" onClick={() => setActiveAd(null)}>关闭</button></div><p>{activeAd.body}</p>{jobOffer ? <><p>{props.save.world.map.nodes[jobOffer.nodeId]?.name ?? jobOffer.nodeId} · {calendar.slots.find((slot) => slot.id === jobOffer.rule.shiftSlotId)?.name ?? jobOffer.rule.shiftSlotId}开班 · 完成班次获得 {formatCurrency(jobOffer.wage, jobOffer.currency)}。班次占用 {calendar.unlimitedSlots ? '0' : workCost} 个时段，错过班次则当天没有工资。</p><button onClick={() => { if (window.confirm(`确认接受${jobOffer.rule.name}？`)) { props.onAcceptJob(jobOffer.nodeId, jobOffer.rule.id); setActiveAd(null); } }} disabled={Boolean(job)}>{job ? '当前已有工作' : '接受这份工作'}</button></> : <p>当前世界没有可用的确定性岗位规则。</p>}</div>}{activeAd?.entryKind === 'housing' && <div className="morning-ad-entry"><div className="list-heading"><h3>住房入口</h3><button className="secondary" onClick={() => setActiveAd(null)}>关闭</button></div><p>{activeAd.body}</p><div className="morning-housing-options"><button className={housingMode === 'rent' ? 'selected' : ''} onClick={() => setHousingMode('rent')}>查看租房方案</button><button className={housingMode === 'buy' ? 'selected' : ''} onClick={() => setHousingMode('buy')}>查看买房方案</button></div>{housingMode === 'rent' && <div className="morning-housing-detail"><strong>租房方案</strong>{rentalQuote ? <><p>{props.save.world.map.nodes[rentalQuote.nodeId]?.name ?? rentalQuote.nodeId} · 每 {rentalQuote.intervalDays} 天支付 {formatCurrency(rentalQuote.amount, rentalQuote.currency)}（{rentalQuote.currency.name}）。余额不足时允许负数，不阻断游玩。</p><button onClick={() => { if (window.confirm(`确认入住并接受${rentalQuote.rule.name}？`)) { props.onAcceptRental(rentalQuote.nodeId, rentalQuote.rule.id); setActiveAd(null); } }} disabled={Boolean(housing)}>{housing ? '当前已有生效租约' : '确认入住'}</button></> : <p>当前世界没有可用的确定性租房规则。</p>}</div>}{housingMode === 'buy' && <div className="morning-housing-detail"><strong>买房方案</strong><p>购买产权与住所升级不在本切片实现。</p></div>}</div>}{activeAd?.entryKind === 'shop_transfer' && <div className="morning-ad-entry"><div className="list-heading"><h3>店铺转让入口</h3><button className="secondary" onClick={() => setActiveAd(null)}>关闭</button></div><p>{activeAd.body}</p><button onClick={() => setShopTransferOpen(true)}>查看转让方案</button>{shopTransferOpen && <div className="morning-housing-detail"><strong>转让方案</strong><p>这里会承接店铺位置、营业条件和转让说明。正式经营权、价格与资金结算将在后续开店切片落库。</p></div>}</div>}</div>
     <div className="day-card event-calendar-card"><div className="list-heading"><div><span className="eyebrow">日历</span><h3>已排程事件</h3></div><span className="io-scope">纯本地 · 不调用 API</span></div>{scheduledEvents.length ? <div className="event-calendar-list">{scheduledEvents.map((scheduled) => { const event = props.save.world.eventDefs[scheduled.eventId]; const revealed = Boolean(scheduled.revealed); const slot = calendar.slots.find((item) => item.id === scheduled.slotId); const node = props.save.world.map.nodes[scheduled.nodeId]; return <div className="list-row" key={scheduled.id}><span><strong>{revealed ? event?.title ?? scheduled.eventId : '未公开事件'}</strong><small>第 {scheduled.day} 天 · {slot?.name ?? scheduled.slotId}{revealed && ` · ${node?.name ?? scheduled.nodeId}`}</small></span>{revealed ? <span className="io-scope">已公开</span> : <button className="secondary" onClick={() => props.onRevealEvent(scheduled.id)}>公开线索</button>}</div>; })}</div> : <p className="empty">目前没有待触发事件。</p>}</div>
     <div className="day-card event-history-card"><div className="list-heading"><div><span className="eyebrow">事件回顾</span><h3>已触发事件</h3></div><div className="button-row"><span className="io-scope">只读事实 · 不回滚世界</span>{props.save.world.eventHistory.length > 0 && <><button className="secondary" onClick={props.onExportEventHistory}>导出事件档案</button><button className="danger" onClick={() => props.onDeleteEventHistory()}>删除全部</button></>}{props.canExportChatArchive && <button className="secondary" onClick={() => void props.onExportChatArchive()}>导出聊天档案</button>}</div></div>{props.save.world.eventHistory.length ? <div className="event-history-list">{[...props.save.world.eventHistory].reverse().map((entry) => { const node = props.save.world.map.nodes[entry.nodeId]; const slot = calendar.slots.find((item) => item.id === entry.slotId); const participants = entry.charIds.map((charId) => props.save.world.characters[charId]?.name ?? charId); const choices = props.save.world.eventDefs[entry.eventId]?.choices ?? []; return <details className="event-history-entry" key={entry.id}><summary><span><strong>{entry.title}</strong><small>第 {entry.day} 天 · {slot?.name ?? entry.slotId} · {node?.name ?? entry.nodeId}</small></span><span className="io-scope">{entry.scope === 'formal' ? '正式进入' : '外围'}</span></summary><div className="fold-body"><p>{entry.narrative ?? entry.content ?? '该事件没有附带叙述。'}</p>{entry.choice && <p><strong>选择：</strong>{entry.choice}</p>}{entry.resultSummary && <p><strong>结果：</strong>{entry.resultSummary}</p>}{!entry.choice && choices.length > 0 && <div className="button-row"><strong>选择结果：</strong>{choices.map((choice) => <button key={choice.id} onClick={() => props.onResolveEventChoice(entry.id, choice.id)}>{choice.label}</button>)}</div>}<small>事件 ID：{entry.eventId} · 参与者：{participants.length ? participants.join('、') : '无'}</small><div className="button-row"><button className="danger" onClick={() => props.onDeleteEventHistory(entry.id)}>删除这条回顾</button></div></div></details>; })}</div> : <p className="empty">触发事件后，这里会保留可回看的本地记录。</p>}</div>
@@ -2583,6 +2642,7 @@ function SettingsView(props: {
   setDebugTab: (tab: 'Prompt' | 'Raw' | 'Ops' | 'State') => void;
   save: SaveFile;
   onShowNumbersChange: (showNumbers: boolean) => void;
+  onEnergyEnabledChange: (enabled: boolean) => void;
   onMorningStyleChange: (style: SaveFile['config']['morningStyle']) => void;
   personas: Persona[];
   personaId: string;
@@ -2613,6 +2673,7 @@ function SettingsView(props: {
   onRunDevTool: (kind: 'seed' | 'days' | 'lead' | 'topic' | 'encounter') => void;
 }) {
   const isSaved = props.providers.some((item) => item.id === props.provider.id);
+  const energy = getEnergyState(props.save.world);
   return <section>
     <details className="fold-card" open><summary>玩家身份 · 面具身份</summary><div className="fold-body"><div className="provider-card persona-card"><div className="list-heading"><div><span className="eyebrow">玩家身份</span><h3>面具身份</h3></div><span className="io-scope">每个世界绑定一个</span></div><div className="persona-fields"><input placeholder="身份名称，例如：旅人" value={props.personaName} onChange={(event) => props.setPersonaName(event.target.value)} /><input placeholder="对话框称呼，例如：小明" value={props.personaDisplayName} onChange={(event) => props.setPersonaDisplayName(event.target.value)} /><textarea placeholder="自我描述（会注入面对面提示词）" value={props.personaDescription} onChange={(event) => props.setPersonaDescription(event.target.value)} /></div><div className="button-row"><button onClick={() => void props.onSavePersona()}>{props.personaEditingId ? '更新面具' : '保存面具'}</button><button className="secondary" onClick={() => { props.setPersonaEditingId(''); props.setPersonaName(''); props.setPersonaDisplayName(''); props.setPersonaDescription(''); }}>新建面具</button></div>{props.personas.length ? <div className="persona-list">{props.personas.map((persona) => <div className="list-row" key={persona.id}><span>{persona.name}<small>对话框：{persona.displayName}{persona.description ? ` · ${persona.description}` : ''}</small></span><span className="button-row"><button className={props.personaId === persona.id ? '' : 'secondary'} onClick={() => props.onBindPersona(persona.id)}>{props.personaId === persona.id ? '当前绑定' : '绑定'}</button><button className="secondary" onClick={() => { props.setPersonaEditingId(persona.id); props.setPersonaName(persona.name); props.setPersonaDisplayName(persona.displayName); props.setPersonaDescription(persona.description); }}>编辑</button><button className="danger" onClick={() => void props.onDeletePersona(persona.id)}>删除</button></span></div>)}</div> : <p className="empty">还没有面具身份，聊天名牌默认使用玩家名字。</p>}</div></div></details>
     <details className="fold-card" open><summary>Provider 配置 {props.requestStatus === 'requesting' ? '· 请求中' : ''}</summary><div className="fold-body"><div className="section-heading"><div><span className="eyebrow">本地设置</span><h2>Provider</h2></div>{props.requestStatus === 'requesting' && <span className="request-status requesting">请求中…</span>}</div>
@@ -2648,6 +2709,9 @@ function SettingsView(props: {
       <div className="stat-list">{Object.entries(props.save.world.player.stats).map(([key, value]) => <span key={key}>{key}: {value}</span>)}</div>
     </div></div></details>
     <details className="fold-card"><summary>显示选项</summary><div className="fold-body"><div className="provider-card">
+      <h3>生活资源</h3>
+      <label className="checkbox-line"><input type="checkbox" checked={energy?.enabled ?? false} disabled={!energy} onChange={(event) => props.onEnergyEnabledChange(event.target.checked)} />启用体力消耗</label>
+      <p className="io-scope">体力作为通用 stat 保存。关闭后行动不扣体力，当前数值仍保留；重新开启后继续使用。</p>
       <h3>结算显示</h3>
       <label className="checkbox-line"><input type="checkbox" checked={props.save.config.showNumbers} onChange={(event) => props.onShowNumbersChange(event.target.checked)} />显示关系数值明细</label>
       <p className="io-scope">默认关闭。关闭时关系变化只显示散文；开启后才显示各关系轴的原始变化量。</p>

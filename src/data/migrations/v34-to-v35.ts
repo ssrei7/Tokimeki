@@ -1,4 +1,4 @@
-import { DEFAULT_ECONOMY_STATE } from '../schema/save';
+import { DEFAULT_ECONOMY_V35_STATE } from '../schema/save';
 import type { Migration } from './types';
 
 /** v35 adds deterministic job rules, one active player job, and wage transactions. */
@@ -19,9 +19,9 @@ export const migrateV34ToV35: Migration = (input) => {
   if (typeof stats['economy.job.wage'] !== 'number') stats['economy.job.wage'] = 18;
   const shiftSlotId = typeof clock.slotId === 'string' && clock.slotId.trim()
     ? clock.slotId
-    : DEFAULT_ECONOMY_STATE.jobRules.standard.shiftSlotId;
+    : DEFAULT_ECONOMY_V35_STATE.jobRules.standard.shiftSlotId;
   economy.jobRules = {
-    standard: { ...DEFAULT_ECONOMY_STATE.jobRules.standard, shiftSlotId },
+    standard: { ...DEFAULT_ECONOMY_V35_STATE.jobRules.standard, shiftSlotId },
   };
 
   player.stats = stats;

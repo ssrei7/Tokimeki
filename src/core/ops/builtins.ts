@@ -10,6 +10,7 @@ import { evaluateGift, resolveRelationshipStageId } from '../relationship';
 import { evaluateCondition, type ConditionScope } from '../expr';
 import { makeAppointment } from '../appointments/op';
 import { scheduleEvent } from '../events/director';
+import { canAffordEnergy, energyCostForAction, getEnergyState, movementEnergyKind, spendEnergyForAction } from '../resources/energy';
 
 const StatTargetSchema = z.enum(['player', 'world']);
 const AddStatSchema = z.object({ op: z.literal('add_stat'), target: StatTargetSchema, key: z.string().min(1), delta: z.number().finite() });
@@ -101,11 +102,15 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     apply: (payload, context) => {
       if (!context.calendar) return { ok: false, changes: [], warning: 'Calendar is unavailable.' };
       if (payload.kind && !context.actionCosts?.[payload.kind]) return { ok: false, changes: [], warning: `Unknown action kind: ${payload.kind}.` };
+      const energy = payload.kind && context.actionCosts
+        ? spendEnergyForAction(context.world, context.actionCosts, payload.kind, payload.slots)
+        : { ok: true, changes: [] };
+      if (!energy.ok) return energy;
       const result = payload.kind
         ? advanceTime(context.world, context.calendar, Math.max(0, Math.floor((context.actionCosts ?? {})[payload.kind]?.slotCost ?? 0)) * payload.slots, context.events)
         : advanceTime(context.world, context.calendar, payload.slots, context.events);
-      if (result.advanced === 0) return { ok: true, changes: [], warning: context.calendar.unlimitedSlots ? 'Sandbox time does not consume slots.' : 'No time slots were advanced.' };
-      return { ok: true, changes: result.changes };
+      if (result.advanced === 0) return { ok: true, changes: energy.changes, warning: context.calendar.unlimitedSlots ? 'Sandbox time does not consume slots.' : 'No time slots were advanced.' };
+      return { ok: true, changes: [...energy.changes, ...result.changes] };
     },
   });
   registry.register({
@@ -114,12 +119,22 @@ export function registerBuiltInOps(registry: OpRegistry): void {
     describe: (payload) => `move player to ${payload.nodeId}`,
     apply: (payload, context) => {
       if (!context.calendar) return { ok: false, changes: [], warning: 'Calendar is unavailable.' };
+      const energyKind = movementEnergyKind(context.world, payload.nodeId);
+      if (energyKind && !context.actionCosts) return { ok: false, changes: [], warning: 'Action costs are unavailable.' };
+      if (energyKind && context.actionCosts && !canAffordEnergy(context.world, context.actionCosts, energyKind)) {
+        const energy = getEnergyState(context.world);
+        const cost = energyCostForAction(context.world, context.actionCosts, energyKind);
+        return { ok: false, changes: [], warning: energy ? `体力不足：需要 ${cost}，当前 ${energy.current}。可以休息恢复，或在设置中关闭体力限制。` : '当前世界的体力规则或通用 stat 无效。' };
+      }
       const result = movePlayer(context.world, context.calendar, payload.nodeId, context.events);
       if (!result.ok) return { ok: false, changes: result.changes, warning: result.warning };
+      const energy = energyKind && context.actionCosts
+        ? spendEnergyForAction(context.world, context.actionCosts, energyKind)
+        : { ok: true, changes: [] };
       const encounter = context.encounterConfig && context.world.map.nodes[payload.nodeId]
         ? triggerEncounter(context.world, context.encounterConfig, { nodeId: payload.nodeId, trigger: 'enter', daysPerWeek: context.calendar.daysPerWeek, events: context.events })
         : undefined;
-      return { ok: true, changes: [...result.changes, ...(encounter?.changes ?? [])], warning: result.warning };
+      return { ok: true, changes: [...result.changes, ...energy.changes, ...(encounter?.changes ?? [])], warning: result.warning };
     },
   });
   registry.register({

@@ -371,4 +371,29 @@ describe('save migrations', () => {
     expect(migrated.world.player.stats['economy.job.wage']).toBe(18);
     expect(migrated.world.player.job).toBeUndefined();
   });
+
+  it('migrates v35 saves with stat-backed energy, default costs, and an enabled flag', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v35-energy', title: 'v35 energy' }));
+    const { energyRule: _energyRule, ...legacyEconomy } = source.world.economy;
+    const legacyStats = { ...source.world.player.stats };
+    delete legacyStats.energy;
+    delete legacyStats['economy.energy.max'];
+    delete legacyStats['economy.energy.rest-restore'];
+    const legacyFlags = { ...source.world.player.flags };
+    delete legacyFlags['economy.energy.enabled'];
+    const legacyCosts = Object.fromEntries(Object.entries(source.config.actionCosts).map(([kind, cost]) => [kind, { slotCost: cost.slotCost }]));
+    legacyCosts.explore = { slotCost: 3 };
+    const migrated = migrateSave({
+      ...source,
+      schemaVersion: 35,
+      config: { ...source.config, actionCosts: legacyCosts },
+      world: { ...source.world, economy: legacyEconomy, player: { ...source.world.player, stats: legacyStats, flags: legacyFlags } },
+    });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.economy.energyRule).toMatchObject({ statKey: 'energy', enabledFlagKey: 'economy.energy.enabled' });
+    expect(migrated.world.player.stats).toMatchObject({ energy: 6, 'economy.energy.max': 6, 'economy.energy.rest-restore': 2 });
+    expect(migrated.world.player.flags['economy.energy.enabled']).toBe(true);
+    expect(migrated.config.actionCosts.explore).toEqual({ slotCost: 3, energyCost: 1 });
+    expect(migrated.config.actionCosts.work?.energyCost).toBe(2);
+  });
 });

@@ -60,8 +60,8 @@ export function createCurrentSaveScenario(options: CurrentSaveScenarioOptions): 
         player: {
           name: options.playerName ?? '测试玩家',
           nodeId: options.nodeId ?? 'start',
-          stats: { money: 0, 'economy.rent.amount': 10, 'economy.rent.interval-days': 7, 'economy.job.wage': 18, ...(options.stats ?? {}) },
-          flags: { ...(options.flags ?? {}) },
+          stats: { money: 0, 'economy.rent.amount': 10, 'economy.rent.interval-days': 7, 'economy.job.wage': 18, energy: 6, 'economy.energy.max': 6, 'economy.energy.rest-restore': 2, ...(options.stats ?? {}) },
+          flags: { 'economy.energy.enabled': true, ...(options.flags ?? {}) },
           inventory: [],
         },
         stats: {},

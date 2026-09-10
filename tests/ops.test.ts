@@ -9,7 +9,7 @@ function setup() {
   const logs: string[] = [];
   const context: OpContext = {
     world: save.world, actorId: 'seir', day: 3, slotId: 'evening', nodeId: 'docks',
-    log: (message: string) => logs.push(message), calendar: undefined, actionCosts: undefined,
+    log: (message: string) => logs.push(message), calendar: undefined, actionCosts: save.config.actionCosts,
   };
   return {
     registry: createDefaultOpRegistry(),
