@@ -1,8 +1,45 @@
 import { describe, expect, it } from 'vitest';
-import { advanceStorySceneStage, buildLocalChapterSummary, confirmStoryScene, createStorySceneDraft, formatChatArchive, formatEventHistoryArchive, updateStorySceneStatus, upsertChapterSummary, upsertMilestone } from '../src/core/story';
+import { advanceStorySceneStage, buildLocalChapterSummary, confirmStoryScene, copyStoryScenePreset, createBuiltinStoryScenePresets, createStorySceneDraft, formatChatArchive, formatEventHistoryArchive, generateStorySceneDraftInput, updateStorySceneStatus, upsertChapterSummary, upsertMilestone } from '../src/core/story';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 describe('local chapter summaries and milestones', () => {
+  it('generates a deterministic reviewable StoryScene draft from a short intent without API calls', () => {
+    const generated = generateStorySceneDraftInput({
+      id: 'generated-draft', intent: '寻找失踪的信件', participantIds: ['seir', 'rin'], participantNames: ['塞伊尔', '凛'], nodeId: 'start', nodeName: '旧码头',
+    });
+    expect(generated).toMatchObject({ id: 'generated-draft', source: 'keywords', title: '寻找失踪的信件', participantIds: ['seir', 'rin'] });
+    expect(generated.outline).toContain('寻找失踪的信件');
+    expect(generated.outline).toContain('旧码头');
+    expect(generated.stages).toHaveLength(3);
+    expect(generateStorySceneDraftInput({ id: 'generated-draft', intent: '寻找失踪的信件', participantIds: ['seir', 'rin'], participantNames: ['塞伊尔', '凛'], nodeId: 'start', nodeName: '旧码头' })).toEqual(generated);
+  });
+
+  it('lets a detailed outline override the keyword template', () => {
+    const generated = generateStorySceneDraftInput({
+      id: 'outline-draft', intent: '码头重逢', detailedOutline: '第一幕在雨中重逢，第二幕共同寻找避雨处。', participantIds: ['seir'], nodeId: 'start',
+    });
+    expect(generated.source).toBe('outline');
+    expect(generated.outline).toBe('第一幕在雨中重逢，第二幕共同寻找避雨处。');
+    expect(generated.stages).toEqual([{ id: 'opening', title: '开场', content: '第一幕在雨中重逢，第二幕共同寻找避雨处。' }]);
+  });
+
+  it('copies local StoryScene presets without mutating the built-in original', () => {
+    const originals = createBuiltinStoryScenePresets();
+    const copy = copyStoryScenePreset(originals[0], 'my-three-act');
+    copy.name = '我的三幕故事';
+    copy.stages[0].title = '自定义开场';
+    expect(copy).toMatchObject({ id: 'my-three-act', builtin: false, sourcePresetId: originals[0].id });
+    expect(createBuiltinStoryScenePresets()[0]).toEqual(originals[0]);
+    expect(originals[0].stages[0].title).toBe('相遇');
+  });
+
+  it('passes generated StoryScene drafts through the existing deterministic validator', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'generated-story-scene', title: 'Generated story scene' }));
+    save.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '码头青年', personality: '安静' }, visuals: { portraits: [] } };
+    const generated = generateStorySceneDraftInput({ id: 'generated-valid', intent: '一起等待日出', participantIds: ['seir'], nodeId: 'start' });
+    expect(createStorySceneDraft(save.world, save.config.calendar, generated)).toMatchObject({ ok: true, scene: { status: 'draft', source: 'keywords' } });
+  });
+
   it('persists a reviewable StoryScene draft and confirms it only after deterministic validation', () => {
     const save = seedScenario(createCurrentSaveScenario({ id: 'story-scene', title: 'Story scene' }));
     save.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '码头青年', personality: '安静' }, visuals: { portraits: [] } };
