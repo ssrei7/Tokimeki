@@ -651,6 +651,8 @@ interface EconomyState {
   jobRules: Record<Id, JobRule>;
   energyRule: EnergyRule;
   shopRules: Record<Id, ShopRule>;
+  housingTiers: Record<Id, HousingTier>;
+  housingUpgradeRules: Record<Id, HousingUpgradeRule>;
 }
 
 interface EnergyRule {
@@ -665,6 +667,21 @@ interface HousingContract {
   nodeId: NodeId;
   rentRuleId: Id;
   nextDueDayStatKey: string;     // 下次到期日仍由通用 stat 持有
+  tierId: Id;                    // 当前住所等级；等级定义来自 economy.housingTiers
+}
+
+interface HousingTier {
+  id: Id;
+  name: string;
+}
+
+interface HousingUpgradeRule {
+  id: Id;
+  name: string;
+  fromTierId: Id;
+  toTierId: Id;
+  currencyId: Id;
+  costStatKey: string;            // 升级费用来自 player.stats
 }
 
 interface JobRule {
@@ -696,7 +713,7 @@ interface ShopContract {
 
 interface EconomyTransaction {
   id: Id;
-  kind: 'rent' | 'wage';
+  kind: 'rent' | 'wage' | 'housing_upgrade';
   currencyId: Id;
   statKey: string;
   amount: number;
@@ -713,6 +730,8 @@ v35 增加一个生效工作契约。接受岗位、开始班次和工资结算�
 v36 启用成本表中的 `energyCost`。体力当前值、上限与休息恢复量仍是 `player.stats` 中的普通数值，开关仍是 `player.flags` 中的普通布尔值；`EnergyRule` 只保存这些 key，不新增专用数值字段。默认体力为 6/6，休息恢复 2；跨区域移动、工作、探索默认分别消耗 1、2、1，区内移动和休息不消耗。体力不足时只阻止对应行动，休息始终可恢复，设置页可关闭限制且保留现有数值。UI 本地行动与叙事 `advance_time` / `move_player` ops 使用同一确定性校验，AI 不能通过提出已有 op 绕过成本。
 
 v37 增加 `ShopRule`、唯一生效 `player.shop` 与 `operate_shop` 成本。接手店铺和开始营业均由本地白名单 op 校验已发现节点、当前日历、营业时段、位置、剩余时段与体力；每日营业状态写入通用 flag，日结后清除并把累计营业天数写入规则指向的普通 stat。营业覆盖的时段内，内核只从既有角色/NPC 日程筛选实际到店者，并以 `shop_visit` 写入普通相遇记录；没有已排程访客时允许正常营业，不调用 AI 补造角色。销售收入、商品库存和定价不在本切片实现。
+
+v38 增加数据驱动的住所等级与升级规则。租约保存 `tierId`，默认从 `basic`（简朴住所）开始；升级规则通过 `fromTierId` / `toTierId`、货币 ID 与费用 stat key 声明，不在 core 或 UI 写死金额。玩家必须位于住所节点且余额足够，才能由本地确认的 `request_housing_upgrade` 安排升级；请求不消耗时段、不立即扣款。`onDaySettle` 按住所升级 → 房租 → 工资 → 店铺营业的顺序执行内部结算，升级成功后扣除配置货币、切换等级、写入 `housing_upgrade` 交易并更新 expense 与日记；余额不足或配置失效只拒绝该结算，不阻断其他生活循环。升级入口复用日程页的住所折叠详情，不新增页面入口。v37→v38 migration 为旧租约补 `basic` 等级、默认等级/规则与费用 stat，旧存档继续可读。
 
 ---
 

@@ -415,4 +415,30 @@ describe('save migrations', () => {
     expect(migrated.world.player.shop).toBeUndefined();
     expect(migrated.config.actionCosts.operate_shop).toEqual({ slotCost: 2, energyCost: 2 });
   });
+
+  it('migrates v37 saves with housing tiers, a stat-backed upgrade cost, and a basic tier for existing rentals', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v37-housing-upgrade', title: 'v37 housing upgrade' }));
+    const { housingTiers: _housingTiers, housingUpgradeRules: _housingUpgradeRules, ...legacyEconomy } = source.world.economy;
+    const legacyStats = { ...source.world.player.stats };
+    delete legacyStats['economy.housing.upgrade.basic-to-settled.cost'];
+    const migrated = migrateSave({
+      ...source,
+      schemaVersion: 37,
+      world: {
+        ...source.world,
+        economy: legacyEconomy,
+        player: {
+          ...source.world.player,
+          homeNodeId: 'start',
+          housing: { id: 'rental-start', nodeId: 'start', rentRuleId: 'standard', nextDueDayStatKey: 'economy.rent.next-due-day' },
+          stats: legacyStats,
+        },
+      },
+    });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.economy.housingTiers).toMatchObject({ basic: { name: '简朴住所' }, settled: { name: '安稳住所' } });
+    expect(migrated.world.economy.housingUpgradeRules['basic-to-settled']).toMatchObject({ fromTierId: 'basic', toTierId: 'settled', currencyId: 'default' });
+    expect(migrated.world.player.stats['economy.housing.upgrade.basic-to-settled.cost']).toBe(30);
+    expect(migrated.world.player.housing?.tierId).toBe('basic');
+  });
 });

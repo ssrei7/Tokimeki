@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EventBus } from '../src/core/events/bus';
 import { advanceAction, endDay } from '../src/core/time';
-import { createEconomyOpRegistry, getJobQuote, getJobShiftStatus, getRentalQuote, getShopOffer, getShopStatus, injectEconomyMorningAds, registerEconomyHooks } from '../src/features/economy';
+import { createEconomyOpRegistry, getHousingTier, getHousingUpgradeOffer, getJobQuote, getJobShiftStatus, getRentalQuote, getShopOffer, getShopStatus, injectEconomyMorningAds, registerEconomyHooks } from '../src/features/economy';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import { SaveFileSchema } from '../src/data/schema/save';
 
@@ -39,6 +39,15 @@ describe('stage 8 economy and rent slice', () => {
     expect(SaveFileSchema.safeParse(save).success).toBe(false);
   });
 
+  it('rejects housing upgrades with unstable ids or broken tier references', () => {
+    const { save } = setup();
+    save.world.economy.housingUpgradeRules['basic-to-settled'].id = 'different';
+    expect(SaveFileSchema.safeParse(save).success).toBe(false);
+    save.world.economy.housingUpgradeRules['basic-to-settled'].id = 'basic-to-settled';
+    save.world.economy.housingUpgradeRules['basic-to-settled'].toTierId = 'missing';
+    expect(SaveFileSchema.safeParse(save).success).toBe(false);
+  });
+
   it('uses configured currency metadata and a stat-backed wage without trusting ad text', () => {
     const { save } = setup();
     save.world.economy.currencies.default = { id: 'default', name: '贝壳', symbol: '◇', decimals: 0, statKey: 'shells' };
@@ -54,7 +63,7 @@ describe('stage 8 economy and rent slice', () => {
     }, 1);
     expect(applied.applied).toBe(1);
     expect(save.world.player.homeNodeId).toBe('start');
-    expect(save.world.player.housing).toMatchObject({ nodeId: 'start', rentRuleId: 'standard' });
+    expect(save.world.player.housing).toMatchObject({ nodeId: 'start', rentRuleId: 'standard', tierId: 'basic' });
     expect(save.world.player.stats['economy.rent.next-due-day']).toBe(8);
     expect(registry.applyAll([{ op: 'accept_rental', nodeId: 'start' }], { world: save.world, day: 1, slotId: 'morning', nodeId: 'start', log: () => undefined }, 1).rejected).toHaveLength(1);
   });
@@ -84,7 +93,7 @@ describe('stage 8 economy and rent slice', () => {
       expect.objectContaining({ category: 'ad', entryKind: 'job', nodeId: 'start', source: 'local' }),
       expect.objectContaining({ category: 'ad', entryKind: 'shop_transfer', nodeId: 'start', source: 'local' }),
     ]));
-    save.world.player.housing = { id: 'rental-start', nodeId: 'start', rentRuleId: 'standard', nextDueDayStatKey: 'economy.rent.next-due-day' };
+    save.world.player.housing = { id: 'rental-start', nodeId: 'start', rentRuleId: 'standard', nextDueDayStatKey: 'economy.rent.next-due-day', tierId: 'basic' };
     save.world.player.job = { id: 'job-start-standard', nodeId: 'start', jobRuleId: 'standard' };
     save.world.player.shop = { id: 'shop-start-standard', nodeId: 'start', shopRuleId: 'standard' };
     expect(injectEconomyMorningAds(entries, save.world, 1)).toEqual(entries);
@@ -150,6 +159,43 @@ describe('stage 8 economy and rent slice', () => {
     expect(save.world.player.stats.money).toBe(0);
     expect(settlement.income).toBe(0);
     expect(settlement.economyTransactions).toEqual([]);
+  });
+
+  it('arranges a stat-backed housing upgrade only at home and settles its configured effect', () => {
+    const { save, registry } = setup();
+    const bus = new EventBus();
+    registerEconomyHooks(bus, registry);
+    const context = { world: save.world, day: 1, slotId: 'morning', nodeId: 'start', log: () => undefined };
+    registry.applyAll([{ op: 'accept_rental', nodeId: 'start' }], context, 1);
+    save.world.player.stats.money = 30;
+    expect(getHousingTier(save.world)?.name).toBe('简朴住所');
+    expect(getHousingUpgradeOffer(save.world)).toMatchObject({ cost: 30, balance: 30, affordable: true, requested: false, nextTier: { id: 'settled' } });
+
+    save.world.player.nodeId = 'docks';
+    expect(registry.applyAll([{ op: 'request_housing_upgrade', upgradeRuleId: 'basic-to-settled' }], { ...context, nodeId: 'docks' }, 1).rejected[0]?.reason).toContain('at home');
+    save.world.player.nodeId = 'start';
+    expect(registry.applyAll([{ op: 'request_housing_upgrade', upgradeRuleId: 'basic-to-settled' }], context, 1).applied).toBe(1);
+    expect(getHousingUpgradeOffer(save.world)?.requested).toBe(true);
+    expect(save.world.player.stats.money).toBe(30);
+    expect(save.world.player.housing?.tierId).toBe('basic');
+
+    const settlement = endDay(save.world, save.config.calendar, bus);
+    expect(save.world.player.stats.money).toBe(0);
+    expect(save.world.player.housing?.tierId).toBe('settled');
+    expect(getHousingTier(save.world)?.name).toBe('安稳住所');
+    expect(getHousingUpgradeOffer(save.world)).toBeUndefined();
+    expect(settlement.expense).toBe(30);
+    expect(settlement.economyTransactions).toEqual([expect.objectContaining({ kind: 'housing_upgrade', amount: 30, balanceBefore: 30, balanceAfter: 0 })]);
+    expect(settlement.diary).toContain('布置成了安稳住所');
+  });
+
+  it('rejects a housing upgrade when its configured currency balance is insufficient', () => {
+    const { save, registry } = setup();
+    registry.applyAll([{ op: 'accept_rental', nodeId: 'start' }], { world: save.world, day: 1, slotId: 'morning', nodeId: 'start', log: () => undefined }, 1);
+    save.world.player.stats.money = 29;
+    const result = registry.applyAll([{ op: 'request_housing_upgrade', upgradeRuleId: 'basic-to-settled' }], { world: save.world, day: 1, slotId: 'morning', nodeId: 'start', log: () => undefined }, 1);
+    expect(result.rejected[0]?.reason).toContain('¤30');
+    expect(Object.keys(save.world.player.flags).some((key) => key.includes('housing.upgrade'))).toBe(false);
   });
 
   it('accepts one node-bound shop and derives business availability from configured slots', () => {

@@ -1,3 +1,3 @@
 export { createEconomyOpRegistry, registerEconomyOps } from './ops';
 export { registerEconomyHooks } from './register';
-export { formatCurrency, getJobQuote, getJobShiftStatus, getRentalQuote, getShopOffer, getShopStatus, injectEconomyMorningAds, jobWorkFlagKey, shopOpenFlagKey, shopOperationSlotIds } from './model';
+export { formatCurrency, getHousingTier, getHousingUpgradeOffer, getJobQuote, getJobShiftStatus, getRentalQuote, getShopOffer, getShopStatus, housingUpgradeRequestFlagKey, injectEconomyMorningAds, jobWorkFlagKey, shopOpenFlagKey, shopOperationSlotIds } from './model';

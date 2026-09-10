@@ -32,4 +32,12 @@ describe('settlement relation display', () => {
     };
     expect(settlementFinancialSummary(settlement, DEFAULT_ECONOMY_STATE)).toBe('工资 +¤18');
   });
+
+  it('formats housing upgrades as configured expenses', () => {
+    const settlement: DailySettlement = {
+      day: 9, footprint: ['start'], met: [], relationChanges: [], income: 0, expense: 30, itemsGained: [], appointmentsTomorrow: [], diary: '',
+      economyTransactions: [{ id: 'housing-upgrade-9-1', kind: 'housing_upgrade', currencyId: 'default', statKey: 'money', amount: 30, balanceBefore: 30, balanceAfter: 0, description: '住所升级 ¤30' }],
+    };
+    expect(settlementFinancialSummary(settlement, DEFAULT_ECONOMY_STATE)).toBe('住所升级 -¤30');
+  });
 });

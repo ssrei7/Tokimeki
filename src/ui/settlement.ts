@@ -16,9 +16,9 @@ export function settlementFinancialSummary(settlement: DailySettlement, economy:
     return settlement.economyTransactions.map((transaction) => {
       const currency = economy.currencies[transaction.currencyId];
       if (!currency) return transaction.description;
-      return transaction.kind === 'rent'
-        ? `房租 -${formatCurrency(transaction.amount, currency)}`
-        : `工资 +${formatCurrency(transaction.amount, currency)}`;
+      if (transaction.kind === 'rent') return `房租 -${formatCurrency(transaction.amount, currency)}`;
+      if (transaction.kind === 'housing_upgrade') return `住所升级 -${formatCurrency(transaction.amount, currency)}`;
+      return `工资 +${formatCurrency(transaction.amount, currency)}`;
     }).join(' · ');
   }
   const currency = economy.currencies[economy.defaultCurrencyId];

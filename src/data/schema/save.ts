@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 37;
+export const CURRENT_SCHEMA_VERSION = 38;
 
 const IdSchema = z.string().min(1);
 
@@ -379,6 +379,20 @@ export const ShopRuleSchema = z.object({
   openDaysStatKey: StatKeySchema,
 });
 
+export const HousingTierSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(120),
+});
+
+export const HousingUpgradeRuleSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(120),
+  fromTierId: IdSchema,
+  toTierId: IdSchema,
+  currencyId: IdSchema,
+  costStatKey: StatKeySchema,
+});
+
 export const EnergyRuleSchema = z.object({
   statKey: StatKeySchema,
   maxStatKey: StatKeySchema,
@@ -452,7 +466,7 @@ export const DEFAULT_SHOP_RULE = {
   openDaysStatKey: 'economy.shop.days-open',
 } satisfies z.input<typeof ShopRuleSchema>;
 
-export const EconomyStateSchema = EconomyStateV36Schema.extend({
+export const EconomyStateV37Schema = EconomyStateV36Schema.extend({
   shopRules: z.record(IdSchema, ShopRuleSchema),
 }).superRefine((economy, context) => {
   for (const [id, rule] of Object.entries(economy.shopRules)) {
@@ -460,9 +474,45 @@ export const EconomyStateSchema = EconomyStateV36Schema.extend({
   }
 });
 
-export const DEFAULT_ECONOMY_STATE = {
+export const DEFAULT_ECONOMY_V37_STATE = {
   ...DEFAULT_ECONOMY_V36_STATE,
   shopRules: { standard: DEFAULT_SHOP_RULE },
+} satisfies z.input<typeof EconomyStateV37Schema>;
+
+export const DEFAULT_HOUSING_TIERS = {
+  basic: { id: 'basic', name: '简朴住所' },
+  settled: { id: 'settled', name: '安稳住所' },
+} satisfies Record<string, z.input<typeof HousingTierSchema>>;
+
+export const DEFAULT_HOUSING_UPGRADE_RULE = {
+  id: 'basic-to-settled',
+  name: '布置成安稳住所',
+  fromTierId: 'basic',
+  toTierId: 'settled',
+  currencyId: 'default',
+  costStatKey: 'economy.housing.upgrade.basic-to-settled.cost',
+} satisfies z.input<typeof HousingUpgradeRuleSchema>;
+
+export const EconomyStateSchema = EconomyStateV37Schema.extend({
+  housingTiers: z.record(IdSchema, HousingTierSchema),
+  housingUpgradeRules: z.record(IdSchema, HousingUpgradeRuleSchema),
+}).superRefine((economy, context) => {
+  for (const [id, tier] of Object.entries(economy.housingTiers)) {
+    if (tier.id !== id) context.addIssue({ code: 'custom', path: ['housingTiers', id, 'id'], message: 'Housing tier record key must match its stable id.' });
+  }
+  for (const [id, rule] of Object.entries(economy.housingUpgradeRules)) {
+    if (rule.id !== id) context.addIssue({ code: 'custom', path: ['housingUpgradeRules', id, 'id'], message: 'Housing upgrade rule record key must match its stable id.' });
+    if (!economy.housingTiers[rule.fromTierId]) context.addIssue({ code: 'custom', path: ['housingUpgradeRules', id, 'fromTierId'], message: 'Housing upgrade must reference a configured source tier.' });
+    if (!economy.housingTiers[rule.toTierId]) context.addIssue({ code: 'custom', path: ['housingUpgradeRules', id, 'toTierId'], message: 'Housing upgrade must reference a configured target tier.' });
+    if (rule.fromTierId === rule.toTierId) context.addIssue({ code: 'custom', path: ['housingUpgradeRules', id, 'toTierId'], message: 'Housing upgrade must change the housing tier.' });
+    if (!economy.currencies[rule.currencyId]) context.addIssue({ code: 'custom', path: ['housingUpgradeRules', id, 'currencyId'], message: 'Housing upgrade must reference a configured currency.' });
+  }
+});
+
+export const DEFAULT_ECONOMY_STATE = {
+  ...DEFAULT_ECONOMY_V37_STATE,
+  housingTiers: DEFAULT_HOUSING_TIERS,
+  housingUpgradeRules: { [DEFAULT_HOUSING_UPGRADE_RULE.id]: DEFAULT_HOUSING_UPGRADE_RULE },
 } satisfies z.input<typeof EconomyStateSchema>;
 
 export const HousingContractSchema = z.object({
@@ -470,6 +520,7 @@ export const HousingContractSchema = z.object({
   nodeId: IdSchema,
   rentRuleId: IdSchema,
   nextDueDayStatKey: StatKeySchema,
+  tierId: IdSchema,
 });
 
 export const JobContractSchema = z.object({
@@ -486,7 +537,7 @@ export const ShopContractSchema = z.object({
 
 export const EconomyTransactionSchema = z.object({
   id: IdSchema,
-  kind: z.enum(['rent', 'wage']),
+  kind: z.enum(['rent', 'wage', 'housing_upgrade']),
   currencyId: IdSchema,
   statKey: StatKeySchema,
   amount: z.number().finite().nonnegative(),
@@ -801,6 +852,9 @@ export const WorldV36Schema = WorldV35Schema.extend({
   economy: EconomyStateV36Schema,
 });
 export const WorldV37Schema = WorldV36Schema.extend({
+  economy: EconomyStateV37Schema,
+});
+export const WorldV38Schema = WorldV37Schema.extend({
   economy: EconomyStateSchema,
 });
 
@@ -839,12 +893,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV37Schema,
+  world: WorldV38Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV37Schema>;
+export type WorldState = z.infer<typeof WorldV38Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;
@@ -877,6 +931,8 @@ export type CurrencyDef = z.infer<typeof CurrencyDefSchema>;
 export type EconomyState = z.infer<typeof EconomyStateSchema>;
 export type EconomyTransaction = z.infer<typeof EconomyTransactionSchema>;
 export type HousingContract = z.infer<typeof HousingContractSchema>;
+export type HousingTier = z.infer<typeof HousingTierSchema>;
+export type HousingUpgradeRule = z.infer<typeof HousingUpgradeRuleSchema>;
 export type RentRule = z.infer<typeof RentRuleSchema>;
 export type JobContract = z.infer<typeof JobContractSchema>;
 export type JobRule = z.infer<typeof JobRuleSchema>;

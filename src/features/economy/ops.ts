@@ -3,7 +3,7 @@ import type { OpContext, OpResult } from '../../core/ops/types';
 import { OpRegistry } from '../../core/ops/registry';
 import { availableSlots } from '../../core/time';
 import { triggerEncounter } from '../../core/encounter';
-import { formatCurrency, getJobQuote, getJobShiftStatus, getRentalQuote, getShopOffer, getShopStatus, jobWorkFlagKey, shopOpenFlagKey, shopOperationSlotIds } from './model';
+import { formatCurrency, getHousingUpgradeOffer, getJobQuote, getJobShiftStatus, getRentalQuote, getShopOffer, getShopStatus, housingUpgradeRequestFlagKey, jobWorkFlagKey, shopOpenFlagKey, shopOperationSlotIds } from './model';
 
 const AcceptRentalSchema = z.object({
   op: z.literal('accept_rental'),
@@ -41,6 +41,15 @@ const OperateShopSchema = z.object({
 
 const SettleShopDaySchema = z.object({
   op: z.literal('settle_shop_day'),
+});
+
+const RequestHousingUpgradeSchema = z.object({
+  op: z.literal('request_housing_upgrade'),
+  upgradeRuleId: z.string().min(1),
+});
+
+const SettleHousingUpgradeSchema = z.object({
+  op: z.literal('settle_housing_upgrade'),
 });
 
 export function createEconomyOpRegistry(): OpRegistry {
@@ -114,6 +123,22 @@ export function registerEconomyOps(registry: OpRegistry): void {
     describe: () => 'settle the current shop day',
     apply: (_payload, context) => settleShopDay(context),
   });
+  registry.register({
+    op: 'request_housing_upgrade',
+    schema: RequestHousingUpgradeSchema,
+    clamp: {},
+    promptDoc: 'request_housing_upgrade is a local user-confirmed command and is not exposed to narrative providers.',
+    describe: (payload) => `request housing upgrade ${payload.upgradeRuleId}`,
+    apply: (payload, context) => requestHousingUpgrade(payload, context),
+  });
+  registry.register({
+    op: 'settle_housing_upgrade',
+    schema: SettleHousingUpgradeSchema,
+    clamp: {},
+    promptDoc: 'settle_housing_upgrade is an internal onDaySettle command and is not exposed to narrative providers.',
+    describe: () => 'settle the requested housing upgrade',
+    apply: (_payload, context) => settleHousingUpgrade(context),
+  });
 }
 
 function acceptRental(payload: z.infer<typeof AcceptRentalSchema>, context: OpContext): OpResult {
@@ -124,7 +149,7 @@ function acceptRental(payload: z.infer<typeof AcceptRentalSchema>, context: OpCo
   const beforeHome = context.world.player.homeNodeId;
   const beforeDue = context.world.player.stats[nextDueDayStatKey];
   const nextDueDay = context.day + quote.intervalDays;
-  const housing = { id: `rental-${payload.nodeId}`, nodeId: payload.nodeId, rentRuleId: quote.rule.id, nextDueDayStatKey };
+  const housing = { id: `rental-${payload.nodeId}`, nodeId: payload.nodeId, rentRuleId: quote.rule.id, nextDueDayStatKey, tierId: 'basic' };
   context.world.player.homeNodeId = payload.nodeId;
   context.world.player.housing = housing;
   context.world.player.stats[nextDueDayStatKey] = nextDueDay;
@@ -315,6 +340,70 @@ function settleShopDay(context: OpContext): OpResult {
   return { ok: true, changes: [
     { path: `world.player.stats.${offer.rule.openDaysStatKey}`, before: beforeOpenDays, after: afterOpenDays, description: `Recorded one shop business day.` },
     { path: `world.player.flags.${flagKey}`, before: true, after: undefined, description: `Cleared the settled shop marker.` },
+  ] };
+}
+
+function requestHousingUpgrade(payload: z.infer<typeof RequestHousingUpgradeSchema>, context: OpContext): OpResult {
+  const housing = context.world.player.housing;
+  if (!housing) return rejected('The player has no active housing contract.');
+  if (context.world.player.nodeId !== housing.nodeId) return rejected('The player must be at home to arrange a housing upgrade.');
+  const offer = getHousingUpgradeOffer(context.world, payload.upgradeRuleId);
+  if (!offer) return rejected('The housing upgrade rule or its configured facts are invalid.');
+  if (offer.requested) return rejected('This housing upgrade is already arranged for today.');
+  const alreadyRequested = Object.values(context.world.economy.housingUpgradeRules).some((rule) => context.world.player.flags[housingUpgradeRequestFlagKey(rule, context.day)]);
+  if (alreadyRequested) return rejected('Only one housing upgrade can be arranged per day.');
+  if (!offer.affordable) return rejected(`The housing upgrade requires ${formatCurrency(offer.cost, offer.currency)}.`);
+  const flagKey = housingUpgradeRequestFlagKey(offer.rule, context.day);
+  context.world.player.flags[flagKey] = true;
+  return { ok: true, changes: [
+    { path: `world.player.flags.${flagKey}`, before: undefined, after: true, description: `Arranged ${offer.rule.name} for day ${context.day}.` },
+  ] };
+}
+
+function settleHousingUpgrade(context: OpContext): OpResult {
+  const housing = context.world.player.housing;
+  const settlement = context.settlement;
+  if (!housing || !settlement) return { ok: true, changes: [] };
+  const rule = Object.values(context.world.economy.housingUpgradeRules)
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .find((item) => context.world.player.flags[housingUpgradeRequestFlagKey(item, context.day)]);
+  if (!rule) return { ok: true, changes: [] };
+  const flagKey = housingUpgradeRequestFlagKey(rule, context.day);
+  const offer = getHousingUpgradeOffer(context.world, rule.id);
+  if (!offer) return rejected('The requested housing upgrade no longer matches the current housing tier.');
+  if (!offer.affordable) return rejected(`The housing upgrade requires ${formatCurrency(offer.cost, offer.currency)}.`);
+
+  const balanceKey = offer.currency.statKey;
+  const balanceBefore = offer.balance;
+  const balanceAfter = balanceBefore - offer.cost;
+  const beforeTierId = housing.tierId;
+  const nodeName = context.world.map.nodes[housing.nodeId]?.name ?? housing.nodeId;
+  const description = `${nodeName}${offer.rule.name} ${formatCurrency(offer.cost, offer.currency)}`;
+  const transaction = {
+    id: `housing-upgrade-${context.day}-${settlement.economyTransactions.length + 1}`,
+    kind: 'housing_upgrade' as const,
+    currencyId: offer.currency.id,
+    statKey: balanceKey,
+    amount: offer.cost,
+    balanceBefore,
+    balanceAfter,
+    description,
+  };
+
+  context.world.player.stats[balanceKey] = balanceAfter;
+  housing.tierId = offer.nextTier.id;
+  delete context.world.player.flags[flagKey];
+  settlement.economyTransactions.push(transaction);
+  if (offer.currency.id === context.world.economy.defaultCurrencyId) settlement.expense += offer.cost;
+  settlement.diary = `${settlement.diary} 今日将${nodeName}布置成了${offer.nextTier.name}。`;
+  const diary = context.world.diary.find((entry) => entry.day === context.day);
+  if (diary && !diary.editedAt) diary.text = settlement.diary;
+
+  return { ok: true, changes: [
+    { path: `world.player.stats.${balanceKey}`, before: balanceBefore, after: balanceAfter, description: `Paid ${description}.` },
+    { path: 'world.player.housing.tierId', before: beforeTierId, after: housing.tierId, description: `Upgraded housing to ${offer.nextTier.name}.` },
+    { path: `world.player.flags.${flagKey}`, before: true, after: undefined, description: 'Cleared the settled housing upgrade request.' },
+    { path: `world.settlements.${settlement.day}.economyTransactions`, before: settlement.economyTransactions.length - 1, after: settlement.economyTransactions.length, description: `Recorded ${description}.` },
   ] };
 }
 

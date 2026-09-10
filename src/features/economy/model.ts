@@ -1,5 +1,5 @@
 import { availableSlots } from '../../core/time';
-import type { ActionCostTable, CalendarConfig, CurrencyDef, JobContract, JobRule, MorningBriefEntry, RentRule, ShopContract, ShopRule, WorldState } from '../../data/schema/save';
+import type { ActionCostTable, CalendarConfig, CurrencyDef, HousingTier, HousingUpgradeRule, JobContract, JobRule, MorningBriefEntry, RentRule, ShopContract, ShopRule, WorldState } from '../../data/schema/save';
 
 export interface RentalQuote {
   nodeId: string;
@@ -20,6 +20,17 @@ export interface ShopOffer {
   nodeId: string;
   rule: ShopRule;
   openDays: number;
+}
+
+export interface HousingUpgradeOffer {
+  rule: HousingUpgradeRule;
+  currentTier: HousingTier;
+  nextTier: HousingTier;
+  currency: CurrencyDef;
+  cost: number;
+  balance: number;
+  affordable: boolean;
+  requested: boolean;
 }
 
 export type JobShiftStatus = 'unemployed' | 'invalid' | 'upcoming' | 'ready' | 'wrong_node' | 'worked' | 'missed';
@@ -60,6 +71,40 @@ export function getShopOffer(world: WorldState, nodeId: string, shopRuleId = 'st
   const openDays = rule ? world.player.stats[rule.openDaysStatKey] : undefined;
   if (!rule || typeof openDays !== 'number' || !Number.isInteger(openDays) || openDays < 0) return undefined;
   return { nodeId, rule, openDays };
+}
+
+export function getHousingTier(world: WorldState): HousingTier | undefined {
+  const housing = world.player.housing;
+  return housing ? world.economy.housingTiers[housing.tierId] : undefined;
+}
+
+export function housingUpgradeRequestFlagKey(rule: Pick<HousingUpgradeRule, 'id'>, day: number): string {
+  return `economy.housing.upgrade.${rule.id}.requested.${day}`;
+}
+
+export function getHousingUpgradeOffer(world: WorldState, upgradeRuleId?: string): HousingUpgradeOffer | undefined {
+  const housing = world.player.housing;
+  const currentTier = getHousingTier(world);
+  if (!housing || !currentTier) return undefined;
+  const rule = upgradeRuleId
+    ? world.economy.housingUpgradeRules[upgradeRuleId]
+    : Object.values(world.economy.housingUpgradeRules).sort((left, right) => left.id.localeCompare(right.id)).find((item) => item.fromTierId === housing.tierId);
+  if (!rule || rule.fromTierId !== housing.tierId) return undefined;
+  const nextTier = world.economy.housingTiers[rule.toTierId];
+  const currency = world.economy.currencies[rule.currencyId];
+  const cost = world.player.stats[rule.costStatKey];
+  const balance = currency ? world.player.stats[currency.statKey] : undefined;
+  if (!nextTier || !currency || !Number.isFinite(cost) || cost < 0 || typeof balance !== 'number' || !Number.isFinite(balance)) return undefined;
+  return {
+    rule,
+    currentTier,
+    nextTier,
+    currency,
+    cost,
+    balance,
+    affordable: balance >= cost,
+    requested: Boolean(world.player.flags[housingUpgradeRequestFlagKey(rule, world.clock.day)]),
+  };
 }
 
 export function jobWorkFlagKey(job: Pick<JobContract, 'id'>, day: number): string {
