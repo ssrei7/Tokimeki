@@ -733,6 +733,8 @@ v37 增加 `ShopRule`、唯一生效 `player.shop` 与 `operate_shop` 成本。�
 
 v38 增加数据驱动的住所等级与升级规则。租约保存 `tierId`，默认从 `basic`（简朴住所）开始；升级规则通过 `fromTierId` / `toTierId`、货币 ID 与费用 stat key 声明，不在 core 或 UI 写死金额。玩家必须位于住所节点且余额足够，才能由本地确认的 `request_housing_upgrade` 安排升级；请求不消耗时段、不立即扣款。`onDaySettle` 按住所升级 → 房租 → 工资 → 店铺营业的顺序执行内部结算，升级成功后扣除配置货币、切换等级、写入 `housing_upgrade` 交易并更新 expense 与日记；余额不足或配置失效只拒绝该结算，不阻断其他生活循环。升级入口复用日程页的住所折叠详情，不新增页面入口。v37→v38 migration 为旧租约补 `basic` 等级、默认等级/规则与费用 stat，旧存档继续可读。
 
+常驻软目标不写入存档字段：日程页从住所、关系、工作/店铺契约、当日 flags 与既有关系事实实时推导三条稳定 ID（`housing` / `relationship` / `career`）。它们只提供叙事方向和可读状态，不消耗时段、不改变事实、不调用 Provider；目标完成与否也不作为新的胜负或失败状态。
+
 ---
 
 ## 15. 世界状态
