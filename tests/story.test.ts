@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { advanceStorySceneStage, buildLocalChapterSummary, confirmStoryScene, copyStoryScenePreset, createBuiltinStoryScenePresets, createStorySceneDraft, formatChatArchive, formatEventHistoryArchive, generateStorySceneDraftInput, getStorySceneReading, readStorySceneStage, selectStorySceneReadingStage, updateStorySceneStatus, upsertChapterSummary, upsertMilestone } from '../src/core/story';
+import { advanceStorySceneStage, buildLocalChapterSummary, confirmStoryScene, copyStoryScenePreset, createBuiltinStoryScenePresets, createStorySceneDraft, deleteStorySceneDraft, formatChatArchive, formatEventHistoryArchive, generateStorySceneDraftInput, getStorySceneReading, readStorySceneStage, selectStorySceneReadingStage, updateStorySceneDraft, updateStorySceneStatus, upsertChapterSummary, upsertMilestone } from '../src/core/story';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
+import { createStage4EncounterScenario } from '../src/dev/scenarios/stage4';
 import { getReadableStorySceneStages } from '../src/ui/story-scene/StorySceneReader';
 
 describe('local chapter summaries and milestones', () => {
@@ -94,6 +95,18 @@ describe('local chapter summaries and milestones', () => {
     expect(created.scene?.status).toBe('draft');
     expect(confirmStoryScene(save.world, save.config.calendar, 'scene-dock-secret').scene?.status).toBe('active');
     expect(updateStorySceneStatus(save.world, 'scene-dock-secret', 'completed').scene?.status).toBe('completed');
+  });
+
+  it('edits and deletes only unconfirmed StoryScene drafts', () => {
+    const save = seedScenario(createStage4EncounterScenario());
+    expect(createStorySceneDraft(save.world, save.config.calendar, { id: 'editable', title: '旧标题', intent: '旧意图', outline: '旧大纲', participantIds: ['seir'], nodeId: 'start' })).toMatchObject({ ok: true });
+    expect(updateStorySceneDraft(save.world, save.config.calendar, 'editable', { id: 'editable', title: '新标题', intent: '新意图', outline: '新大纲', participantIds: ['seir'], nodeId: 'start' })).toMatchObject({ ok: true, scene: { title: '新标题', participantIds: ['seir'] } });
+    expect(confirmStoryScene(save.world, save.config.calendar, 'editable').ok).toBe(true);
+    expect(updateStorySceneDraft(save.world, save.config.calendar, 'editable', { id: 'editable', title: '不应修改', intent: '意图', outline: '大纲', participantIds: ['seir'], nodeId: 'start' })).toMatchObject({ ok: false });
+    expect(deleteStorySceneDraft(save.world, 'editable')).toMatchObject({ ok: false });
+    expect(createStorySceneDraft(save.world, save.config.calendar, { id: 'deletable', title: '待删除', intent: '意图', outline: '大纲', participantIds: ['seir'], nodeId: 'start' })).toMatchObject({ ok: true });
+    expect(deleteStorySceneDraft(save.world, 'deletable').ok).toBe(true);
+    expect(save.world.storyScenes.some((scene) => scene.id === 'deletable')).toBe(false);
   });
 
   it('rejects invalid participants, duplicate IDs, and stale drafts without mutating facts', () => {

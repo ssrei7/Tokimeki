@@ -72,6 +72,44 @@ export function createStorySceneDraft(world: WorldState, calendar: CalendarConfi
   return { ok: true, scene };
 }
 
+/** Replace a draft's editable content after running the same deterministic validation as creation. */
+export function updateStorySceneDraft(world: WorldState, calendar: CalendarConfig, sceneId: string, input: StorySceneDraftInput): StorySceneResult {
+  const scene = (world.storyScenes ?? []).find((entry) => entry.id === sceneId);
+  if (!scene) return { ok: false, warning: 'StoryScene 不存在。' };
+  if (scene.status !== 'draft') return { ok: false, warning: '只有草案可以编辑。' };
+  if (input.id.trim() !== sceneId) return { ok: false, warning: 'StoryScene ID 创建后不能修改。' };
+  const warning = validateStorySceneDraft(world, calendar, input);
+  if (warning) return { ok: false, warning };
+  const stages = input.stages?.length ? input.stages.map((stage) => ({ ...stage })) : defaultStages(input.outline, input.currentStageId);
+  const updated: StoryScene = {
+    ...scene,
+    title: input.title.trim(),
+    intent: input.intent.trim(),
+    outline: input.outline.trim(),
+    participantIds: [...input.participantIds],
+    nodeId: input.nodeId,
+    startDay: input.startDay ?? scene.startDay,
+    startSlotId: input.startSlotId ?? scene.startSlotId,
+    currentStageId: input.currentStageId?.trim() || stages[0].id,
+    stages,
+    readingStageId: stages.some((stage) => stage.id === scene.readingStageId) ? scene.readingStageId : stages[0].id,
+    readStageIds: scene.readStageIds.filter((id) => stages.some((stage) => stage.id === id)),
+    source: input.source ?? scene.source,
+    updatedDay: world.clock.day,
+  };
+  world.storyScenes = world.storyScenes.map((entry) => entry.id === sceneId ? updated : entry);
+  return { ok: true, scene: updated };
+}
+
+/** Delete only an unconfirmed local draft; started scenes remain in the save for history. */
+export function deleteStorySceneDraft(world: WorldState, sceneId: string): StorySceneResult {
+  const scene = (world.storyScenes ?? []).find((entry) => entry.id === sceneId);
+  if (!scene) return { ok: false, warning: 'StoryScene 不存在。' };
+  if (scene.status !== 'draft') return { ok: false, warning: '只有草案可以删除。' };
+  world.storyScenes = world.storyScenes.filter((entry) => entry.id !== sceneId);
+  return { ok: true, scene };
+}
+
 export interface StorySceneReadingResult extends StorySceneResult {
   stage?: StorySceneStage;
   nextUnreadStage?: StorySceneStage;
