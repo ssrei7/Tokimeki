@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildLocalChapterSummary, confirmStoryScene, createStorySceneDraft, formatChatArchive, formatEventHistoryArchive, updateStorySceneStatus, upsertChapterSummary, upsertMilestone } from '../src/core/story';
+import { advanceStorySceneStage, buildLocalChapterSummary, confirmStoryScene, createStorySceneDraft, formatChatArchive, formatEventHistoryArchive, updateStorySceneStatus, upsertChapterSummary, upsertMilestone } from '../src/core/story';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 describe('local chapter summaries and milestones', () => {
@@ -29,6 +29,35 @@ describe('local chapter summaries and milestones', () => {
     delete save.world.characters.seir;
     expect(confirmStoryScene(save.world, save.config.calendar, 'stale')).toMatchObject({ ok: false });
     expect(save.world.storyScenes[0].status).toBe('draft');
+  });
+
+  it('advances only through declared StoryScene stages whose deterministic conditions pass', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'story-scene-stages', title: 'Story scene stages' }));
+    save.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '码头青年', personality: '安静' }, visuals: { portraits: [] } };
+    expect(createStorySceneDraft(save.world, save.config.calendar, {
+      id: 'staged-scene', title: '分阶段调查', intent: '查清真相', outline: '三段式调查。', participantIds: ['seir'], nodeId: 'start',
+      stages: [
+        { id: 'opening', title: '开场', content: '来到仓库门前。' },
+        { id: 'clue', title: '线索', content: '发现隐藏记号。', when: 'flags.clueFound == true' },
+        { id: 'ending', title: '收束', content: '确认事情的真相。', when: 'playerStats.resolve >= 2' },
+      ],
+    }).ok).toBe(true);
+    expect(confirmStoryScene(save.world, save.config.calendar, 'staged-scene').ok).toBe(true);
+    expect(advanceStorySceneStage(save.world, 'staged-scene')).toMatchObject({ ok: false });
+    expect(save.world.storyScenes[0].currentStageId).toBe('opening');
+    save.world.flags.clueFound = true;
+    expect(advanceStorySceneStage(save.world, 'staged-scene')).toMatchObject({ ok: true, stage: { id: 'clue' } });
+    save.world.player.stats.resolve = 2;
+    expect(advanceStorySceneStage(save.world, 'staged-scene')).toMatchObject({ ok: true, stage: { id: 'ending' } });
+    expect(advanceStorySceneStage(save.world, 'staged-scene')).toMatchObject({ ok: false });
+  });
+
+  it('rejects duplicate or unknown current StoryScene stage definitions', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'story-scene-stage-invalid', title: 'Story scene stage invalid' }));
+    save.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '码头青年', personality: '安静' }, visuals: { portraits: [] } };
+    const base = { id: 'invalid-stage', title: '无效阶段', intent: '测试', outline: '测试大纲', participantIds: ['seir'], nodeId: 'start' };
+    expect(createStorySceneDraft(save.world, save.config.calendar, { ...base, stages: [{ id: 'same', title: '一', content: '一' }, { id: 'same', title: '二', content: '二' }] })).toMatchObject({ ok: false });
+    expect(createStorySceneDraft(save.world, save.config.calendar, { ...base, id: 'unknown-current', currentStageId: 'missing', stages: [{ id: 'opening', title: '一', content: '一' }] })).toMatchObject({ ok: false });
   });
 
   it('builds a stable summary from diary and event facts', () => {

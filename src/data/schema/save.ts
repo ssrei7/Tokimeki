@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 31;
+export const CURRENT_SCHEMA_VERSION = 32;
 
 const IdSchema = z.string().min(1);
 
@@ -295,6 +295,13 @@ export const MilestoneSchema = z.object({
   charIds: z.array(IdSchema).max(3),
 });
 
+export const StorySceneStageSchema = z.object({
+  id: IdSchema,
+  title: z.string().min(1).max(160),
+  content: z.string().min(1).max(10000),
+  when: z.string().min(1).optional(),
+});
+
 export const StorySceneSchema = z.object({
   id: IdSchema,
   title: z.string().min(1).max(160),
@@ -305,6 +312,7 @@ export const StorySceneSchema = z.object({
   startDay: z.number().int().positive(),
   startSlotId: IdSchema,
   currentStageId: IdSchema,
+  stages: z.array(StorySceneStageSchema).min(1).max(50),
   status: z.enum(['draft', 'active', 'completed', 'cancelled']),
   source: z.enum(['keywords', 'outline', 'manual']),
   createdDay: z.number().int().positive(),
@@ -625,6 +633,7 @@ export const WorldV30Schema = WorldV29Schema;
 export const WorldV31Schema = WorldV30Schema.extend({
   storyScenes: z.array(StorySceneSchema).max(100).default([]),
 });
+export const WorldV32Schema = WorldV31Schema;
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -661,12 +670,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV31Schema,
+  world: WorldV32Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV31Schema>;
+export type WorldState = z.infer<typeof WorldV32Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;
@@ -712,5 +721,6 @@ export type EventHistoryEntry = z.infer<typeof EventHistoryEntrySchema>;
 export type ChapterSummary = z.infer<typeof ChapterSummarySchema>;
 export type Milestone = z.infer<typeof MilestoneSchema>;
 export type StoryScene = z.infer<typeof StorySceneSchema>;
+export type StorySceneStage = z.infer<typeof StorySceneStageSchema>;
 export type MemoryType = z.infer<typeof MemoryTypeSchema>;
 export type MemorySource = z.infer<typeof MemorySourceSchema>;
