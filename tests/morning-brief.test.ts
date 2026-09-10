@@ -5,7 +5,7 @@ import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/se
 describe('morning brief', () => {
   it('builds a local fact-only fallback and detects existing day entries', () => {
     const save = seedScenario(createCurrentSaveScenario({ id: 'morning', title: 'Morning' }));
-    save.world.settlements.push({ day: 1, footprint: ['start'], met: ['seir'], relationChanges: [], income: 0, expense: 0, itemsGained: [], diary: '昨天去了起点街区。', appointmentsTomorrow: [] });
+    save.world.settlements.push({ day: 1, footprint: ['start'], met: ['seir'], relationChanges: [], income: 0, expense: 0, economyTransactions: [], itemsGained: [], diary: '昨天去了起点街区。', appointmentsTomorrow: [] });
     const entries = buildLocalMorningBrief(save.world, 2);
     expect(entries.length).toBeGreaterThanOrEqual(3);
     expect(entries.every((entry) => entry.day === 2 && entry.source === 'local')).toBe(true);
@@ -24,7 +24,7 @@ describe('morning brief', () => {
   it('echoes a triggered location event into the next local morning brief', () => {
     const save = seedScenario(createCurrentSaveScenario({ id: 'morning-echo', title: 'Morning echo' }));
     save.world.map.nodes.start.memories.push({ id: 'node-memory-hook-1', text: '晨报线索「码头动静」在这里落地：有人留下了新的告示。', day: 1, charIds: [] });
-    save.world.settlements.push({ day: 1, footprint: ['start'], met: [], relationChanges: [], income: 0, expense: 0, itemsGained: [], diary: '昨天去了起点街区。', appointmentsTomorrow: [] });
+    save.world.settlements.push({ day: 1, footprint: ['start'], met: [], relationChanges: [], income: 0, expense: 0, economyTransactions: [], itemsGained: [], diary: '昨天去了起点街区。', appointmentsTomorrow: [] });
     const entries = buildLocalMorningBrief(save.world, 2);
     expect(entries.find((entry) => entry.category === 'lead')?.body).toContain('码头动静');
   });

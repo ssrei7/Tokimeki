@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import type { WorldState } from '../../data/schema/save';
+import type { DailySettlement, WorldState } from '../../data/schema/save';
 import type { CalendarConfig, ActionCostTable, EncounterConfig, AxisDef, StageRule } from '../../data/schema/save';
 import type { EventBus } from '../events/bus';
 
@@ -16,6 +16,7 @@ export interface OpContext {
   axisDefs?: AxisDef[];
   stageRules?: StageRule[];
   events?: EventBus;
+  settlement?: DailySettlement;
   memorySource?: { chatCharacterId: string; messageIndex: number; messageIndices?: number[]; kind?: 'chat' | 'manual' | 'system' };
 }
 

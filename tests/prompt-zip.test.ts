@@ -6,7 +6,7 @@ import { TOPIC_TREE_PROMPT_BLOCKS } from '../src/core/prompt/topic-tree';
 import { exportPresetBundle, exportSaveZip, importPresetBundle, importSaveZip } from '../src/data/io/zip';
 import { UnsupportedSchemaVersionError } from '../src/data/migrations/types';
 import type { SaveFile } from '../src/data/schema/save';
-import { createDefaultMap, CURRENT_SCHEMA_VERSION } from '../src/data/schema/save';
+import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ECONOMY_STATE } from '../src/data/schema/save';
 import { createBuiltinNarrationPresetBundle, mergeBuiltinNarrationPresetBundle } from '../src/data/presets/builtins';
 import { buildRelationshipStatePrompt, deriveRelationshipPromptState } from '../src/core/relationship';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
@@ -247,7 +247,7 @@ describe('prompt assembler', () => {
 });
 
 describe('save zip IO', () => {
-  const save = { schemaVersion: CURRENT_SCHEMA_VERSION, meta: { id: 'save', title: 'Test', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', appVersion: '0.0.1' }, config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12, encounter: { enabled: true, triggerOnLeave: true, leaveProbability: 0.35, guaranteeAfterDays: 3, maxParticipants: 3, weights: {} } }, world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map: createDefaultMap(), diary: [], settlements: [], characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [], topicTrees: {}, usedTopics: {}, appointments: [] } } satisfies SaveFile;
+  const save = { schemaVersion: CURRENT_SCHEMA_VERSION, meta: { id: 'save', title: 'Test', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', appVersion: '0.0.1' }, config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12, encounter: { enabled: true, triggerOnLeave: true, leaveProbability: 0.35, guaranteeAfterDays: 3, maxParticipants: 3, weights: {} } }, world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: { money: 0, 'economy.rent.amount': 10, 'economy.rent.interval-days': 7 }, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map: createDefaultMap(), diary: [], settlements: [], characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [], topicTrees: {}, usedTopics: {}, appointments: [], economy: structuredClone(DEFAULT_ECONOMY_STATE) } } satisfies SaveFile;
 
   it('round trips save, assets, and all character chats without provider secrets', async () => {
     const chats = [

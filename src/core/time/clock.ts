@@ -73,7 +73,7 @@ export function advanceTime(world: WorldState, calendar: CalendarConfig, slots: 
 
 export function settleDay(world: WorldState, _calendar: CalendarConfig, events?: EventBus): DailySettlement {
   const day = world.clock.day;
-  const facts = { day, footprint: [world.player.nodeId], met: [], relationChanges: [], income: 0, expense: 0, itemsGained: [], appointmentsTomorrow: [] };
+  const facts = { day, footprint: [world.player.nodeId], met: [], relationChanges: [], income: 0, expense: 0, economyTransactions: [], itemsGained: [], appointmentsTomorrow: [] };
   const settlement: DailySettlement = { ...facts, diary: buildLocalDiary(facts) };
   world.settlements.push(settlement);
   if (!world.diary.some((entry) => entry.day === day)) world.diary.push({ day, text: settlement.diary });

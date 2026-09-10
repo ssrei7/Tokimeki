@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EventBus } from '../src/core/events/bus';
 import { createMapNode, deleteMapNode, movePlayer, revealNode, updateMapNode } from '../src/core/map';
-import { createDefaultMap, CURRENT_SCHEMA_VERSION, SaveFileSchema, type WorldState } from '../src/data/schema/save';
+import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ECONOMY_STATE, SaveFileSchema, type WorldState } from '../src/data/schema/save';
 
 function worldWithMap(): WorldState {
   const map = createDefaultMap();
@@ -13,7 +13,7 @@ function worldWithMap(): WorldState {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     meta: { id: 'map-test', title: '地图测试', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', appVersion: '0.0.1' },
     config: { calendar: { slots: [{ id: 'morning', name: '早晨', order: 0 }, { id: 'noon', name: '中午', order: 1 }, { id: 'evening', name: '晚上', order: 2 }, { id: 'night', name: '深夜', order: 3 }], daysPerWeek: 7, weekdayNames: ['一'], preset: 'standard', unlimitedSlots: false }, actionCosts: {}, axisDefs: [], stageRules: [], showNumbers: false, hiddenTopicStyle: 'hide', realTimeAwareness: false, opsLimitPerTurn: 12, encounter: { enabled: true, triggerOnLeave: true, leaveProbability: 0.35, guaranteeAfterDays: 3, maxParticipants: 3, weights: {} } },
-    world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map, diary: [], settlements: [], characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [] },
+    world: { clock: { day: 1, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: { money: 0, 'economy.rent.amount': 10, 'economy.rent.interval-days': 7 }, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: {}, map, diary: [], settlements: [], characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [], economy: structuredClone(DEFAULT_ECONOMY_STATE) },
   }).world;
 }
 

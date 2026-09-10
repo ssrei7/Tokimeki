@@ -1,4 +1,5 @@
-import type { DailySettlement } from '../data/schema/save';
+import type { DailySettlement, EconomyState } from '../data/schema/save';
+import { formatCurrency } from '../features/economy/model';
 
 type RelationChange = DailySettlement['relationChanges'][number];
 
@@ -8,4 +9,16 @@ export function settlementRelationNumbers(change: RelationChange, showNumbers: b
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, value]) => `${key} ${value >= 0 ? '+' : ''}${value}`)
     .join(' · ');
+}
+
+export function settlementFinancialSummary(settlement: DailySettlement, economy: EconomyState): string {
+  if (settlement.economyTransactions.length) {
+    return settlement.economyTransactions.map((transaction) => {
+      const currency = economy.currencies[transaction.currencyId];
+      return currency ? `${transaction.kind === 'rent' ? '房租' : transaction.kind} -${formatCurrency(transaction.amount, currency)}` : transaction.description;
+    }).join(' · ');
+  }
+  const currency = economy.currencies[economy.defaultCurrencyId];
+  const balance = settlement.income - settlement.expense;
+  return currency ? formatCurrency(balance, currency) : String(balance);
 }

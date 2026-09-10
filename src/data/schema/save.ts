@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 33;
+export const CURRENT_SCHEMA_VERSION = 34;
 
 const IdSchema = z.string().min(1);
 
@@ -345,12 +345,76 @@ export const InventoryEntrySchema = z.object({
   fromCharId: IdSchema.optional(),
 });
 
+const StatKeySchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_.-]*$/, 'Stat keys must use ASCII letters, numbers, underscore, dot, or hyphen.');
+
+export const CurrencyDefSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(80),
+  symbol: z.string().max(16).optional(),
+  decimals: z.number().int().min(0).max(6),
+  statKey: StatKeySchema,
+});
+
+export const RentRuleSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(120),
+  currencyId: IdSchema,
+  amountStatKey: StatKeySchema,
+  intervalDaysStatKey: StatKeySchema,
+});
+
+export const EconomyStateSchema = z.object({
+  defaultCurrencyId: IdSchema,
+  currencies: z.record(IdSchema, CurrencyDefSchema),
+  rentRules: z.record(IdSchema, RentRuleSchema),
+}).superRefine((economy, context) => {
+  if (!economy.currencies[economy.defaultCurrencyId]) {
+    context.addIssue({ code: 'custom', path: ['defaultCurrencyId'], message: 'Default currency must reference a configured currency.' });
+  }
+  for (const [id, currency] of Object.entries(economy.currencies)) {
+    if (currency.id !== id) context.addIssue({ code: 'custom', path: ['currencies', id, 'id'], message: 'Currency record key must match its stable id.' });
+  }
+  for (const [id, rule] of Object.entries(economy.rentRules)) {
+    if (rule.id !== id) context.addIssue({ code: 'custom', path: ['rentRules', id, 'id'], message: 'Rent rule record key must match its stable id.' });
+    if (!economy.currencies[rule.currencyId]) context.addIssue({ code: 'custom', path: ['rentRules', id, 'currencyId'], message: 'Rent rule must reference a configured currency.' });
+  }
+});
+
+export const DEFAULT_ECONOMY_STATE = {
+  defaultCurrencyId: 'default',
+  currencies: {
+    default: { id: 'default', name: '通用货币', symbol: '¤', decimals: 0, statKey: 'money' },
+  },
+  rentRules: {
+    standard: { id: 'standard', name: '标准租约', currencyId: 'default', amountStatKey: 'economy.rent.amount', intervalDaysStatKey: 'economy.rent.interval-days' },
+  },
+} satisfies z.input<typeof EconomyStateSchema>;
+
+export const HousingContractSchema = z.object({
+  id: IdSchema,
+  nodeId: IdSchema,
+  rentRuleId: IdSchema,
+  nextDueDayStatKey: StatKeySchema,
+});
+
+export const EconomyTransactionSchema = z.object({
+  id: IdSchema,
+  kind: z.enum(['rent']),
+  currencyId: IdSchema,
+  statKey: StatKeySchema,
+  amount: z.number().finite().nonnegative(),
+  balanceBefore: z.number().finite(),
+  balanceAfter: z.number().finite(),
+  description: z.string().min(1).max(300),
+});
+
 export const PlayerStateSchema = z.object({
   name: z.string().min(1),
   persona: z.string().optional(),
   personaId: IdSchema.optional(),
   nodeId: IdSchema,
   homeNodeId: IdSchema.optional(),
+  housing: HousingContractSchema.optional(),
   stats: z.record(z.string(), z.number()),
   flags: z.record(z.string(), z.boolean()),
   inventory: z.array(InventoryEntrySchema),
@@ -378,6 +442,7 @@ export const DailySettlementSchema = z.object({
   })),
   income: z.number(),
   expense: z.number(),
+  economyTransactions: z.array(EconomyTransactionSchema).max(100).default([]),
   itemsGained: z.array(InventoryEntrySchema),
   diary: z.string(),
   appointmentsTomorrow: z.array(z.object({
@@ -637,6 +702,9 @@ export const WorldV31Schema = WorldV30Schema.extend({
 });
 export const WorldV32Schema = WorldV31Schema;
 export const WorldV33Schema = WorldV32Schema;
+export const WorldV34Schema = WorldV33Schema.extend({
+  economy: EconomyStateSchema,
+});
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -673,12 +741,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV33Schema,
+  world: WorldV34Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV33Schema>;
+export type WorldState = z.infer<typeof WorldV34Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;
@@ -707,6 +775,11 @@ export type CollectionEntry = z.infer<typeof CollectionEntrySchema>;
 export type CalendarConfig = z.infer<typeof CalendarConfigSchema>;
 export type ActionCostTable = z.infer<typeof ActionCostTableSchema>;
 export type DailySettlement = z.infer<typeof DailySettlementSchema>;
+export type CurrencyDef = z.infer<typeof CurrencyDefSchema>;
+export type EconomyState = z.infer<typeof EconomyStateSchema>;
+export type EconomyTransaction = z.infer<typeof EconomyTransactionSchema>;
+export type HousingContract = z.infer<typeof HousingContractSchema>;
+export type RentRule = z.infer<typeof RentRuleSchema>;
 export type StageRule = z.infer<typeof StageRuleSchema>;
 export type AxisDef = z.infer<typeof AxisDefSchema>;
 export type RelationState = z.infer<typeof RelationStateSchema>;

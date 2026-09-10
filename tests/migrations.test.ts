@@ -191,6 +191,20 @@ describe('save migrations', () => {
     expect(migrated.world.storyScenes[0]).toMatchObject({ readingStageId: 'opening', readStageIds: [] });
   });
 
+  it('migrates v33 saves to neutral currency configuration without creating a rental contract', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v34-economy', title: 'v34 economy' }));
+    const legacyWorld = structuredClone(source.world) as Record<string, unknown>;
+    delete legacyWorld.economy;
+    legacyWorld.player = { ...(legacyWorld.player as Record<string, unknown>), housing: undefined, stats: { money: 25 } };
+    legacyWorld.settlements = [{ day: 1, footprint: ['start'], met: [], relationChanges: [], income: 0, expense: 0, itemsGained: [], diary: '旧日记', appointmentsTomorrow: [] }];
+    const migrated = migrateSave({ ...source, schemaVersion: 33, world: legacyWorld });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.economy).toMatchObject({ defaultCurrencyId: 'default', currencies: { default: { statKey: 'money' } } });
+    expect(migrated.world.player.stats.money).toBe(25);
+    expect(migrated.world.player.housing).toBeUndefined();
+    expect(migrated.world.settlements[0].economyTransactions).toEqual([]);
+  });
+
   it('migrates v5 persona text without dropping it and accepts a persona binding', () => {
     const migrated = migrateSave({
       schemaVersion: 5,

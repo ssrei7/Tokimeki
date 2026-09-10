@@ -19,7 +19,7 @@ type Condition = string;   // expr-eval 表达式,禁止 eval
 - 时间坐标统一为 `(day, slotId)`，地点坐标统一为 `nodeId`。
 - 派生值（阶段标签、可达节点、当前在场者）可缓存但必须能重算，且不作为事实来源。
 
-`CURRENT_SCHEMA_VERSION = 23`
+`CURRENT_SCHEMA_VERSION = 34`
 
 ---
 
@@ -510,6 +510,7 @@ interface DailySettlement {
   relationChanges: Array<{ charId: CharId; prose: string; raw?: Record<AxisId, number> }>;
   income: number;
   expense: number;
+  economyTransactions: EconomyTransaction[];
   itemsGained: InventoryEntry[];
   diary: string;
   appointmentsTomorrow: Appointment[];
@@ -604,22 +605,67 @@ interface PlayerState {
   personaId?: string;              // 当前世界绑定的面具身份 ID
   nodeId: NodeId;
   homeNodeId?: NodeId;           // 邻近度加权偶遇
+  housing?: HousingContract;     // 阶段 8：当前唯一生效租约
   stats: Record<string, number>; // money / energy / reputation ...
   flags: Record<string, boolean>;
   inventory: InventoryEntry[];
-  job?: { nodeId: NodeId; slotIds: SlotId[]; wage: number; title: string };
-  shop?: { nodeId: NodeId; slotIds: SlotId[]; name: string };
   visuals?: { avatar?: AssetRef };
 }
 ```
 
 `PlayerPersona` 保存在本地资料库；一个 `SaveFile` 通过 `player.personaId` 绑定一个当前身份。旧存档的 `persona` 文本必须保留，不能静默丢弃；当前版本提供设置页补创建/绑定面具身份的入口，后续可再增加旧文本自动转为默认身份。`displayName` 只影响面对面/事件对话框的玩家名牌，`name` 仍是世界事实中的玩家姓名。
 
-`job` / `shop` 绑定节点并占用时段——玩家因此成为地图上的一个点，角色会路过来找。
+`job` / `shop` 将在阶段 8 后续切片绑定节点并占用时段——玩家因此成为地图上的一个点，角色会路过来找；不得通过带专用工资数值的硬编码字段接入。
 
 向量记忆属于阶段 7 的可选外部检索索引，不是事实字段。浏览器只保存索引状态、Provider 引用和可重建的向量缓存；embedding 文本必须经过用户选择的 Provider，默认不发送。Prompt 组装仍以确定性筛选后的记忆正文为准，向量 API 不得直接修改 `WorldState`。
 
 经济系统的货币展示不使用固定字段名或固定中文名称。阶段 8 计划由世界配置提供 `defaultCurrencyId` 与 `currencies` 映射，每项包含稳定货币 ID、展示名称、可选符号、小数位和对应的 ASCII `statKey`；余额数值仍写入 `player.stats`，经济 ops/规则负责校验收入、支出、工资和租金。若未来支持多货币，结算记录也应按货币 ID 分开保存，而不是把不同货币混入单一数字。
+
+### 14.1 阶段 8 经济与租房
+
+```ts
+interface CurrencyDef {
+  id: Id;
+  name: string;
+  symbol?: string;
+  decimals: number;
+  statKey: string;               // ASCII key；余额实际保存在 player.stats
+}
+
+interface RentRule {
+  id: Id;
+  name: string;
+  currencyId: Id;
+  amountStatKey: string;         // 租金数值来自 player.stats
+  intervalDaysStatKey: string;   // 周期数值来自 player.stats
+}
+
+interface EconomyState {
+  defaultCurrencyId: Id;
+  currencies: Record<Id, CurrencyDef>;
+  rentRules: Record<Id, RentRule>;
+}
+
+interface HousingContract {
+  id: Id;
+  nodeId: NodeId;
+  rentRuleId: Id;
+  nextDueDayStatKey: string;     // 下次到期日仍由通用 stat 持有
+}
+
+interface EconomyTransaction {
+  id: Id;
+  kind: 'rent';
+  currencyId: Id;
+  statKey: string;
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  description: string;
+}
+```
+
+v34 首个生活切片只支持一个生效租约。签约由用户明确确认的本地白名单 op 写入 `homeNodeId` / `housing`，租金通过 `onDaySettle` 的内部 op 扣除；广告正文中的金额不参与计算。余额不足允许进入负数但不阻断时间、移动或对话。
 
 ---
 
@@ -662,6 +708,8 @@ interface WorldState {
   settlements: DailySettlement[];
   chapters: ChapterSummary[];
   milestones: Milestone[];
+
+  economy: EconomyState;
 
   stats: Record<string, number>;    // 世界级数值
   flags: Record<string, boolean>;

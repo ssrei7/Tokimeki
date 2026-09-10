@@ -1,6 +1,6 @@
 import { exportSaveZip } from '../../data/io/zip';
 import { migrateSave } from '../../data/migrations';
-import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_SLOT_DEFS, type SaveFile } from '../../data/schema/save';
+import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_ECONOMY_STATE, DEFAULT_SLOT_DEFS, type SaveFile } from '../../data/schema/save';
 
 export interface ScenarioDefinition {
   id: string;
@@ -60,7 +60,7 @@ export function createCurrentSaveScenario(options: CurrentSaveScenarioOptions): 
         player: {
           name: options.playerName ?? '测试玩家',
           nodeId: options.nodeId ?? 'start',
-          stats: { ...(options.stats ?? {}) },
+          stats: { money: 0, 'economy.rent.amount': 10, 'economy.rent.interval-days': 7, ...(options.stats ?? {}) },
           flags: { ...(options.flags ?? {}) },
           inventory: [],
         },
@@ -80,7 +80,7 @@ export function createCurrentSaveScenario(options: CurrentSaveScenarioOptions): 
           appointments: [],
           eventDefs: {},
           director: { scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: options.day ?? 1 },
-          eventHistory: [], chapters: [], milestones: [], storyScenes: [],
+          eventHistory: [], chapters: [], milestones: [], storyScenes: [], economy: structuredClone(DEFAULT_ECONOMY_STATE),
       },
     }),
   };
