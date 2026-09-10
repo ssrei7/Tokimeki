@@ -2,7 +2,8 @@ import { z } from 'zod';
 import type { OpContext, OpResult } from '../../core/ops/types';
 import { OpRegistry } from '../../core/ops/registry';
 import { availableSlots } from '../../core/time';
-import { formatCurrency, getJobQuote, getJobShiftStatus, getRentalQuote, jobWorkFlagKey } from './model';
+import { triggerEncounter } from '../../core/encounter';
+import { formatCurrency, getJobQuote, getJobShiftStatus, getRentalQuote, getShopOffer, getShopStatus, jobWorkFlagKey, shopOpenFlagKey, shopOperationSlotIds } from './model';
 
 const AcceptRentalSchema = z.object({
   op: z.literal('accept_rental'),
@@ -26,6 +27,20 @@ const WorkJobSchema = z.object({
 
 const SettleJobWageSchema = z.object({
   op: z.literal('settle_job_wage'),
+});
+
+const AcceptShopSchema = z.object({
+  op: z.literal('accept_shop'),
+  nodeId: z.string().min(1),
+  shopRuleId: z.string().min(1).default('standard'),
+});
+
+const OperateShopSchema = z.object({
+  op: z.literal('operate_shop'),
+});
+
+const SettleShopDaySchema = z.object({
+  op: z.literal('settle_shop_day'),
 });
 
 export function createEconomyOpRegistry(): OpRegistry {
@@ -74,6 +89,30 @@ export function registerEconomyOps(registry: OpRegistry): void {
     promptDoc: 'settle_job_wage is an internal onDaySettle command and is not exposed to narrative providers.',
     describe: () => 'settle earned job wage',
     apply: (_payload, context) => settleJobWage(context),
+  });
+  registry.register({
+    op: 'accept_shop',
+    schema: AcceptShopSchema,
+    clamp: {},
+    promptDoc: 'accept_shop is a local user-confirmed command and is not exposed to narrative providers.',
+    describe: (payload) => `accept shop at ${payload.nodeId}`,
+    apply: (payload, context) => acceptShop(payload, context),
+  });
+  registry.register({
+    op: 'operate_shop',
+    schema: OperateShopSchema,
+    clamp: {},
+    promptDoc: 'operate_shop is a local business-hours command and is not exposed to narrative providers.',
+    describe: () => 'operate the current shop',
+    apply: (_payload, context) => operateShop(context),
+  });
+  registry.register({
+    op: 'settle_shop_day',
+    schema: SettleShopDaySchema,
+    clamp: {},
+    promptDoc: 'settle_shop_day is an internal onDaySettle command and is not exposed to narrative providers.',
+    describe: () => 'settle the current shop day',
+    apply: (_payload, context) => settleShopDay(context),
   });
 }
 
@@ -210,6 +249,75 @@ function settleJobWage(context: OpContext): OpResult {
   ] };
 }
 
+function acceptShop(payload: z.infer<typeof AcceptShopSchema>, context: OpContext): OpResult {
+  if (context.world.player.shop) return rejected('Only one active shop is supported in this slice.');
+  if (!context.calendar || !context.actionCosts?.operate_shop) return rejected('Calendar and the shop action cost are required to accept a shop.');
+  const offer = getShopOffer(context.world, payload.nodeId, payload.shopRuleId);
+  if (!offer) return rejected('The shop node or deterministic business rule is invalid.');
+  const activeSlotIds = new Set([...context.calendar.slots].sort((left, right) => left.order - right.order).slice(0, availableSlots(context.calendar)).map((slot) => slot.id));
+  if (!offer.rule.openSlotIds.some((slotId) => activeSlotIds.has(slotId))) return rejected('The shop has no business slot in the current calendar rhythm.');
+  const shop = { id: `shop-${payload.nodeId}-${offer.rule.id}`, nodeId: payload.nodeId, shopRuleId: offer.rule.id };
+  context.world.player.shop = shop;
+  return { ok: true, changes: [
+    { path: 'world.player.shop', before: undefined, after: shop, description: `Accepted ${offer.rule.name} at ${payload.nodeId}.` },
+  ] };
+}
+
+function operateShop(context: OpContext): OpResult {
+  const shop = context.world.player.shop;
+  if (!shop) return rejected('The player has no active shop.');
+  if (!context.calendar || !context.actionCosts) return rejected('Calendar and action costs are required to operate a shop.');
+  if (!context.actionCosts.operate_shop) return rejected('The shop action cost is not configured.');
+  const status = getShopStatus(context.world, context.calendar);
+  if (status !== 'ready') return rejected(shopStatusWarning(status));
+  const slotCost = Math.max(0, Math.floor(context.actionCosts.operate_shop.slotCost));
+  const remaining = Math.max(0, availableSlots(context.calendar) - context.world.slotsUsedToday);
+  if (!context.calendar.unlimitedSlots && slotCost > remaining) return rejected('There are not enough remaining slots to operate the shop.');
+
+  const flagKey = shopOpenFlagKey(shop, context.day);
+  context.world.player.flags[flagKey] = true;
+  const changes: OpResult['changes'] = [
+    { path: `world.player.flags.${flagKey}`, before: undefined, after: true, description: `Opened the shop on day ${context.day}.` },
+  ];
+  if (context.encounterConfig) {
+    for (const slotId of shopOperationSlotIds(context.world, context.calendar, context.actionCosts)) {
+      const visit = triggerEncounter(context.world, context.encounterConfig, {
+        nodeId: shop.nodeId,
+        trigger: 'shop_visit',
+        day: context.day,
+        slotId,
+        daysPerWeek: context.calendar.daysPerWeek,
+        events: context.events,
+      });
+      changes.push(...visit.changes);
+      if (visit.triggered) break;
+    }
+  }
+  return { ok: true, changes };
+}
+
+function settleShopDay(context: OpContext): OpResult {
+  const shop = context.world.player.shop;
+  const settlement = context.settlement;
+  if (!shop || !settlement) return { ok: true, changes: [] };
+  const flagKey = shopOpenFlagKey(shop, context.day);
+  if (!context.world.player.flags[flagKey]) return { ok: true, changes: [] };
+  const offer = getShopOffer(context.world, shop.nodeId, shop.shopRuleId, false);
+  if (!offer) return rejected('The active shop references an invalid deterministic business rule.');
+  const beforeOpenDays = offer.openDays;
+  const afterOpenDays = beforeOpenDays + 1;
+  context.world.player.stats[offer.rule.openDaysStatKey] = afterOpenDays;
+  delete context.world.player.flags[flagKey];
+  const nodeName = context.world.map.nodes[shop.nodeId]?.name ?? shop.nodeId;
+  settlement.diary = `${settlement.diary} 今日在${nodeName}经营了${offer.rule.name}。`;
+  const diary = context.world.diary.find((entry) => entry.day === context.day);
+  if (diary && !diary.editedAt) diary.text = settlement.diary;
+  return { ok: true, changes: [
+    { path: `world.player.stats.${offer.rule.openDaysStatKey}`, before: beforeOpenDays, after: afterOpenDays, description: `Recorded one shop business day.` },
+    { path: `world.player.flags.${flagKey}`, before: true, after: undefined, description: `Cleared the settled shop marker.` },
+  ] };
+}
+
 function jobStatusWarning(status: ReturnType<typeof getJobShiftStatus>): string {
   if (status === 'wrong_node') return 'The player must be at the job node when the shift starts.';
   if (status === 'upcoming') return 'The scheduled shift has not started yet.';
@@ -217,6 +325,14 @@ function jobStatusWarning(status: ReturnType<typeof getJobShiftStatus>): string 
   if (status === 'worked') return 'Today\'s scheduled shift has already been worked.';
   if (status === 'invalid') return 'The active job or shift is invalid.';
   return 'The current shift cannot be worked.';
+}
+
+function shopStatusWarning(status: ReturnType<typeof getShopStatus>): string {
+  if (status === 'wrong_node') return 'The player must be at the shop node during business hours.';
+  if (status === 'closed') return 'The shop is outside its configured business hours.';
+  if (status === 'opened') return 'The shop has already operated today.';
+  if (status === 'invalid') return 'The active shop or business hours are invalid.';
+  return 'The current shop cannot operate.';
 }
 
 function rejected(warning: string): OpResult {

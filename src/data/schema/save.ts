@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 36;
+export const CURRENT_SCHEMA_VERSION = 37;
 
 const IdSchema = z.string().min(1);
 
@@ -39,6 +39,7 @@ export const DEFAULT_ACTION_COSTS = {
   move_cross_region: { slotCost: 1, energyCost: 1 },
   move_within_region: { slotCost: 0, energyCost: 0 },
   work: { slotCost: 2, energyCost: 2 },
+  operate_shop: { slotCost: 2, energyCost: 2 },
   explore: { slotCost: 1, energyCost: 1 },
   rest: { slotCost: 1, energyCost: 0 },
 } satisfies z.input<typeof ActionCostTableSchema>;
@@ -148,7 +149,7 @@ export const EncounterLogEntrySchema = z.object({
   slotId: IdSchema,
   nodeId: IdSchema,
   characterIds: z.array(IdSchema).max(3),
-  trigger: z.enum(['enter', 'leave', 'character_move']),
+  trigger: z.enum(['enter', 'leave', 'character_move', 'shop_visit']),
   scope: z.enum(['formal', 'peripheral']),
   outcome: z.enum(['continued', 'urgent_leave']),
   departure: z.object({
@@ -371,6 +372,13 @@ export const JobRuleSchema = z.object({
   shiftSlotId: IdSchema,
 });
 
+export const ShopRuleSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(120),
+  openSlotIds: z.array(IdSchema).min(1).max(12),
+  openDaysStatKey: StatKeySchema,
+});
+
 export const EnergyRuleSchema = z.object({
   statKey: StatKeySchema,
   maxStatKey: StatKeySchema,
@@ -428,13 +436,33 @@ export const DEFAULT_ENERGY_RULE = {
   enabledFlagKey: 'economy.energy.enabled',
 } satisfies z.input<typeof EnergyRuleSchema>;
 
-export const EconomyStateSchema = EconomyStateV35Schema.extend({
+export const EconomyStateV36Schema = EconomyStateV35Schema.extend({
   energyRule: EnergyRuleSchema,
 });
 
-export const DEFAULT_ECONOMY_STATE = {
+export const DEFAULT_ECONOMY_V36_STATE = {
   ...DEFAULT_ECONOMY_V35_STATE,
   energyRule: DEFAULT_ENERGY_RULE,
+} satisfies z.input<typeof EconomyStateV36Schema>;
+
+export const DEFAULT_SHOP_RULE = {
+  id: 'standard',
+  name: '街区小店',
+  openSlotIds: ['morning', 'noon'],
+  openDaysStatKey: 'economy.shop.days-open',
+} satisfies z.input<typeof ShopRuleSchema>;
+
+export const EconomyStateSchema = EconomyStateV36Schema.extend({
+  shopRules: z.record(IdSchema, ShopRuleSchema),
+}).superRefine((economy, context) => {
+  for (const [id, rule] of Object.entries(economy.shopRules)) {
+    if (rule.id !== id) context.addIssue({ code: 'custom', path: ['shopRules', id, 'id'], message: 'Shop rule record key must match its stable id.' });
+  }
+});
+
+export const DEFAULT_ECONOMY_STATE = {
+  ...DEFAULT_ECONOMY_V36_STATE,
+  shopRules: { standard: DEFAULT_SHOP_RULE },
 } satisfies z.input<typeof EconomyStateSchema>;
 
 export const HousingContractSchema = z.object({
@@ -448,6 +476,12 @@ export const JobContractSchema = z.object({
   id: IdSchema,
   nodeId: IdSchema,
   jobRuleId: IdSchema,
+});
+
+export const ShopContractSchema = z.object({
+  id: IdSchema,
+  nodeId: IdSchema,
+  shopRuleId: IdSchema,
 });
 
 export const EconomyTransactionSchema = z.object({
@@ -469,6 +503,7 @@ export const PlayerStateSchema = z.object({
   homeNodeId: IdSchema.optional(),
   housing: HousingContractSchema.optional(),
   job: JobContractSchema.optional(),
+  shop: ShopContractSchema.optional(),
   stats: z.record(z.string(), z.number()),
   flags: z.record(z.string(), z.boolean()),
   inventory: z.array(InventoryEntrySchema),
@@ -763,6 +798,9 @@ export const WorldV35Schema = WorldV34Schema.extend({
   economy: EconomyStateV35Schema,
 });
 export const WorldV36Schema = WorldV35Schema.extend({
+  economy: EconomyStateV36Schema,
+});
+export const WorldV37Schema = WorldV36Schema.extend({
   economy: EconomyStateSchema,
 });
 
@@ -801,12 +839,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV36Schema,
+  world: WorldV37Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV36Schema>;
+export type WorldState = z.infer<typeof WorldV37Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;
@@ -842,6 +880,8 @@ export type HousingContract = z.infer<typeof HousingContractSchema>;
 export type RentRule = z.infer<typeof RentRuleSchema>;
 export type JobContract = z.infer<typeof JobContractSchema>;
 export type JobRule = z.infer<typeof JobRuleSchema>;
+export type ShopContract = z.infer<typeof ShopContractSchema>;
+export type ShopRule = z.infer<typeof ShopRuleSchema>;
 export type EnergyRule = z.infer<typeof EnergyRuleSchema>;
 export type StageRule = z.infer<typeof StageRuleSchema>;
 export type AxisDef = z.infer<typeof AxisDefSchema>;

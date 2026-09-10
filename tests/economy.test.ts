@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EventBus } from '../src/core/events/bus';
 import { advanceAction, endDay } from '../src/core/time';
-import { createEconomyOpRegistry, getJobQuote, getJobShiftStatus, getRentalQuote, injectEconomyMorningAds, registerEconomyHooks } from '../src/features/economy';
+import { createEconomyOpRegistry, getJobQuote, getJobShiftStatus, getRentalQuote, getShopOffer, getShopStatus, injectEconomyMorningAds, registerEconomyHooks } from '../src/features/economy';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import { SaveFileSchema } from '../src/data/schema/save';
 
@@ -30,6 +30,12 @@ describe('stage 8 economy and rent slice', () => {
   it('rejects a job rule that references an unknown currency', () => {
     const { save } = setup();
     save.world.economy.jobRules.standard.currencyId = 'missing';
+    expect(SaveFileSchema.safeParse(save).success).toBe(false);
+  });
+
+  it('rejects a shop rule whose record key does not match its stable id', () => {
+    const { save } = setup();
+    save.world.economy.shopRules.standard.id = 'different';
     expect(SaveFileSchema.safeParse(save).success).toBe(false);
   });
 
@@ -76,21 +82,24 @@ describe('stage 8 economy and rent slice', () => {
     expect(entries).toEqual(expect.arrayContaining([
       expect.objectContaining({ category: 'ad', entryKind: 'housing', nodeId: 'start', source: 'local' }),
       expect.objectContaining({ category: 'ad', entryKind: 'job', nodeId: 'start', source: 'local' }),
+      expect.objectContaining({ category: 'ad', entryKind: 'shop_transfer', nodeId: 'start', source: 'local' }),
     ]));
     save.world.player.housing = { id: 'rental-start', nodeId: 'start', rentRuleId: 'standard', nextDueDayStatKey: 'economy.rent.next-due-day' };
     save.world.player.job = { id: 'job-start-standard', nodeId: 'start', jobRuleId: 'standard' };
+    save.world.player.shop = { id: 'shop-start-standard', nodeId: 'start', shopRuleId: 'standard' };
     expect(injectEconomyMorningAds(entries, save.world, 1)).toEqual(entries);
   });
 
-  it('keeps both local economy entry points when a six-item morning brief is already full', () => {
+  it('keeps all three local economy entry points when a six-item morning brief is already full', () => {
     const { save } = setup();
     const full = Array.from({ length: 6 }, (_, index) => ({
-      id: `entry-${index}`, day: 1, category: 'ambience' as const, title: `条目 ${index}`, body: '本地晨报', charIds: [], source: 'local' as const,
+      id: `entry-${index}`, day: 1, category: index === 0 ? 'ambience' as const : 'lead' as const, title: `条目 ${index}`, body: '本地晨报', charIds: [], source: 'local' as const,
     }));
     const entries = injectEconomyMorningAds(full, save.world, 1);
     expect(entries).toHaveLength(6);
     expect(entries.some((entry) => entry.entryKind === 'housing')).toBe(true);
     expect(entries.some((entry) => entry.entryKind === 'job')).toBe(true);
+    expect(entries.some((entry) => entry.entryKind === 'shop_transfer')).toBe(true);
   });
 
   it('accepts one deterministic node-bound job and only permits work at its scheduled place and time', () => {
@@ -141,5 +150,55 @@ describe('stage 8 economy and rent slice', () => {
     expect(save.world.player.stats.money).toBe(0);
     expect(settlement.income).toBe(0);
     expect(settlement.economyTransactions).toEqual([]);
+  });
+
+  it('accepts one node-bound shop and derives business availability from configured slots', () => {
+    const { save, registry } = setup();
+    const context = { world: save.world, day: 1, slotId: 'morning', nodeId: 'start', calendar: save.config.calendar, actionCosts: save.config.actionCosts, log: () => undefined };
+    expect(getShopOffer(save.world, 'start')).toMatchObject({ openDays: 0, rule: { openSlotIds: ['morning', 'noon'] } });
+    expect(registry.applyAll([{ op: 'accept_shop', nodeId: 'start' }], context, 1).applied).toBe(1);
+    expect(save.world.player.shop).toMatchObject({ nodeId: 'start', shopRuleId: 'standard' });
+    expect(getShopStatus(save.world, save.config.calendar)).toBe('ready');
+    expect(registry.applyAll([{ op: 'accept_shop', nodeId: 'start' }], context, 1).rejected).toHaveLength(1);
+
+    save.world.player.nodeId = 'docks';
+    expect(getShopStatus(save.world, save.config.calendar)).toBe('wrong_node');
+    save.world.player.nodeId = 'start';
+    save.world.clock.slotId = 'evening';
+    expect(getShopStatus(save.world, save.config.calendar)).toBe('closed');
+  });
+
+  it('does not create a shop contract when the configured shop action cost is missing', () => {
+    const { save, registry } = setup();
+    const { operate_shop: _operateShop, ...actionCosts } = save.config.actionCosts;
+    const rejected = registry.applyAll([{ op: 'accept_shop', nodeId: 'start' }], {
+      world: save.world, day: 1, slotId: 'morning', nodeId: 'start', calendar: save.config.calendar, actionCosts, log: () => undefined,
+    }, 1);
+    expect(rejected.rejected[0]?.reason).toContain('shop action cost');
+    expect(save.world.player.shop).toBeUndefined();
+  });
+
+  it('occupies shop hours, records one open day, and lets scheduled characters visit the player', () => {
+    const { save, registry } = setup();
+    save.world.characters.visitor = {
+      id: 'visitor', name: '来客', tier: 'formal', card: { description: '会来逛店', personality: '好奇' }, visuals: { portraits: [] },
+      schedule: { grid: { '0:noon': { nodeId: 'start', activity: '逛店' } }, overrides: {} },
+    };
+    const bus = new EventBus();
+    registerEconomyHooks(bus, registry);
+    const context = { world: save.world, day: 1, slotId: 'morning', nodeId: 'start', calendar: save.config.calendar, actionCosts: save.config.actionCosts, encounterConfig: { ...save.config.encounter, triggerOnLeave: false }, events: bus, log: () => undefined };
+    registry.applyAll([{ op: 'accept_shop', nodeId: 'start' }], context, 1);
+    const operated = registry.applyAll([{ op: 'operate_shop' }], context, 1);
+    expect(operated.applied).toBe(1);
+    expect(getShopStatus(save.world, save.config.calendar)).toBe('opened');
+    expect(save.world.encounterLog.at(-1)).toMatchObject({ trigger: 'shop_visit', nodeId: 'start', slotId: 'noon', characterIds: ['visitor'] });
+    expect(registry.applyAll([{ op: 'operate_shop' }], context, 1).rejected[0]?.reason).toContain('already operated');
+
+    const time = advanceAction(save.world, save.config.calendar, save.config.actionCosts, 'operate_shop', bus);
+    expect(time.advanced).toBe(2);
+    const settlement = endDay(save.world, save.config.calendar, bus);
+    expect(save.world.player.stats['economy.shop.days-open']).toBe(1);
+    expect(Object.keys(save.world.player.flags).some((key) => key.includes('economy.shop.'))).toBe(false);
+    expect(settlement.diary).toContain('经营了街区小店');
   });
 });

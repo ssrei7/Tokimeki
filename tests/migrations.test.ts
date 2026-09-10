@@ -396,4 +396,23 @@ describe('save migrations', () => {
     expect(migrated.config.actionCosts.explore).toEqual({ slotCost: 3, energyCost: 1 });
     expect(migrated.config.actionCosts.work?.energyCost).toBe(2);
   });
+
+  it('migrates v36 saves with deterministic shop rules and a stat-backed open-day count', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v36-shop', title: 'v36 shop' }));
+    const { shopRules: _shopRules, ...legacyEconomy } = source.world.economy;
+    const legacyStats = { ...source.world.player.stats };
+    delete legacyStats['economy.shop.days-open'];
+    const { operate_shop: _operateShop, ...legacyCosts } = source.config.actionCosts;
+    const migrated = migrateSave({
+      ...source,
+      schemaVersion: 36,
+      config: { ...source.config, actionCosts: legacyCosts },
+      world: { ...source.world, economy: legacyEconomy, player: { ...source.world.player, shop: undefined, stats: legacyStats } },
+    });
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.economy.shopRules.standard).toMatchObject({ id: 'standard', openSlotIds: ['morning', 'noon'], openDaysStatKey: 'economy.shop.days-open' });
+    expect(migrated.world.player.stats['economy.shop.days-open']).toBe(0);
+    expect(migrated.world.player.shop).toBeUndefined();
+    expect(migrated.config.actionCosts.operate_shop).toEqual({ slotCost: 2, energyCost: 2 });
+  });
 });

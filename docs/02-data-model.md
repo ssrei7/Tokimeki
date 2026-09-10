@@ -19,7 +19,7 @@ type Condition = string;   // expr-eval 表达式,禁止 eval
 - 时间坐标统一为 `(day, slotId)`，地点坐标统一为 `nodeId`。
 - 派生值（阶段标签、可达节点、当前在场者）可缓存但必须能重算，且不作为事实来源。
 
-`CURRENT_SCHEMA_VERSION = 36`
+`CURRENT_SCHEMA_VERSION = 37`
 
 ---
 
@@ -73,6 +73,7 @@ type ActionCostTable = Record<ActionKind, ActionCost>;
 move_cross_region       1           1
 move_within_region      0           0
 work                    2           2
+operate_shop            2           2
 explore                 1           1
 rest                    1           0
 ```
@@ -608,6 +609,7 @@ interface PlayerState {
   homeNodeId?: NodeId;           // 邻近度加权偶遇
   housing?: HousingContract;     // 阶段 8：当前唯一生效租约
   job?: JobContract;             // 阶段 8：当前唯一生效工作契约
+  shop?: ShopContract;           // 阶段 8：当前唯一生效店铺经营权
   stats: Record<string, number>; // money / energy / reputation ...
   flags: Record<string, boolean>;
   inventory: InventoryEntry[];
@@ -617,7 +619,7 @@ interface PlayerState {
 
 `PlayerPersona` 保存在本地资料库；一个 `SaveFile` 通过 `player.personaId` 绑定一个当前身份。旧存档的 `persona` 文本必须保留，不能静默丢弃；当前版本提供设置页补创建/绑定面具身份的入口，后续可再增加旧文本自动转为默认身份。`displayName` 只影响面对面/事件对话框的玩家名牌，`name` 仍是世界事实中的玩家姓名。
 
-`job` 已在 v35 绑定节点并占用既有 `work.slotCost`；`shop` 将在阶段 8 后续切片接入营业时段与反向偶遇。工资金额不得写进契约或广告正文，必须由岗位规则指向 `player.stats` 中的通用数值。
+`job` 已在 v35 绑定节点并占用 `work.slotCost`；`shop` 在 v37 绑定节点，并以 `operate_shop` 成本占用营业时段。工资金额不得写进契约或广告正文，必须由岗位规则指向 `player.stats` 中的通用数值；店铺转让广告同样不能直接创建经营权。
 
 向量记忆属于阶段 7 的可选外部检索索引，不是事实字段。浏览器只保存索引状态、Provider 引用和可重建的向量缓存；embedding 文本必须经过用户选择的 Provider，默认不发送。Prompt 组装仍以确定性筛选后的记忆正文为准，向量 API 不得直接修改 `WorldState`。
 
@@ -648,6 +650,7 @@ interface EconomyState {
   rentRules: Record<Id, RentRule>;
   jobRules: Record<Id, JobRule>;
   energyRule: EnergyRule;
+  shopRules: Record<Id, ShopRule>;
 }
 
 interface EnergyRule {
@@ -678,6 +681,19 @@ interface JobContract {
   jobRuleId: Id;
 }
 
+interface ShopRule {
+  id: Id;
+  name: string;
+  openSlotIds: SlotId[];          // 可开始营业的配置时段
+  openDaysStatKey: string;        // 累计营业天数保存在 player.stats
+}
+
+interface ShopContract {
+  id: Id;
+  nodeId: NodeId;                 // 玩家必须到店才能营业
+  shopRuleId: Id;
+}
+
 interface EconomyTransaction {
   id: Id;
   kind: 'rent' | 'wage';
@@ -695,6 +711,8 @@ v34 首个生活切片只支持一个生效租约。签约由用户明确确认�
 v35 增加一个生效工作契约。接受岗位、开始班次和工资结算分别通过本地白名单 op / `onDaySettle` 内部 op 完成；玩家必须在规则声明的时段位于绑定节点，班次消耗既有 `work.slotCost`，错过时段只损失当日工资，不阻断其他玩法。完成标记使用当日布尔 flag 并在结算后清理，历史收入保留在 `DailySettlement.economyTransactions`。
 
 v36 启用成本表中的 `energyCost`。体力当前值、上限与休息恢复量仍是 `player.stats` 中的普通数值，开关仍是 `player.flags` 中的普通布尔值；`EnergyRule` 只保存这些 key，不新增专用数值字段。默认体力为 6/6，休息恢复 2；跨区域移动、工作、探索默认分别消耗 1、2、1，区内移动和休息不消耗。体力不足时只阻止对应行动，休息始终可恢复，设置页可关闭限制且保留现有数值。UI 本地行动与叙事 `advance_time` / `move_player` ops 使用同一确定性校验，AI 不能通过提出已有 op 绕过成本。
+
+v37 增加 `ShopRule`、唯一生效 `player.shop` 与 `operate_shop` 成本。接手店铺和开始营业均由本地白名单 op 校验已发现节点、当前日历、营业时段、位置、剩余时段与体力；每日营业状态写入通用 flag，日结后清除并把累计营业天数写入规则指向的普通 stat。营业覆盖的时段内，内核只从既有角色/NPC 日程筛选实际到店者，并以 `shop_visit` 写入普通相遇记录；没有已排程访客时允许正常营业，不调用 AI 补造角色。销售收入、商品库存和定价不在本切片实现。
 
 ---
 

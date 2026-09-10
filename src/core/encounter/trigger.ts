@@ -33,13 +33,14 @@ export interface EncounterOutcomeResult {
 export function triggerEncounter(world: WorldState, config: EncounterConfig, options: EncounterTriggerOptions): EncounterTriggerResult {
   const day = Math.max(1, Math.floor(options.day ?? world.clock.day));
   const slotId = options.slotId ?? world.clock.slotId;
-  if (!config.enabled || (options.trigger !== 'enter' && !config.triggerOnLeave)) return emptyResult();
+  if (!config.enabled) return emptyResult();
+  if ((options.trigger === 'leave' || options.trigger === 'character_move') && !config.triggerOnLeave) return emptyResult();
   if (world.player.nodeId !== options.nodeId) return emptyResult();
   if (!weatherAllows(world, options.weatherGate, day)) return emptyResult();
   const candidates = selectEncounterCandidates({ world, config, nodeId: options.nodeId, day, slotId, daysPerWeek: options.daysPerWeek, seed: options.seed });
   if (!candidates.length) return emptyResult();
   const guaranteed = config.guaranteeAfterDays > 0 && candidates.some((candidate) => candidate.daysSinceLastEncounter >= config.guaranteeAfterDays);
-  if (options.trigger !== 'enter' && !guaranteed && encounterRoll(options.seed ?? 0, day, slotId, options.nodeId, options.trigger) >= Math.max(0, Math.min(1, config.leaveProbability))) return { triggered: false, candidates, changes: [] };
+  if ((options.trigger === 'leave' || options.trigger === 'character_move') && !guaranteed && encounterRoll(options.seed ?? 0, day, slotId, options.nodeId, options.trigger) >= Math.max(0, Math.min(1, config.leaveProbability))) return { triggered: false, candidates, changes: [] };
   const node = world.map.nodes[options.nodeId];
   if (!node) return emptyResult();
   const scope = deriveNodeScope(node, slotId);
