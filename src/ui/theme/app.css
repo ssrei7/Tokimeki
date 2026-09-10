@@ -201,6 +201,22 @@ button.danger { background: #fee4e2; color: #b42318; }
 .message.assistant { align-self: flex-start; background: #fff; border: 1px solid #e4e8ef; }
 .message.pending { color: #667085; }
 .empty { color: #98a2b3; text-align: center; padding: 36px 0; }
+.story-reader { display: grid; gap: 16px; max-width: 760px; margin: 0 auto; padding: 20px; border: 1px solid #d8dee8; border-radius: 16px; background: #fbfaf5; color: #293241; box-shadow: 0 12px 30px #34405412; }
+.story-reader-header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; padding-bottom: 14px; border-bottom: 1px solid #e7e2d8; }
+.story-reader-header h2 { margin-top: 5px; font-family: Georgia, 'Noto Serif SC', serif; font-size: 24px; line-height: 1.25; }
+.story-reader-header p { margin-top: 6px; color: #667085; line-height: 1.55; }
+.story-reader-status { flex: 0 0 auto; padding: 5px 9px; border-radius: 999px; background: #ebe7da; color: #665f50; font-size: 11px; }
+.story-reader-progress { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 14px; color: #667085; font-size: 12px; }
+.story-reader-body { display: grid; gap: 18px; }
+.story-reader-stage { padding: 4px 0 16px; border-bottom: 1px solid #e7e2d8; }
+.story-reader-stage.is-current { padding-left: 12px; border-left: 3px solid #b28b52; }
+.story-reader-stage-heading { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.story-reader-stage-heading h3 { font-family: Georgia, 'Noto Serif SC', serif; font-size: 18px; }
+.story-reader-stage > p { margin-top: 10px; white-space: pre-wrap; line-height: 1.85; }
+.story-reader-read-mark { color: #7c8b71; font-size: 11px; }
+.story-reader-stage-actions { display: flex; gap: 8px; margin-top: 12px; }
+.story-reader-stage-actions button { min-height: 36px; padding: 0 12px; font-size: 12px; }
+.story-reader-hint { color: #7b7467; font-size: 12px; line-height: 1.5; }
 .composer { flex: 0 0 auto; display: grid; gap: 4px; padding-top: 4px; background: #f8fafc; }
 .composer textarea { min-height: 52px; resize: vertical; }
 .composer-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }

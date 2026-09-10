@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { advanceStorySceneStage, buildLocalChapterSummary, confirmStoryScene, copyStoryScenePreset, createBuiltinStoryScenePresets, createStorySceneDraft, formatChatArchive, formatEventHistoryArchive, generateStorySceneDraftInput, getStorySceneReading, readStorySceneStage, selectStorySceneReadingStage, updateStorySceneStatus, upsertChapterSummary, upsertMilestone } from '../src/core/story';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
+import { getReadableStorySceneStages } from '../src/ui/story-scene/StorySceneReader';
 
 describe('local chapter summaries and milestones', () => {
   it('generates a deterministic reviewable StoryScene draft from a short intent without API calls', () => {
@@ -60,6 +61,23 @@ describe('local chapter summaries and milestones', () => {
     expect(save.world.storyScenes[0].currentStageId).toBe('opening');
     expect(save.world.storyScenes[0].readingStageId).toBe('opening');
     expect(save.world.storyScenes[0].readStageIds).toEqual(['opening', 'middle']);
+  });
+
+  it('does not expose StoryScene stages beyond the deterministic plot frontier', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'story-reader-frontier', title: 'Story reader frontier' }));
+    save.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '码头青年', personality: '安静' }, visuals: { portraits: [] } };
+    createStorySceneDraft(save.world, save.config.calendar, {
+      id: 'frontier-scene', title: '边界测试', intent: '测试', outline: '测试', participantIds: ['seir'], nodeId: 'start',
+      stages: [
+        { id: 'opening', title: '开场', content: '一' },
+        { id: 'middle', title: '中段', content: '二' },
+        { id: 'ending', title: '结尾', content: '三' },
+      ],
+    });
+    const scene = save.world.storyScenes[0];
+    expect(getReadableStorySceneStages(scene).map((stage) => stage.id)).toEqual(['opening']);
+    scene.currentStageId = 'middle';
+    expect(getReadableStorySceneStages(scene).map((stage) => stage.id)).toEqual(['opening', 'middle']);
   });
 
   it('persists a reviewable StoryScene draft and confirms it only after deterministic validation', () => {
