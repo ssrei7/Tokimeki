@@ -21,6 +21,8 @@ describe('PWA shell', () => {
   it('links the manifest and enables safe-area standalone metadata', () => {
     const html = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
     expect(html).toContain('rel="manifest"');
+    expect(html).toContain('maximum-scale=1.0');
+    expect(html).toContain('user-scalable=no');
     expect(html).toContain('viewport-fit=cover');
     expect(html).toContain('apple-mobile-web-app-capable');
     expect(html).toContain('theme-color');
@@ -33,7 +35,11 @@ describe('PWA shell', () => {
     expect(css).toContain('height: 100dvh');
     expect(css).toContain('var(--safe-area-top)');
     expect(css).toContain('var(--safe-area-bottom)');
+    expect(css).toContain('touch-action: pan-y');
+    expect(css).toContain('@media (max-width: 699px)');
+    expect(css).toContain('.screen input, .screen textarea, .screen select { font-size: 16px; }');
     expect(themeCss).toContain('--safe-area-top: env(safe-area-inset-top, 0px);');
     expect(themeCss).toContain('--safe-area-bottom: env(safe-area-inset-bottom, 0px);');
+    expect(themeCss).toContain('background: var(--gray-25);');
   });
 });

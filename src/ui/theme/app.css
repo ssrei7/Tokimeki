@@ -6,7 +6,7 @@ button { min-height: 44px; border: 0; border-radius: 8px; background: var(--gray
 button:disabled { opacity: .5; cursor: not-allowed; }
 button.secondary { background: var(--gray-50); color: var(--gray-700); }
 button.danger { background: var(--gray-100); color: var(--gray-700); }
-.app-shell { min-height: 100vh; min-height: 100svh; height: 100vh; height: 100dvh; max-width: 760px; margin: 0 auto; overflow: hidden; background: var(--gray-25); display: flex; flex-direction: column; }
+.app-shell { min-height: 100vh; min-height: 100svh; height: 100vh; height: 100dvh; max-width: 760px; margin: 0 auto; overflow: hidden; background: var(--gray-25); display: flex; flex-direction: column; touch-action: pan-y; }
 .topbar { min-height: 38px; padding: calc(2px + var(--safe-area-top)) 10px 2px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--gray-100); background: var(--gray-0); }
 .topbar > div { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .topbar h1, h2, h3, p { margin: 0; }
@@ -433,4 +433,5 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 @media (min-width: 761px) { .app-shell { min-height: 100vh; box-shadow: 0 0 30px rgb(63 63 63 / 0.08); } }
 @media (max-width: 520px) { .routing-list label { grid-template-columns: 1fr; } }
 @media (max-width: 520px) { .map-expand-row { grid-template-columns: 1fr 90px; } .map-expand-row button { grid-column: 1 / -1; } }
+@media (max-width: 699px) { .screen input, .screen textarea, .screen select { font-size: 16px; } }
 @media (prefers-reduced-motion: reduce) { .vn-generation-dots i { animation: none; opacity: .7; } .map-bottom-sheet .map-menu-content { transition: none; } }
