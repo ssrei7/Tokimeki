@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { BOTTOM_NAV_ITEMS, SETTINGS_PAGE_DEFINITIONS } from '../src/App';
+import { BOTTOM_NAV_ITEMS, LIBRARY_PAGE_DEFINITIONS, SETTINGS_PAGE_DEFINITIONS } from '../src/App';
 import { DesktopLauncher, SubpageShell } from '../src/components/desktop-shell';
 
 describe('settings desktop', () => {
@@ -53,5 +53,23 @@ describe('settings desktop', () => {
       expect(match[1]).toBe(match[2]);
       expect(match[2]).toBe(match[3]);
     }
+  });
+});
+
+describe('library desktop', () => {
+  it('exposes twelve unique reachable entries with short launcher labels', () => {
+    const ids = LIBRARY_PAGE_DEFINITIONS.map((entry) => entry.id);
+    expect(ids).toHaveLength(12);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(LIBRARY_PAGE_DEFINITIONS.map((entry) => entry.label)).toEqual(['消息', '联系人', '通话', '音乐', '记忆', '收藏', '背包', '角色', '世界书', '预设', '多人剧情', '存档']);
+    expect(LIBRARY_PAGE_DEFINITIONS.every((entry) => Array.from(entry.label).length <= 4)).toBe(true);
+    expect(LIBRARY_PAGE_DEFINITIONS.find((entry) => entry.id === 'save')?.pageTitle).toBe('存档与导入导出');
+    expect(LIBRARY_PAGE_DEFINITIONS.find((entry) => entry.id === 'memories')?.pageTitle).toBe('记忆库');
+  });
+
+  it('keeps terminal placeholders local and does not add API calls', () => {
+    const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    expect(source).toContain("['messages', 'contacts', 'calls', 'music'].includes(navigation.activePage)");
+    expect(source).toContain('此入口将在终端功能切片中接入。');
   });
 });

@@ -57,8 +57,31 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .subpage-content > .fold-card, .subpage-content > .advanced { margin: 0; border: 0; background: transparent; box-shadow: none; overflow: visible; }
 .subpage-content > .fold-card > .fold-body { padding: 0; }
 .subpage-content[data-page='display'] > :nth-child(6) .provider-card > :nth-child(-n+3) { display: none; }
+.subpage-content[data-page='messages'] > *,
+.subpage-content[data-page='contacts'] > *,
+.subpage-content[data-page='calls'] > *,
+.subpage-content[data-page='music'] > *,
+.subpage-content[data-page='memories'] > *,
+.subpage-content[data-page='collection'] > *,
+.subpage-content[data-page='story'] > *,
+.subpage-content[data-page='characters'] > *,
+.subpage-content[data-page='worldbook'] > *,
+.subpage-content[data-page='presets'] > *,
+.subpage-content[data-page='inventory'] > *,
+.subpage-content[data-page='save'] > * { display: block; }
 .surface-card { border: 1px solid var(--gray-100); border-radius: 8px; padding: 16px; background: var(--gray-0); box-shadow: 0 4px 16px rgb(63 63 63 / 0.05); }
 .empty-state { padding: 28px 12px; color: var(--gray-400); text-align: center; }
+.library-subpage-content .library-legacy-content > * { display: none; }
+.library-subpage-content[data-page='characters'] .library-legacy-content > :nth-child(-n+4) { display: block; }
+.library-subpage-content[data-page='worldbook'] .library-legacy-content > :nth-child(1),
+.library-subpage-content[data-page='worldbook'] .library-legacy-content > :nth-child(2),
+.library-subpage-content[data-page='worldbook'] .library-legacy-content > :nth-child(5),
+.library-subpage-content[data-page='presets'] .library-legacy-content > :nth-child(1),
+.library-subpage-content[data-page='presets'] .library-legacy-content > :nth-child(6),
+.library-subpage-content[data-page='inventory'] .library-legacy-content > :nth-child(1),
+.library-subpage-content[data-page='inventory'] .library-legacy-content > :nth-child(7),
+.library-subpage-content[data-page='save'] .library-legacy-content > :nth-child(1),
+.library-subpage-content[data-page='save'] .library-legacy-content > :nth-child(8) { display: block; }
 @media (min-width: 700px) { .desktop-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 24px 14px; } }
 .map-screen { position: relative; min-height: calc(100dvh - 150px); display: flex; flex-direction: column; gap: 14px; }
 .map-screen-host .map-screen { flex: 1; min-height: 0; gap: 8px; }
