@@ -7,7 +7,6 @@ import { cn } from '@/lib/utils';
 export type DesktopEntry = {
   id: string;
   label: string;
-  description: string;
   icon: LucideIcon;
   tone?: 'blue' | 'green' | 'amber' | 'rose' | 'violet' | 'gray';
   badge?: string;
@@ -24,7 +23,7 @@ export function DesktopLauncher({ title, entries, onOpen }: { title: string; ent
 
 export function DesktopAppIcon({ entry, onOpen }: { entry: DesktopEntry; onOpen: (id: string) => void }) {
   const Icon = entry.icon;
-  return <button type="button" className="desktop-app-icon" onClick={() => onOpen(entry.id)} aria-label={`打开${entry.label}`} title={entry.description}>
+  return <button type="button" className="desktop-app-icon" onClick={() => onOpen(entry.id)} aria-label={`打开${entry.label}`}>
     <span className={cn('desktop-app-icon-glyph', `tone-${entry.tone ?? 'gray'}`)} aria-hidden="true"><Icon /></span>
     <span className="desktop-app-icon-label">{entry.label}</span>
     {entry.badge && <StatusBadge>{entry.badge}</StatusBadge>}

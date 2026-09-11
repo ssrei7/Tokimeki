@@ -59,16 +59,17 @@ import './ui/theme/app.css';
 
 type Tab = 'map' | 'day' | 'chat' | 'library' | 'settings';
 export type SettingsPage = 'player' | 'provider' | 'vector-memory' | 'routing' | 'display' | 'rules' | 'privacy' | 'debug' | 'dev-tools';
-export const SETTINGS_PAGE_DEFINITIONS: readonly (Omit<DesktopEntry, 'id' | 'badge' | 'tone'> & { id: SettingsPage; tone: NonNullable<DesktopEntry['tone']> })[] = [
-  { id: 'player', label: '玩家身份', description: '面具与称呼', icon: UserRound, tone: 'blue' },
-  { id: 'provider', label: '对话模型', description: 'Provider 配置', icon: Bot, tone: 'violet' },
-  { id: 'vector-memory', label: '向量记忆', description: '混合检索 API', icon: BrainCircuit, tone: 'gray' },
-  { id: 'routing', label: '任务路由', description: '模型任务分配', icon: Route, tone: 'amber' },
-  { id: 'display', label: '显示选项', description: '数值与晨报', icon: Palette, tone: 'rose' },
-  { id: 'rules', label: '游戏规则', description: '体力与状态', icon: SlidersHorizontal, tone: 'green' },
-  { id: 'privacy', label: '数据与隐私', description: '本地数据边界', icon: ShieldCheck, tone: 'blue' },
-  { id: 'debug', label: '高级调试', description: 'Prompt 与 Ops', icon: Bug, tone: 'violet' },
-  { id: 'dev-tools', label: '开发工具', description: 'Mock 与模拟器', icon: Wrench, tone: 'amber' },
+export const BOTTOM_NAV_ITEMS: readonly (readonly [Tab, string])[] = [['day', '日程'], ['chat', '聊天'], ['map', '地图'], ['library', '资料'], ['settings', '设置']];
+export const SETTINGS_PAGE_DEFINITIONS: readonly (DesktopEntry & { id: SettingsPage; pageTitle: string })[] = [
+  { id: 'player', label: '身份', pageTitle: '玩家身份', icon: UserRound, tone: 'gray' },
+  { id: 'provider', label: '模型', pageTitle: '对话模型', icon: Bot, tone: 'gray' },
+  { id: 'vector-memory', label: '向量', pageTitle: '向量记忆', icon: BrainCircuit, tone: 'gray' },
+  { id: 'routing', label: '路由', pageTitle: '任务路由', icon: Route, tone: 'gray' },
+  { id: 'display', label: '显示', pageTitle: '显示选项', icon: Palette, tone: 'gray' },
+  { id: 'rules', label: '规则', pageTitle: '游戏规则', icon: SlidersHorizontal, tone: 'gray' },
+  { id: 'privacy', label: '隐私', pageTitle: '数据与隐私', icon: ShieldCheck, tone: 'gray' },
+  { id: 'debug', label: '调试', pageTitle: '高级调试', icon: Bug, tone: 'gray' },
+  { id: 'dev-tools', label: '开发', pageTitle: '开发工具', icon: Wrench, tone: 'gray' },
 ];
 type ContentKind = 'character' | 'worldbook' | 'preset' | 'memory';
 type RequestStatus = 'idle' | StreamStatus;
@@ -2213,7 +2214,7 @@ export function App() {
       {tab === 'library' && <CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} />}
       {tab === 'settings' && <SettingsView activePage={settingsPage} onOpenPage={setSettingsPage} onBack={() => setSettingsPage(null)} provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
     </main>
-    <nav className="bottom-nav">{([['map', '地图'], ['day', '日程'], ['chat', '聊天'], ['library', '资料'], ['settings', '设置']] as const).map(([id, label]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
+    <nav className="bottom-nav">{BOTTOM_NAV_ITEMS.map(([id, label]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
   </div>;
 }
 
@@ -2968,7 +2969,7 @@ function SettingsView(props: {
     : entry.id === 'vector-memory'
       ? { ...entry, tone: props.embeddingConfig.enabled ? 'green' : 'gray', badge: props.embeddingConfig.enabled ? '已启用' : '已关闭' }
       : entry);
-  const pageTitle = entries.find((entry) => entry.id === props.activePage)?.label ?? '设置';
+  const pageTitle = SETTINGS_PAGE_DEFINITIONS.find((entry) => entry.id === props.activePage)?.pageTitle ?? '设置';
   if (!props.activePage) return <DesktopLauncher title="设置" entries={entries} onOpen={(id) => props.onOpenPage(id as SettingsPage)} />;
   return <SubpageShell title={pageTitle} pageId={props.activePage} onBack={props.onBack}>
     <details className="fold-card" open><summary>玩家身份 · 面具身份</summary><div className="fold-body"><div className="provider-card persona-card"><div className="list-heading"><div><span className="eyebrow">玩家身份</span><h3>面具身份</h3></div><span className="io-scope">每个世界绑定一个</span></div><div className="persona-fields"><input placeholder="身份名称，例如：旅人" value={props.personaName} onChange={(event) => props.setPersonaName(event.target.value)} /><input placeholder="对话框称呼，例如：小明" value={props.personaDisplayName} onChange={(event) => props.setPersonaDisplayName(event.target.value)} /><textarea placeholder="自我描述（会注入面对面提示词）" value={props.personaDescription} onChange={(event) => props.setPersonaDescription(event.target.value)} /></div><div className="button-row"><button onClick={() => void props.onSavePersona()}>{props.personaEditingId ? '更新面具' : '保存面具'}</button><button className="secondary" onClick={() => { props.setPersonaEditingId(''); props.setPersonaName(''); props.setPersonaDisplayName(''); props.setPersonaDescription(''); }}>新建面具</button></div>{props.personas.length ? <div className="persona-list">{props.personas.map((persona) => <div className="list-row" key={persona.id}><span>{persona.name}<small>对话框：{persona.displayName}{persona.description ? ` · ${persona.description}` : ''}</small></span><span className="button-row"><button className={props.personaId === persona.id ? '' : 'secondary'} onClick={() => props.onBindPersona(persona.id)}>{props.personaId === persona.id ? '当前绑定' : '绑定'}</button><button className="secondary" onClick={() => { props.setPersonaEditingId(persona.id); props.setPersonaName(persona.name); props.setPersonaDisplayName(persona.displayName); props.setPersonaDescription(persona.description); }}>编辑</button><button className="danger" onClick={() => void props.onDeletePersona(persona.id)}>删除</button></span></div>)}</div> : <p className="empty">还没有面具身份，聊天名牌默认使用玩家名字。</p>}</div></div></details>
