@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { BOTTOM_NAV_ITEMS, LIBRARY_PAGE_DEFINITIONS, SETTINGS_PAGE_DEFINITIONS } from '../src/App';
+import { BOTTOM_NAV_ITEMS, DAY_PAGE_DEFINITIONS, LIBRARY_PAGE_DEFINITIONS, SETTINGS_PAGE_DEFINITIONS } from '../src/App';
 import { DesktopLauncher, SubpageShell } from '../src/components/desktop-shell';
 import { desktopIconContrastForLuminance } from '../src/ui/desktop-icon-contrast';
 
@@ -92,5 +92,23 @@ describe('library desktop', () => {
     const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     expect(source).toContain("['messages', 'contacts', 'calls', 'music'].includes(navigation.activePage)");
     expect(source).toContain('此入口将在终端功能切片中接入。');
+  });
+});
+
+describe('day desktop', () => {
+  it('exposes the planned local schedule entries with short labels', () => {
+    const ids = DAY_PAGE_DEFINITIONS.map((entry) => entry.id);
+    expect(ids).toHaveLength(9);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(DAY_PAGE_DEFINITIONS.map((entry) => entry.label)).toEqual(['日历', '目标', '住所', '事业', '结算', '日记', '事件', '剧情', '快照']);
+    expect(DAY_PAGE_DEFINITIONS.every((entry) => Array.from(entry.label).length <= 2)).toBe(true);
+    expect(DAY_PAGE_DEFINITIONS.find((entry) => entry.id === 'career')?.pageTitle).toBe('工作与事业');
+  });
+
+  it('keeps schedule subpages local and schema-free', () => {
+    const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('const renderDaySubpage = (page: DayPage)');
+    expect(source).toContain('纯本地 · 不调用 API');
+    expect(source).toContain('activePage={dayPage}');
   });
 });
