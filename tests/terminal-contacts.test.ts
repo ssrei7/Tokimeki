@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTerminalReplyPrompt, createFriendRequest, listContactCandidates, listTerminalMessages, resolveFriendRequest, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, simulateFriendAcceptance } from '../src/core/terminal';
+import { buildTerminalReplyPrompt, createFriendRequest, createIncomingTransferProposal, listContactCandidates, listTerminalMessages, listTerminalTransfers, resolveFriendRequest, resolveIncomingTransfer, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, simulateFriendAcceptance } from '../src/core/terminal';
 import { migrateSave } from '../src/data/migrations';
 import { exportSaveZip, importSaveZip } from '../src/data/io/zip';
 import { CURRENT_SCHEMA_VERSION } from '../src/data/schema/save';
@@ -102,5 +102,45 @@ describe('terminal contacts', () => {
     expect(listTerminalMessages(imported.save.world, 'formal').at(-1)?.asset).toEqual({ kind: 'stored', assetId: 'sticker-1.webp' });
     expect(Array.from(imported.assets.get('sticker-1.webp') ?? [])).toEqual([1, 2, 3]);
     expect(JSON.stringify(imported.save)).not.toContain('data:image');
+  });
+
+  it('supports safe bidirectional transfers without changing relationship or time facts', () => {
+    const save = makeSave();
+    const request = createFriendRequest(save.world, 'formal', 'outgoing');
+    simulateFriendAcceptance(save.world, request.request!.id);
+    save.world.player.stats.money = 100;
+    const before = JSON.stringify({ relations: save.world.relations, clock: save.world.clock, events: save.world.eventHistory });
+
+    expect(sendPlayerTransfer(save.world, 'formal', 'default', 25)).toMatchObject({ ok: true, changed: true, request: { direction: 'outgoing', status: 'accepted', amount: 25 } });
+    expect(save.world.player.stats.money).toBe(75);
+    expect(listTerminalTransfers(save.world, 'formal')).toHaveLength(1);
+
+    const incoming = createIncomingTransferProposal(save.world, 'formal', 'default', 40);
+    expect(incoming).toMatchObject({ ok: true, changed: true, request: { direction: 'incoming', status: 'pending', amount: 40 } });
+    expect(save.world.player.stats.money).toBe(75);
+    expect(resolveIncomingTransfer(save.world, incoming.request!.id, 'accept')).toMatchObject({ ok: true, changed: true, request: { status: 'accepted' } });
+    expect(save.world.player.stats.money).toBe(115);
+    expect(resolveIncomingTransfer(save.world, incoming.request!.id, 'accept').changed).toBe(false);
+    expect(JSON.stringify({ relations: save.world.relations, clock: save.world.clock, events: save.world.eventHistory })).toBe(before);
+  });
+
+  it('rejects invalid, unsafe, insufficient and non-friend transfers', () => {
+    const save = makeSave();
+    save.world.player.stats.money = 10;
+    expect(sendPlayerTransfer(save.world, 'formal', 'default', 1)).toMatchObject({ ok: false, changed: false });
+    const request = createFriendRequest(save.world, 'formal', 'incoming');
+    resolveFriendRequest(save.world, request.request!.id, 'accept');
+    expect(sendPlayerTransfer(save.world, 'formal', 'missing', 1)).toMatchObject({ ok: false, changed: false });
+    expect(sendPlayerTransfer(save.world, 'formal', 'default', 0)).toMatchObject({ ok: false, changed: false });
+    expect(sendPlayerTransfer(save.world, 'formal', 'default', -1)).toMatchObject({ ok: false, changed: false });
+    expect(sendPlayerTransfer(save.world, 'formal', 'default', 0.5)).toMatchObject({ ok: false, changed: false });
+    expect(sendPlayerTransfer(save.world, 'formal', 'default', Number.NaN)).toMatchObject({ ok: false, changed: false });
+    expect(sendPlayerTransfer(save.world, 'formal', 'default', Number.POSITIVE_INFINITY)).toMatchObject({ ok: false, changed: false });
+    expect(sendPlayerTransfer(save.world, 'formal', 'default', 11)).toMatchObject({ ok: false, changed: false });
+    const incoming = createIncomingTransferProposal(save.world, 'formal', 'default', 5);
+    expect(incoming.ok).toBe(true);
+    expect(resolveIncomingTransfer(save.world, incoming.request!.id, 'reject')).toMatchObject({ ok: true, changed: true, request: { status: 'rejected' } });
+    expect(resolveIncomingTransfer(save.world, incoming.request!.id, 'reject').changed).toBe(false);
+    expect(save.world.player.stats.money).toBe(10);
   });
 });

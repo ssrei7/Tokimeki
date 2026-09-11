@@ -331,6 +331,18 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .terminal-sticker-url button { flex: 0 0 auto; }
 .terminal-sticker { display: block; width: min(220px, 100%); max-height: 220px; object-fit: contain; border-radius: 7px; }
 .terminal-sticker-missing { color: var(--gray-500); font-size: 12px; }
+.terminal-transfer-panel { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--gray-200); }
+.terminal-transfer-panel .section-heading { margin: 0; }
+.terminal-transfer-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, 120px); gap: 7px; }
+.terminal-transfer-form button { min-height: 38px; }
+.terminal-transfer-list { display: grid; gap: 6px; }
+.terminal-transfer-list h4 { color: var(--gray-600); font-size: 12px; }
+.terminal-transfer-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--gray-100); color: var(--gray-600); font-size: 12px; }
+.terminal-transfer-row > span { min-width: 0; overflow-wrap: anywhere; }
+.terminal-transfer-row small { flex: 0 0 auto; color: var(--gray-400); }
+.terminal-transfer-row .button-row { flex: 0 0 auto; }
+.terminal-transfer-row button { min-height: 32px; padding: 0 9px; font-size: 11px; }
+@media (max-width: 500px) { .terminal-transfer-form { grid-template-columns: 1fr 1fr; } .terminal-transfer-form button { grid-column: span 1; } .terminal-transfer-row { align-items: flex-start; flex-direction: column; } }
 .memory-library-card { display: grid; gap: 10px; }
 .memory-character { border-top: 1px solid var(--gray-100); padding-top: 8px; }
 .memory-character summary { cursor: pointer; font-weight: 600; }

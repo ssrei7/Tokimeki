@@ -859,6 +859,8 @@ interface TerminalState {
 
 终端文本、贴图和引用直接写入 `messageThreads`，与面对面 `ChatRecord` 分离。引用只保存同一终端线程内的消息 ID 与本地预览；本地贴图二进制进入 Assets IndexedDB，消息只保存 `AssetRef`，导出存档时打包被引用的本地资产。只有玩家显式点击“生成回复”才调用现有文本 Provider；提示上下文包含好友申请方向，但返回值只作为终端文本保存，禁止解析或应用 ops。
 
+双向转账复用 v39 的 `transferRequests`。玩家转给已接受好友时，本地立即校验货币、金额精度和余额并扣款，记录为已完成的 outgoing 记录；好友转给玩家时只创建 pending incoming 提议，必须由玩家在消息 App 中接受后才入账。接受、拒绝和重复处理均为幂等本地操作，不改变关系、时间、地点或剧情，也不调用 Provider；AI 不能直接创建经济事实。
+
 ---
 
 ## 17. 校验

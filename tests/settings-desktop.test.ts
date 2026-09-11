@@ -110,6 +110,16 @@ describe('library desktop', () => {
     expect(source).toContain('world.terminal.messageThreads');
     expect(source).toContain('此入口将在终端功能切片中接入。');
   });
+
+  it('exposes the local bidirectional transfer controls inside messages', () => {
+    const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('onSendPlayerTransfer');
+    expect(source).toContain('onCreateIncomingTransfer');
+    expect(source).toContain('onResolveIncomingTransfer');
+    expect(source).toContain('模拟TA转入');
+    expect(source).toContain('待收款');
+    expect(source).toContain('转账记录');
+  });
 });
 
 describe('day desktop', () => {
