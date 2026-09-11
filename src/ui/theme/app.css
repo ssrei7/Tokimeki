@@ -331,6 +331,10 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .terminal-sticker-url button { flex: 0 0 auto; }
 .terminal-sticker { display: block; width: min(220px, 100%); max-height: 220px; object-fit: contain; border-radius: 7px; }
 .terminal-sticker-missing { color: var(--gray-500); font-size: 12px; }
+.terminal-voice { display: grid; gap: 4px; min-width: min(240px, 100%); }
+.terminal-voice audio { width: min(240px, 100%); height: 36px; }
+.terminal-voice small, .terminal-voice-transcript { color: var(--gray-500); font-size: 11px; }
+.terminal-voice-transcript { white-space: pre-wrap; }
 .terminal-transfer-panel { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--gray-200); }
 .terminal-transfer-panel .section-heading { margin: 0; }
 .terminal-transfer-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, 120px); gap: 7px; }

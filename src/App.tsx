@@ -10,7 +10,7 @@ import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGener
 import { parseGeneratedTopicTree } from './core/topics/parser';
 import { isTopicTreeFresh, mergeDailyTopicTree, topicResponse, topicTreeKey, topicVisibility, visibleTopics } from './core/topics';
 import { addCharacterToWorld, deriveNodeScope, nodeScopeLabel, proposeDeparture, recentEncounterTraces, resolveDeparture, triggerEncounter, updateEncounterOutcome, whoIsHere, whoIsWhere, type EncounterCandidate, type EncounterTrace } from './core/encounter';
-import { buildTerminalReplyPrompt, createFriendRequest, createIncomingTransferProposal, listContactCandidates, listTerminalMessages, listTerminalTransfers, resolveFriendRequest, resolveIncomingTransfer, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, simulateFriendAcceptance, type ContactDirection, type TransferAction } from './core/terminal';
+import { buildTerminalReplyPrompt, createFriendRequest, createIncomingTransferProposal, listContactCandidates, listTerminalMessages, listTerminalTransfers, resolveFriendRequest, resolveIncomingTransfer, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, sendTerminalVoiceMessage, simulateFriendAcceptance, type ContactDirection, type TransferAction } from './core/terminal';
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
@@ -37,7 +37,8 @@ import { simulateDays } from './dev/simulator';
 import { simulateEncounterDistribution } from './dev/encounter-simulator';
 import { simulateLeadDistribution } from './dev/lead-simulator';
 import { simulateTopicDistribution } from './dev/topic-simulator';
-import { EmbeddingConfigSchema, ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, type EmbeddingConfig, type ProviderBinding, type ProviderConfig, type TaskId } from './providers/types';
+import { EmbeddingConfigSchema, ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, TtsConfigSchema, type EmbeddingConfig, type ProviderBinding, type ProviderConfig, type TaskId, type TtsConfig } from './providers/types';
+import { synthesizeSpeech } from './providers/speech';
 import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from './ui/chat-state';
 import { createChatRequestId, markBackgroundRequestInterrupted, recoveryMessagesForRetry } from './ui/chat-recovery';
 import { latestDialogueSpeakerId, splitDialogueMessage } from './ui/dialogue';
@@ -59,7 +60,7 @@ import { DesktopLauncher, EmptyState, SubpageShell, type DesktopEntry } from './
 import './ui/theme/app.css';
 
 type Tab = 'map' | 'day' | 'chat' | 'library' | 'settings';
-export type SettingsPage = 'player' | 'provider' | 'vector-memory' | 'routing' | 'display' | 'rules' | 'privacy' | 'debug' | 'dev-tools';
+export type SettingsPage = 'player' | 'provider' | 'vector-memory' | 'voice' | 'routing' | 'display' | 'rules' | 'privacy' | 'debug' | 'dev-tools';
 export const BOTTOM_NAV_ITEMS: readonly (readonly [Tab, string])[] = [['day', '日程'], ['chat', '聊天'], ['map', '地图'], ['library', '资料'], ['settings', '设置']];
 export type LibraryPage = 'messages' | 'contacts' | 'calls' | 'music' | 'memories' | 'collection' | 'inventory' | 'characters' | 'worldbook' | 'presets' | 'story' | 'save';
 export type DayPage = 'calendar' | 'goals' | 'housing' | 'career' | 'settlement' | 'diary' | 'events' | 'story' | 'snapshots';
@@ -93,6 +94,7 @@ export const SETTINGS_PAGE_DEFINITIONS: readonly (DesktopEntry & { id: SettingsP
   { id: 'player', label: '身份', pageTitle: '玩家身份', icon: UserRound, tone: 'gray' },
   { id: 'provider', label: '模型', pageTitle: '对话模型', icon: Bot, tone: 'gray' },
   { id: 'vector-memory', label: '向量', pageTitle: '向量记忆', icon: BrainCircuit, tone: 'gray' },
+  { id: 'voice', label: '语音', pageTitle: '语音生成', icon: MessageCircle, tone: 'gray' },
   { id: 'routing', label: '路由', pageTitle: '任务路由', icon: Route, tone: 'gray' },
   { id: 'display', label: '显示', pageTitle: '显示选项', icon: Palette, tone: 'gray' },
   { id: 'rules', label: '规则', pageTitle: '游戏规则', icon: SlidersHorizontal, tone: 'gray' },
@@ -137,7 +139,23 @@ const now = () => new Date().toISOString();
 const slug = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '') || `item-${Date.now()}`;
 const newProvider = (): ProviderConfig => ({ id: `provider-${Date.now()}`, name: '新 Provider', kind: 'openai-compatible', endpoint: '', model: '', contextWindow: 8192, maxOutputTokens: 1024, temperature: 0.7 });
 const newEmbeddingConfig = (): EmbeddingConfig => ({ id: 'embedding', enabled: false, endpoint: '', model: '', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
+const newTtsConfig = (): TtsConfig => ({ id: 'tts', enabled: false, endpoint: '', model: '', voice: 'alloy', format: 'mp3', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
+async function measureAudioDurationMs(blob: Blob): Promise<number> {
+  if (typeof Audio === 'undefined' || typeof URL === 'undefined') return 0;
+  const source = URL.createObjectURL(blob);
+  try {
+    return await new Promise<number>((resolve) => {
+      const audio = new Audio();
+      const finish = () => { URL.revokeObjectURL(source); const duration = Number.isFinite(audio.duration) && audio.duration >= 0 ? audio.duration : 0; resolve(Math.round(duration * 1000)); };
+      audio.preload = 'metadata';
+      audio.onloadedmetadata = finish;
+      audio.onerror = finish;
+      audio.src = source;
+      window.setTimeout(finish, 1500);
+    });
+  } catch { URL.revokeObjectURL(source); return 0; }
+}
 const TASK_LABELS: Record<TaskId, string> = {
   narrate_main: '主线叙述', narrate_daily: '日常对话', topic_tree: '话题树', world_morning: '晨间世界更新',
   world_gen: '世界生成', map_gen: '地图生成', npc_batch: 'NPC 批处理', extract_ops: '状态变化整理', summarize_memory: '记忆整理',
@@ -230,6 +248,9 @@ export function App() {
   const embeddingConfigRef = useRef<EmbeddingConfig>(newEmbeddingConfig());
   const [embeddingHeadersDraft, setEmbeddingHeadersDraft] = useState('{}');
   const [embeddingBusy, setEmbeddingBusy] = useState(false);
+  const [ttsConfig, setTtsConfig] = useState<TtsConfig>(newTtsConfig);
+  const ttsConfigRef = useRef<TtsConfig>(newTtsConfig());
+  const [ttsBusy, setTtsBusy] = useState(false);
   const [requestStatus, setRequestStatus] = useState<RequestStatus>('idle');
   const [busy, setBusy] = useState(false);
   const [terminalBusy, setTerminalBusy] = useState(false);
@@ -276,7 +297,7 @@ export function App() {
   }
 
   useEffect(() => {
-    void Promise.all([contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), contentDb.presetBundles.toArray(), contentDb.storyScenePresets.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.settings.get('defaultProviderId'), providerDb.embeddingConfigs.get('embedding'), loadCurrentSave(), listSnapshots()]).then(([c, masks, w, p, bundles, scenePresets, ps, bs, setting, storedEmbedding, persistedSave, savedSnapshots]) => {
+    void Promise.all([contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), contentDb.presetBundles.toArray(), contentDb.storyScenePresets.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.settings.get('defaultProviderId'), providerDb.embeddingConfigs.get('embedding'), providerDb.ttsConfigs.get('tts'), loadCurrentSave(), listSnapshots()]).then(([c, masks, w, p, bundles, scenePresets, ps, bs, setting, storedEmbedding, storedTts, persistedSave, savedSnapshots]) => {
       if (persistedSave) {
         const parsedSave = SaveFileSchema.parse(persistedSave);
         saveRef.current = parsedSave;
@@ -317,6 +338,14 @@ export function App() {
       if (legacyBundle) void savePresetBundle(legacyBundle);
       setBindings(bs);
       if (storedEmbedding) { embeddingConfigRef.current = storedEmbedding; setEmbeddingConfig(storedEmbedding); setEmbeddingHeadersDraft(JSON.stringify(storedEmbedding.headers ?? {}, null, 2)); }
+      if (storedTts) {
+        const restoredTts = storedTts.lastStatus === 'requesting'
+          ? TtsConfigSchema.parse({ ...storedTts, lastStatus: 'error', lastError: '上次语音请求已中止，请手动重试。', updatedAt: now() })
+          : TtsConfigSchema.parse(storedTts);
+        ttsConfigRef.current = restoredTts;
+        setTtsConfig(restoredTts);
+        if (storedTts.lastStatus === 'requesting') void providerDb.ttsConfigs.put(restoredTts);
+      }
       if (c[0] && !readEncounterChatSession()) setSelectedCharacterId(c[0].id);
       if (ps[0]) setProvider(ps[0]);
       const resolvedDefaultProviderId = ps.some((item) => item.id === setting?.value) ? setting?.value ?? '' : ps[0]?.id ?? '';
@@ -502,6 +531,40 @@ export function App() {
     if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '转账提议处理失败。' }); return; }
     if (result.changed) commitSave(next);
     setFeedback({ tone: 'success', text: result.changed ? action === 'accept' ? '转账已收款，余额已增加。' : '已拒绝转账提议。' : '该转账提议已经处理过。' });
+  }
+
+  async function sendTerminalVoice(characterId: string, text: string, retryRequestId?: string): Promise<void> {
+    if (ttsBusy) return;
+    const trimmed = text.trim();
+    if (!trimmed) { setFeedback({ tone: 'error', text: '语音文本不能为空。' }); return; }
+    const config = ttsConfigRef.current;
+    if (!config.enabled) { setFeedback({ tone: 'error', text: '请先在设置的“语音”中启用并保存语音 API。' }); return; }
+    const requestId = retryRequestId ?? (config.pendingRequest?.characterId === characterId && config.pendingRequest.text === trimmed ? config.pendingRequest.requestId : `tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    const existing = listTerminalMessages(saveRef.current.world, characterId).find((message) => message.type === 'voice' && message.voiceRequestId === requestId);
+    if (existing) {
+      await persistTtsResult(config, 'success', undefined, null);
+      setFeedback({ tone: 'success', text: '这条语音已经发送，不会重复插入。' });
+      return;
+    }
+    const pendingRequest = { requestId, characterId, text: trimmed };
+    setTtsBusy(true); setFeedback(null);
+    try {
+      await persistTtsResult(config, 'requesting', undefined, pendingRequest);
+      const result = await synthesizeSpeech(config, trimmed);
+      const durationMs = await measureAudioDurationMs(result.blob);
+      const assetId = `terminal-voice-${requestId}`;
+      await saveAsset({ id: assetId, blob: result.blob, mimeType: result.mimeType, createdAt: now() });
+      const next = structuredClone(saveRef.current);
+      const message = sendTerminalVoiceMessage(next.world, characterId, trimmed, { kind: 'stored', assetId }, result.format, durationMs, requestId);
+      if (!message.ok) throw new Error(message.warning ?? '语音消息保存失败。');
+      commitSave(next);
+      await persistTtsResult(config, 'success', undefined, null);
+      setFeedback({ tone: 'success', text: message.changed ? '语音消息已发送。' : '这条语音已经发送，不会重复插入。' });
+    } catch (error) {
+      const message = errorMessage(error, '语音生成失败，可手动重试。');
+      await persistTtsResult(config, 'error', message, pendingRequest).catch(() => undefined);
+      setFeedback({ tone: 'error', text: `${message} 可手动重试，重试不会重复插入已保存的语音。` });
+    } finally { setTtsBusy(false); }
   }
 
   async function sendTerminalStickerFile(characterId: string, file?: File, quoteMessageId?: string): Promise<void> {
@@ -1968,6 +2031,10 @@ export function App() {
     return EmbeddingConfigSchema.parse({ ...embeddingConfig, headers: parseHeadersDraft(embeddingHeadersDraft), updatedAt: now() });
   }
 
+  function parseEditedTtsConfig(): TtsConfig {
+    return TtsConfigSchema.parse({ ...ttsConfig, updatedAt: now() });
+  }
+
   async function persistEmbeddingResult(config: EmbeddingConfig, ok: boolean, message?: string): Promise<EmbeddingConfig> {
     const updated = EmbeddingConfigSchema.parse({ ...config, requestCount: config.requestCount + 1, failureCount: config.failureCount + (ok ? 0 : 1), lastStatus: ok ? 'success' : 'error', lastError: ok ? undefined : message, lastCalledAt: now(), updatedAt: now() });
     await providerDb.embeddingConfigs.put(updated);
@@ -2042,6 +2109,40 @@ export function App() {
       if (requestAttempted) await persistEmbeddingResult(config, false, message).catch(() => undefined);
       setFeedback({ tone: 'error', text: message });
     } finally { setEmbeddingBusy(false); }
+  }
+
+  async function persistTtsResult(config: TtsConfig, status: TtsConfig['lastStatus'], message?: string, pendingRequest: TtsConfig['pendingRequest'] | null = config.pendingRequest): Promise<TtsConfig> {
+    const updated = TtsConfigSchema.parse({ ...config, requestCount: status === 'requesting' ? config.requestCount : config.requestCount + 1, failureCount: status === 'error' ? config.failureCount + 1 : config.failureCount, lastStatus: status, lastError: status === 'error' ? message : undefined, lastCalledAt: status === 'requesting' ? config.lastCalledAt : now(), pendingRequest: pendingRequest === null ? undefined : pendingRequest, updatedAt: now() });
+    await providerDb.ttsConfigs.put(updated);
+    ttsConfigRef.current = updated;
+    setTtsConfig(updated);
+    return updated;
+  }
+
+  async function saveTtsSettings(): Promise<void> {
+    try {
+      const parsed = parseEditedTtsConfig();
+      await providerDb.ttsConfigs.put(parsed);
+      ttsConfigRef.current = parsed;
+      setTtsConfig(parsed);
+      setFeedback({ tone: 'success', text: parsed.enabled ? '语音 API 已启用并保存。' : '语音设置已保存；当前保持关闭。' });
+    } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '语音配置无效。') }); }
+  }
+
+  async function testTtsConnection(): Promise<void> {
+    setTtsBusy(true);
+    let config: TtsConfig | undefined;
+    try {
+      config = parseEditedTtsConfig();
+      if (!config.endpoint.trim() || !config.model.trim() || !config.voice.trim()) throw new Error('请填写语音端点、模型和 voice。');
+      const result = await synthesizeSpeech({ ...config, enabled: true }, 'Tokimeki 语音连接测试');
+      await persistTtsResult(config, 'success');
+      setFeedback({ tone: 'success', text: `语音连接成功，收到 ${result.format} 音频。` });
+    } catch (error) {
+      const message = errorMessage(error, '语音连接失败。');
+      if (config) await persistTtsResult(config, 'error', message);
+      setFeedback({ tone: 'error', text: message });
+    } finally { setTtsBusy(false); }
   }
 
   async function saveProviderConfig() {
@@ -2343,11 +2444,11 @@ export function App() {
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView activePage={dayPage} onOpenPage={setDayPage} onBack={() => setDayPage(null)} save={save} snapshots={snapshots} morningBriefs={save.world.morningBriefs} morningUpdates={save.world.morningUpdates} morningStyle={save.config.morningStyle} summarizingDay={summarizingDay} onAction={runDayAction} onAcceptRental={acceptRental} onRequestHousingUpgrade={requestHousingUpgrade} onAcceptJob={acceptJob} onWorkJob={workJob} onAcceptShop={acceptShop} onOperateShop={operateShop} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} onRevealEvent={revealEvent} onResolveEventChoice={resolveChoice} onExportEventHistory={exportEventHistory} onExportChatArchive={exportChatArchive} canExportChatArchive={Boolean(selectedCharacterId && messages.length)} onDeleteEventHistory={deleteEventHistory} onMove={(nodeId) => { if (moveToNode(nodeId)) setTab('map'); }} />}
       {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} interrupted={Boolean(chatRecovery && (chatRecovery.status === 'interrupted' || chatRecovery.status === 'error'))} onRetryInterrupted={retryInterruptedReply} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
-      {tab === 'library' && !(['story', 'memories', 'collection'] as LibraryPage[]).includes(libraryPage ?? 'messages') && <LibraryNavigationContext.Provider value={{ activePage: libraryPage, onOpenPage: setLibraryPage, onBack: () => setLibraryPage(null) }}><LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} onRequestFriend={requestTerminalFriend} onResolveFriend={resolveTerminalFriend} onSimulateFriendAcceptance={simulateTerminalFriendAcceptance} onSendTerminalText={sendTerminalText} onSendTerminalStickerUrl={sendTerminalStickerUrl} onSendTerminalStickerFile={sendTerminalStickerFile} onGenerateTerminalReply={generateTerminalReply} onSendPlayerTransfer={sendPlayerTerminalTransfer} onCreateIncomingTransfer={createIncomingTerminalTransfer} onResolveIncomingTransfer={resolveIncomingTerminalTransfer} terminalBusy={terminalBusy} /></LibraryNavigationContext.Provider>}
+      {tab === 'library' && !(['story', 'memories', 'collection'] as LibraryPage[]).includes(libraryPage ?? 'messages') && <LibraryNavigationContext.Provider value={{ activePage: libraryPage, onOpenPage: setLibraryPage, onBack: () => setLibraryPage(null) }}><LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} onRequestFriend={requestTerminalFriend} onResolveFriend={resolveTerminalFriend} onSimulateFriendAcceptance={simulateTerminalFriendAcceptance} onSendTerminalText={sendTerminalText} onSendTerminalStickerUrl={sendTerminalStickerUrl} onSendTerminalStickerFile={sendTerminalStickerFile} onGenerateTerminalReply={generateTerminalReply} onSendVoice={sendTerminalVoice} ttsConfig={ttsConfig} ttsBusy={ttsBusy} onSendPlayerTransfer={sendPlayerTerminalTransfer} onCreateIncomingTransfer={createIncomingTerminalTransfer} onResolveIncomingTransfer={resolveIncomingTerminalTransfer} terminalBusy={terminalBusy} /></LibraryNavigationContext.Provider>}
       {tab === 'library' && libraryPage === 'story' && <SubpageShell eyebrow="资料" title="多人剧情" pageId="story" onBack={() => setLibraryPage(null)}><StorySceneLibraryView save={save} storyScenePresets={storyScenePresets} onSavePreset={saveStoryScenePresetCopy} onUpdatePreset={updateStoryScenePreset} onDeletePreset={removeStoryScenePreset} onCreateDraft={createStorySceneDraftFromInput} onEditDraft={editStorySceneDraft} onDeleteDraft={removeStorySceneDraft} onConfirmDraft={confirmStorySceneDraft} onAdvanceStage={advanceStoryScene} onSetStatus={setStorySceneStatus} onReadStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'read')} onSelectStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'select')} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'memories' && <SubpageShell eyebrow="资料" title="记忆库" pageId="memories" onBack={() => setLibraryPage(null)}><MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'collection' && <SubpageShell eyebrow="资料" title="收藏" pageId="collection" onBack={() => setLibraryPage(null)}><CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} /></SubpageShell>}
-      {tab === 'settings' && <SettingsView activePage={settingsPage} onOpenPage={setSettingsPage} onBack={() => setSettingsPage(null)} provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
+      {tab === 'settings' && <SettingsView activePage={settingsPage} onOpenPage={setSettingsPage} onBack={() => setSettingsPage(null)} provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} ttsConfig={ttsConfig} setTtsConfig={setTtsConfig} ttsBusy={ttsBusy} onSaveTts={saveTtsSettings} onTestTts={testTtsConnection} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
     </main>
     <nav className="bottom-nav">{BOTTOM_NAV_ITEMS.map(([id, label]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
   </div>;
@@ -3073,6 +3174,11 @@ function SettingsView(props: {
   onSaveEmbedding: () => Promise<void>;
   onTestEmbedding: () => Promise<void>;
   onRebuildEmbedding: () => Promise<void>;
+  ttsConfig: TtsConfig;
+  setTtsConfig: (config: TtsConfig) => void;
+  ttsBusy: boolean;
+  onSaveTts: () => Promise<void>;
+  onTestTts: () => Promise<void>;
   requestStatus: RequestStatus;
   onNewProvider: () => void;
   onSaveProvider: () => Promise<void>;
@@ -3158,6 +3264,19 @@ function SettingsView(props: {
       <div className="stat-list"><span>调用 {props.embeddingConfig.requestCount} 次</span><span>失败 {props.embeddingConfig.failureCount} 次</span>{props.embeddingConfig.lastCalledAt && <span>最近调用 {new Date(props.embeddingConfig.lastCalledAt).toLocaleString()}</span>}</div>
       {props.embeddingConfig.lastError && <p className="io-scope" role="alert">最近错误：{props.embeddingConfig.lastError}</p>}
       <div className="button-row"><button onClick={() => void props.onSaveEmbedding()} disabled={props.embeddingBusy}>保存设置</button><button className="secondary" onClick={() => void props.onTestEmbedding()} disabled={props.embeddingBusy}>连接测试</button><button className="secondary" onClick={() => void props.onRebuildEmbedding()} disabled={props.embeddingBusy || !props.embeddingConfig.enabled}>重建当前世界索引</button></div>
+    </div></div></details>
+    <details className="fold-card" open><summary>语音生成 · {props.ttsConfig.enabled ? '已启用' : '已关闭'}</summary><div className="fold-body"><div className="provider-card">
+      <div className="list-heading"><div><span className="eyebrow">可选外部语音</span><h3>语音 API</h3></div><span className={`request-status ${props.ttsConfig.lastStatus === 'error' ? 'error' : ''}`}>{props.ttsBusy ? '请求中…' : props.ttsConfig.lastStatus === 'success' ? '最近成功' : props.ttsConfig.lastStatus === 'error' ? '最近失败' : '尚未调用'}</span></div>
+      <label className="checkbox-line"><input type="checkbox" checked={props.ttsConfig.enabled} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, enabled: event.target.checked })} />启用语音生成</label>
+      <p className="io-scope">默认关闭。只有你在消息 App 中显式点击“合成并发送语音”或这里的连接测试时才调用 API；配置和 API key 只保存在当前浏览器。</p>
+      <label>Speech 请求端点<input placeholder="https://example.com/v1/audio/speech" value={props.ttsConfig.endpoint} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, endpoint: event.target.value })} /></label>
+      <label>API key（仅本地）<input type="password" value={props.ttsConfig.apiKey ?? ''} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, apiKey: event.target.value || undefined })} /></label>
+      <label>语音模型<input placeholder="gpt-4o-mini-tts" value={props.ttsConfig.model} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, model: event.target.value })} /></label>
+      <label>voice<input placeholder="alloy" value={props.ttsConfig.voice} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, voice: event.target.value })} /></label>
+      <label>格式<select value={props.ttsConfig.format} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, format: event.target.value as TtsConfig['format'] })}><option value="mp3">mp3</option><option value="opus">opus</option><option value="aac">aac</option><option value="flac">flac</option><option value="wav">wav</option><option value="pcm">pcm</option></select></label>
+      <div className="stat-list"><span>调用 {props.ttsConfig.requestCount} 次</span><span>失败 {props.ttsConfig.failureCount} 次</span>{props.ttsConfig.pendingRequest && <span>保留待重试语音</span>}</div>
+      {props.ttsConfig.lastError && <p className="io-scope" role="alert">最近错误：{props.ttsConfig.lastError}</p>}
+      <div className="button-row"><button onClick={() => void props.onSaveTts()} disabled={props.ttsBusy}>保存设置</button><button className="secondary" onClick={() => void props.onTestTts()} disabled={props.ttsBusy}>连接测试</button></div>
     </div></div></details>
     <details className="fold-card" open><summary>任务路由</summary><div className="fold-body"><div className="provider-card routing-card">
       <h3>任务路由</h3>
@@ -3333,7 +3452,18 @@ function TerminalAssetImage({ asset, alt = '贴图' }: { asset?: AssetRef; alt?:
   return src ? <img className="terminal-sticker" src={src} alt={alt} /> : <span className="terminal-sticker-missing">贴图不可用</span>;
 }
 
-function TerminalMessagesView(props: { save: SaveFile; onOpenContacts: () => void; onSendText: (characterId: string, text: string, quoteMessageId?: string) => void; onSendStickerUrl: (characterId: string, url: string, quoteMessageId?: string) => void; onSendStickerFile: (characterId: string, file?: File, quoteMessageId?: string) => Promise<void>; onGenerateReply: (characterId: string) => Promise<void>; onSendPlayerTransfer: (characterId: string, currencyId: string, amount: number) => void; onCreateIncomingTransfer: (characterId: string, currencyId: string, amount: number) => void; onResolveIncomingTransfer: (requestId: string, action: TransferAction) => void; terminalBusy: boolean }) {
+function TerminalVoiceAudio({ asset, durationMs }: { asset?: AssetRef; durationMs?: number }) {
+  const [src, setSrc] = useState<string>();
+  useEffect(() => {
+    let objectUrl: string | undefined;
+    if (asset?.kind === 'stored') void loadAsset(asset.assetId).then((stored) => { if (stored) { objectUrl = URL.createObjectURL(stored.blob); setSrc(objectUrl); } });
+    else setSrc(undefined);
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [asset]);
+  return src ? <div className="terminal-voice"><audio controls preload="metadata" src={src} /><small>{durationMs ? `${(durationMs / 1000).toFixed(1)} 秒` : '语音消息'}</small></div> : <span className="terminal-sticker-missing">语音不可用</span>;
+}
+
+function TerminalMessagesView(props: { save: SaveFile; onOpenContacts: () => void; onSendText: (characterId: string, text: string, quoteMessageId?: string) => void; onSendStickerUrl: (characterId: string, url: string, quoteMessageId?: string) => void; onSendStickerFile: (characterId: string, file?: File, quoteMessageId?: string) => Promise<void>; onGenerateReply: (characterId: string) => Promise<void>; onSendVoice: (characterId: string, text: string, requestId?: string) => Promise<void>; ttsConfig: TtsConfig; ttsBusy: boolean; onSendPlayerTransfer: (characterId: string, currencyId: string, amount: number) => void; onCreateIncomingTransfer: (characterId: string, currencyId: string, amount: number) => void; onResolveIncomingTransfer: (requestId: string, action: TransferAction) => void; terminalBusy: boolean }) {
   const candidates = listContactCandidates(props.save.world, props.save.world.clock.day, props.save.world.clock.slotId, props.save.config.calendar.daysPerWeek).filter((candidate) => candidate.request?.status === 'accepted');
   const currencies = Object.values(props.save.world.economy.currencies);
   const [selectedId, setSelectedId] = useState('');
@@ -3346,6 +3476,7 @@ function TerminalMessagesView(props: { save: SaveFile; onOpenContacts: () => voi
   useEffect(() => { if (!currencies.some((currency) => currency.id === currencyId)) setCurrencyId(currencies[0]?.id ?? ''); }, [currencies, currencyId]);
   const selected = candidates.find((candidate) => candidate.id === selectedId);
   const messages = selected ? listTerminalMessages(props.save.world, selected.id) : [];
+  const pendingVoice = selected && props.ttsConfig.pendingRequest?.characterId === selected.id ? props.ttsConfig.pendingRequest : undefined;
   const transfers = selected ? listTerminalTransfers(props.save.world, selected.id) : [];
   const pendingIncoming = transfers.filter((request) => request.direction === 'incoming' && request.status === 'pending');
   const transferHistory = transfers.filter((request) => request.direction === 'outgoing' || request.status !== 'pending').slice().reverse();
@@ -3364,9 +3495,9 @@ function TerminalMessagesView(props: { save: SaveFile; onOpenContacts: () => voi
   };
   return <div className="terminal-messages-view" data-testid="terminal-messages">
     <div className="terminal-contact-picker"><label>好友<select value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setQuoteId(undefined); }}>{candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>{selected && <div className="terminal-friend-context">{selectedRequest?.direction === 'outgoing' ? '你发出的申请' : 'TA发来的申请'} · 第 {selectedRequest?.createdDay ?? '-'} 天成为好友</div>}</div>
-    <div className="terminal-thread" aria-live="polite">{messages.length === 0 ? <p className="empty">还没有消息，发出第一句吧。</p> : messages.map((message) => <article className={`terminal-message ${message.senderId === 'player' ? 'mine' : 'theirs'}`} key={message.id}><div className="terminal-message-meta">{message.senderId === 'player' ? '我' : selected!.name}<span>第 {message.createdDay} 天 · {message.createdSlotId}</span></div>{message.quoteMessageId && <button type="button" className="terminal-quote" onClick={() => setQuoteId(message.quoteMessageId)}>引用：{message.quotePreview}</button>}{message.type === 'sticker' ? <TerminalAssetImage asset={message.asset} /> : <p>{message.text}</p>}{message.senderId !== 'player' && <button type="button" className="terminal-message-quote" onClick={() => setQuoteId(message.id)}>引用</button>}</article>)}</div>
+    <div className="terminal-thread" aria-live="polite">{messages.length === 0 ? <p className="empty">还没有消息，发出第一句吧。</p> : messages.map((message) => <article className={`terminal-message ${message.senderId === 'player' ? 'mine' : 'theirs'}`} key={message.id}><div className="terminal-message-meta">{message.senderId === 'player' ? '我' : selected!.name}<span>第 {message.createdDay} 天 · {message.createdSlotId}</span></div>{message.quoteMessageId && <button type="button" className="terminal-quote" onClick={() => setQuoteId(message.quoteMessageId)}>引用：{message.quotePreview}</button>}{message.type === 'sticker' ? <TerminalAssetImage asset={message.asset} /> : message.type === 'voice' ? <><TerminalVoiceAudio asset={message.asset} durationMs={message.durationMs} /><p className="terminal-voice-transcript">{message.text}</p></> : <p>{message.text}</p>}{message.senderId !== 'player' && <button type="button" className="terminal-message-quote" onClick={() => setQuoteId(message.id)}>引用</button>}</article>)}</div>
     {quoteId && <div className="terminal-quote-draft">引用：{messages.find((message) => message.id === quoteId)?.text ?? messages.find((message) => message.id === quoteId)?.quotePreview ?? '贴图'}<button type="button" className="secondary" onClick={() => setQuoteId(undefined)}>取消引用</button></div>}
-    <div className="terminal-composer"><textarea aria-label="终端消息" placeholder="输入消息" value={draft} onChange={(event) => setDraft(event.target.value)} /><div className="button-row"><button type="button" onClick={sendText} disabled={!draft.trim()}>发送</button><button type="button" className="secondary" onClick={() => void props.onGenerateReply(selected!.id)} disabled={props.terminalBusy || messages.every((message) => message.senderId !== 'player')}>生成回复</button><label className="file-button">发贴图<input type="file" accept="image/*" onChange={(event) => { void props.onSendStickerFile(selected!.id, event.target.files?.[0], quoteId); setQuoteId(undefined); event.currentTarget.value = ''; }} /></label></div><div className="terminal-sticker-url"><input aria-label="贴图外链" placeholder="贴图外链 URL" value={stickerUrl} onChange={(event) => setStickerUrl(event.target.value)} /><button type="button" className="secondary" onClick={sendUrl} disabled={!stickerUrl.trim()}>发送外链贴图</button></div></div>
+    <div className="terminal-composer"><textarea aria-label="终端消息" placeholder="输入消息" value={draft} onChange={(event) => setDraft(event.target.value)} /><div className="button-row"><button type="button" onClick={sendText} disabled={!draft.trim()}>发送</button><button type="button" className="secondary" onClick={() => void props.onGenerateReply(selected!.id)} disabled={props.terminalBusy || messages.every((message) => message.senderId !== 'player')}>生成回复</button><button type="button" className="secondary" onClick={() => void props.onSendVoice(selected!.id, pendingVoice?.text ?? draft, pendingVoice?.requestId)} disabled={props.ttsBusy || !(pendingVoice?.text ?? draft).trim()}>{pendingVoice ? '重试语音' : '合成并发送语音'}</button><label className="file-button">发贴图<input type="file" accept="image/*" onChange={(event) => { void props.onSendStickerFile(selected!.id, event.target.files?.[0], quoteId); setQuoteId(undefined); event.currentTarget.value = ''; }} /></label></div><div className="terminal-sticker-url"><input aria-label="贴图外链" placeholder="贴图外链 URL" value={stickerUrl} onChange={(event) => setStickerUrl(event.target.value)} /><button type="button" className="secondary" onClick={sendUrl} disabled={!stickerUrl.trim()}>发送外链贴图</button></div>{pendingVoice && props.ttsConfig.lastStatus === 'error' && <p className="io-scope" role="alert">上次语音请求未完成，已保留文本，可手动重试。</p>}</div>
     <section className="terminal-transfer-panel" aria-label="转账">
       <div className="section-heading"><h3>转账</h3>{currency && <span>余额 {formatCurrency(balance, currency)}</span>}</div>
       <div className="terminal-transfer-form">
@@ -3381,13 +3512,13 @@ function TerminalMessagesView(props: { save: SaveFile; onOpenContacts: () => voi
   </div>;
 }
 
-function LibraryView(props: { characters: CharacterCard[]; worldbooks: WorldbookEntry[]; presets: Preset[]; presetBundles: PresetBundle[]; selectedPresetBundleId: string; setSelectedPresetBundleId: (value: string) => void; presetBundleName: string; setPresetBundleName: (value: string) => void; onCreatePresetBundle: () => Promise<void>; onRenamePresetBundle: () => Promise<void>; onDeletePresetBundle: (id: string) => Promise<void>; onSetPresetEntryEnabled: (bundleId: string, entryId: string, enabled: boolean) => Promise<void>; onMovePresetEntry: (bundleId: string, entryId: string, direction: -1 | 1) => Promise<void>; save: SaveFile; name: string; setName: (value: string) => void; draftText: string; setDraftText: (value: string) => void; editing: { kind: ContentKind; id: string } | null; setEditing: (editing: { kind: ContentKind; id: string } | null) => void; addContent: (kind: ContentKind) => Promise<void>; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void>; onExportSave: () => Promise<void>; onImportSave: (file?: File) => Promise<void>; onExportPresetBundle: () => Promise<void>; onImportPresetBundle: (file?: File) => Promise<void>; includeChatsOnExport: boolean; setIncludeChatsOnExport: (value: boolean) => void; onClearChats: () => Promise<void>; itemName: string; setItemName: (value: string) => void; itemTags: string; setItemTags: (value: string) => void; itemDescription: string; setItemDescription: (value: string) => void; onAddItem: () => void; onAddCharacterToWorld: (id: string) => void; visualCharacterId: string; setVisualCharacterId: (value: string) => void; onImportCharacterVisual: (characterId: string, kind: 'avatar' | 'portrait', file?: File) => Promise<void>; onRemoveCharacterVisual: (characterId: string, kind: 'avatar' | 'portrait') => Promise<void>; onUpdateCharacterAccentColor: (characterId: string, color?: string) => void; onRequestFriend: (characterId: string, direction: ContactDirection) => void; onResolveFriend: (requestId: string, action: 'accept' | 'reject' | 'revoke') => void; onSimulateFriendAcceptance: (requestId: string) => void; onSendTerminalText: (characterId: string, text: string, quoteMessageId?: string) => void; onSendTerminalStickerUrl: (characterId: string, url: string, quoteMessageId?: string) => void; onSendTerminalStickerFile: (characterId: string, file?: File, quoteMessageId?: string) => Promise<void>; onGenerateTerminalReply: (characterId: string) => Promise<void>; onSendPlayerTransfer: (characterId: string, currencyId: string, amount: number) => void; onCreateIncomingTransfer: (characterId: string, currencyId: string, amount: number) => void; onResolveIncomingTransfer: (requestId: string, action: TransferAction) => void; terminalBusy: boolean; selectedPresetId?: string; setSelectedPresetId?: (value: string) => void }) {
+function LibraryView(props: { characters: CharacterCard[]; worldbooks: WorldbookEntry[]; presets: Preset[]; presetBundles: PresetBundle[]; selectedPresetBundleId: string; setSelectedPresetBundleId: (value: string) => void; presetBundleName: string; setPresetBundleName: (value: string) => void; onCreatePresetBundle: () => Promise<void>; onRenamePresetBundle: () => Promise<void>; onDeletePresetBundle: (id: string) => Promise<void>; onSetPresetEntryEnabled: (bundleId: string, entryId: string, enabled: boolean) => Promise<void>; onMovePresetEntry: (bundleId: string, entryId: string, direction: -1 | 1) => Promise<void>; save: SaveFile; name: string; setName: (value: string) => void; draftText: string; setDraftText: (value: string) => void; editing: { kind: ContentKind; id: string } | null; setEditing: (editing: { kind: ContentKind; id: string } | null) => void; addContent: (kind: ContentKind) => Promise<void>; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void>; onExportSave: () => Promise<void>; onImportSave: (file?: File) => Promise<void>; onExportPresetBundle: () => Promise<void>; onImportPresetBundle: (file?: File) => Promise<void>; includeChatsOnExport: boolean; setIncludeChatsOnExport: (value: boolean) => void; onClearChats: () => Promise<void>; itemName: string; setItemName: (value: string) => void; itemTags: string; setItemTags: (value: string) => void; itemDescription: string; setItemDescription: (value: string) => void; onAddItem: () => void; onAddCharacterToWorld: (id: string) => void; visualCharacterId: string; setVisualCharacterId: (value: string) => void; onImportCharacterVisual: (characterId: string, kind: 'avatar' | 'portrait', file?: File) => Promise<void>; onRemoveCharacterVisual: (characterId: string, kind: 'avatar' | 'portrait') => Promise<void>; onUpdateCharacterAccentColor: (characterId: string, color?: string) => void; onRequestFriend: (characterId: string, direction: ContactDirection) => void; onResolveFriend: (requestId: string, action: 'accept' | 'reject' | 'revoke') => void; onSimulateFriendAcceptance: (requestId: string) => void; onSendTerminalText: (characterId: string, text: string, quoteMessageId?: string) => void; onSendTerminalStickerUrl: (characterId: string, url: string, quoteMessageId?: string) => void; onSendTerminalStickerFile: (characterId: string, file?: File, quoteMessageId?: string) => Promise<void>; onGenerateTerminalReply: (characterId: string) => Promise<void>; onSendVoice: (characterId: string, text: string, requestId?: string) => Promise<void>; ttsConfig: TtsConfig; ttsBusy: boolean; onSendPlayerTransfer: (characterId: string, currencyId: string, amount: number) => void; onCreateIncomingTransfer: (characterId: string, currencyId: string, amount: number) => void; onResolveIncomingTransfer: (requestId: string, action: TransferAction) => void; terminalBusy: boolean; selectedPresetId?: string; setSelectedPresetId?: (value: string) => void }) {
   const navigation = useContext(LibraryNavigationContext);
   const entries = LIBRARY_PAGE_DEFINITIONS.map((entry) => ({ ...entry, ...(entry.id === 'characters' && props.save.world.characters ? { badge: `${Object.keys(props.save.world.characters).length}` } : {}) }));
   const pageTitle = LIBRARY_PAGE_DEFINITIONS.find((entry) => entry.id === navigation.activePage)?.pageTitle ?? '资料';
   if (!navigation.activePage) return <DesktopLauncher title="资料" entries={entries} onOpen={(id) => navigation.onOpenPage(id as LibraryPage)} />;
   if (navigation.activePage === 'contacts') return <SubpageShell eyebrow="资料" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><ContactsView save={props.save} onRequestFriend={props.onRequestFriend} onResolveFriend={props.onResolveFriend} onSimulateFriendAcceptance={props.onSimulateFriendAcceptance} /></SubpageShell>;
-  if (navigation.activePage === 'messages') return <SubpageShell eyebrow="资料" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><TerminalMessagesView save={props.save} onOpenContacts={() => navigation.onOpenPage('contacts')} onSendText={props.onSendTerminalText} onSendStickerUrl={props.onSendTerminalStickerUrl} onSendStickerFile={props.onSendTerminalStickerFile} onGenerateReply={props.onGenerateTerminalReply} onSendPlayerTransfer={props.onSendPlayerTransfer} onCreateIncomingTransfer={props.onCreateIncomingTransfer} onResolveIncomingTransfer={props.onResolveIncomingTransfer} terminalBusy={props.terminalBusy} /></SubpageShell>;
+  if (navigation.activePage === 'messages') return <SubpageShell eyebrow="资料" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><TerminalMessagesView save={props.save} onOpenContacts={() => navigation.onOpenPage('contacts')} onSendText={props.onSendTerminalText} onSendStickerUrl={props.onSendTerminalStickerUrl} onSendStickerFile={props.onSendTerminalStickerFile} onGenerateReply={props.onGenerateTerminalReply} onSendVoice={props.onSendVoice} ttsConfig={props.ttsConfig} ttsBusy={props.ttsBusy} onSendPlayerTransfer={props.onSendPlayerTransfer} onCreateIncomingTransfer={props.onCreateIncomingTransfer} onResolveIncomingTransfer={props.onResolveIncomingTransfer} terminalBusy={props.terminalBusy} /></SubpageShell>;
   if (['calls', 'music'].includes(navigation.activePage)) return <SubpageShell eyebrow="资料" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><EmptyState>此入口将在终端功能切片中接入。</EmptyState></SubpageShell>;
   const worldCharacters = Object.values(props.save.world.characters);
   const selectedWorldCharacter = worldCharacters.find((character) => character.id === props.visualCharacterId) ?? worldCharacters[0];

@@ -861,6 +861,12 @@ interface TerminalState {
 
 双向转账复用 v39 的 `transferRequests`。玩家转给已接受好友时，本地立即校验货币、金额精度和余额并扣款，记录为已完成的 outgoing 记录；好友转给玩家时只创建 pending incoming 提议，必须由玩家在消息 App 中接受后才入账。接受、拒绝和重复处理均为幂等本地操作，不改变关系、时间、地点或剧情，也不调用 Provider；AI 不能直接创建经济事实。
 
+### 16.2 终端语音消息（v40）
+
+v40 为 `TerminalMessage` 增加可选的 `audioFormat`、`durationMs` 和 `voiceRequestId`。新语音消息保存 `type: 'voice'`、本地音频 `AssetRef`、输入文本、格式、时长和稳定请求 ID；音频二进制继续只进入 Assets IndexedDB，导出存档时按现有资产打包逻辑处理。v39→v40 migration 只升级版本号，旧终端消息原样保留。
+
+TTS endpoint、API key、模型、voice、格式、调用统计和待重试请求保存在 Provider IndexedDB，不进入 `SaveFile`。语音默认关闭，只有用户显式连接测试或在消息 App 点击合成时调用一次 OpenAI-compatible Speech endpoint。请求中止或失败时保留请求 ID、联系人和文本，必须手动重试；成功插入前按 `voiceRequestId` 去重，不解析 ops，也不改变世界事实。
+
 ---
 
 ## 17. 校验

@@ -21,15 +21,15 @@ function makeSave() {
 }
 
 describe('terminal contacts', () => {
-  it('migrates v38 saves to an empty v39 terminal container', () => {
+  it('migrates v38 saves to the current terminal container', () => {
     const save = makeSave();
     const legacy = structuredClone(save) as Record<string, unknown>;
     legacy.schemaVersion = 38;
     const world = legacy.world as Record<string, unknown>;
     delete world.terminal;
     const migrated = migrateSave(legacy);
-    expect(CURRENT_SCHEMA_VERSION).toBe(39);
-    expect(migrated.schemaVersion).toBe(39);
+    expect(CURRENT_SCHEMA_VERSION).toBe(40);
+    expect(migrated.schemaVersion).toBe(40);
     expect(migrated.world.terminal).toEqual({ friendRequests: [], messageThreads: {}, transferRequests: [], callRecords: [] });
     expect(migrated.world.characters.formal.name).toBe('正式角色');
   });

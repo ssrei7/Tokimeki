@@ -53,6 +53,33 @@ export const EmbeddingConfigSchema = z.object({
 });
 export type EmbeddingConfig = z.infer<typeof EmbeddingConfigSchema>;
 
+export const TtsFormatSchema = z.enum(['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm']);
+export type TtsFormat = z.infer<typeof TtsFormatSchema>;
+
+export const TtsConfigSchema = z.object({
+  id: z.literal('tts').default('tts'),
+  enabled: z.boolean().default(false),
+  endpoint: z.string().default(''),
+  apiKey: z.string().optional(),
+  model: z.string().default(''),
+  voice: z.string().default('alloy'),
+  format: TtsFormatSchema.default('mp3'),
+  requestCount: z.number().int().nonnegative().default(0),
+  failureCount: z.number().int().nonnegative().default(0),
+  lastStatus: z.enum(['idle', 'requesting', 'success', 'error']).default('idle'),
+  lastError: z.string().optional(),
+  lastCalledAt: z.string().datetime().optional(),
+  pendingRequest: z.object({ requestId: z.string().min(1), characterId: z.string().min(1), text: z.string().min(1) }).optional(),
+  updatedAt: z.string().datetime(),
+}).superRefine((config, context) => {
+  if (!config.enabled) return;
+  if (!config.endpoint.trim()) context.addIssue({ code: 'custom', path: ['endpoint'], message: 'Speech endpoint is required.' });
+  else { try { new URL(config.endpoint); } catch { context.addIssue({ code: 'custom', path: ['endpoint'], message: 'Speech endpoint must be a valid URL.' }); } }
+  if (!config.model.trim()) context.addIssue({ code: 'custom', path: ['model'], message: 'Speech model is required.' });
+  if (!config.voice.trim()) context.addIssue({ code: 'custom', path: ['voice'], message: 'Speech voice is required.' });
+});
+export type TtsConfig = z.infer<typeof TtsConfigSchema>;
+
 export interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string }
 export interface ChatRequest { messages: ChatMessage[]; stream?: boolean; taskId?: TaskId; outputMode?: ProviderOutputMode }
 export interface PreparedRequest { url: string; init: RequestInit }

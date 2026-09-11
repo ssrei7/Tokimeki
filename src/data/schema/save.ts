@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 39;
+export const CURRENT_SCHEMA_VERSION = 40;
 
 const IdSchema = z.string().min(1);
 
@@ -165,6 +165,9 @@ export const TerminalMessageSchema = z.object({
   createdSlotId: IdSchema,
   quoteMessageId: IdSchema.optional(),
   quotePreview: z.string().max(240).optional(),
+  audioFormat: z.string().min(1).optional(),
+  durationMs: z.number().finite().nonnegative().optional(),
+  voiceRequestId: IdSchema.optional(),
 });
 
 export const TerminalTransferRequestSchema = z.object({

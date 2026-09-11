@@ -77,6 +77,24 @@ export function sendTerminalStickerMessage(world: WorldState, characterId: strin
   });
 }
 
+export function sendTerminalVoiceMessage(world: WorldState, characterId: string, text: string, asset: AssetRef, audioFormat: string, durationMs: number, requestId: string, day = world.clock.day, slotId = world.clock.slotId): TerminalMessageResult {
+  const trimmed = text.trim();
+  if (!trimmed || !audioFormat.trim() || !requestId.trim() || !Number.isFinite(durationMs) || durationMs < 0) return { ok: false, changed: false, warning: '语音消息元数据无效。' };
+  const existing = listTerminalMessages(world, characterId).find((message) => message.type === 'voice' && message.voiceRequestId === requestId);
+  if (existing) return { ok: true, changed: false, message: existing };
+  return appendMessage(world, characterId, {
+    senderId: TERMINAL_PLAYER_ID,
+    type: 'voice',
+    text: trimmed,
+    asset,
+    audioFormat: audioFormat.trim(),
+    durationMs,
+    voiceRequestId: requestId.trim(),
+    createdDay: Math.max(1, Math.floor(day)),
+    createdSlotId: slotId,
+  });
+}
+
 export function sendTerminalReplyMessage(world: WorldState, characterId: string, text: string, day = world.clock.day, slotId = world.clock.slotId): TerminalMessageResult {
   const trimmed = text.trim();
   if (!trimmed) return { ok: false, changed: false, warning: '回复不能为空。' };
