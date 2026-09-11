@@ -54,6 +54,15 @@ describe('settings desktop', () => {
       expect(match[2]).toBe(match[3]);
     }
   });
+
+  it('uses a shared grayscale glass treatment for desktop icons', () => {
+    const themeCss = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
+    const appCss = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
+    expect(themeCss).toContain('--desktop-icon-surface: rgb(255 255 255 / 0.68);');
+    expect(appCss).toContain('backdrop-filter: blur(14px)');
+    expect(appCss).toContain('.desktop-app-icon-glyph.tone-blue, .desktop-app-icon-glyph.tone-green');
+    expect(appCss).not.toMatch(/desktop-app-icon-glyph\.tone-(blue|green|amber|rose|violet)\s*\{[^}]*#[0-9a-f]/i);
+  });
 });
 
 describe('library desktop', () => {
