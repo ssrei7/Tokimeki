@@ -111,7 +111,9 @@ describe('library desktop', () => {
     expect(source).toContain("navigation.activePage === 'calls'");
     expect(source).toContain("navigation.activePage === 'music'");
     expect(source).toContain('world.terminal.messageThreads');
-    expect(source).toContain('此入口将在音乐 App 切片中接入。');
+    expect(source).toContain('<MusicApp player={props.musicPlayer} />');
+    expect(source).toContain('<audio ref={musicPlayer.audioRef}');
+    expect(source).not.toContain('此入口将在音乐 App 切片中接入。');
   });
 
   it('exposes the local bidirectional transfer controls inside messages', () => {

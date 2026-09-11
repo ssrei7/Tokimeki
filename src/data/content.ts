@@ -93,6 +93,31 @@ export const MemoryVectorRecordSchema = z.object({
 });
 export type MemoryVectorRecord = z.infer<typeof MemoryVectorRecordSchema>;
 
+export const MusicPlaybackModeSchema = z.enum(['sequence', 'shuffle', 'repeat-one']);
+export type MusicPlaybackMode = z.infer<typeof MusicPlaybackModeSchema>;
+
+export const MusicTrackSchema = z.object({
+  id: Id,
+  title: z.string().min(1).max(200),
+  artist: z.string().max(200).default(''),
+  url: z.string().url().refine((value) => /^https?:\/\//i.test(value), '音频地址必须是 http(s) URL'),
+  updatedAt: z.string().datetime(),
+});
+export type MusicTrack = z.infer<typeof MusicTrackSchema>;
+
+export const MusicStateSchema = z.object({
+  id: z.literal('default'),
+  tracks: z.array(MusicTrackSchema).max(500),
+  currentTrackId: Id.optional(),
+  mode: MusicPlaybackModeSchema.default('sequence'),
+  volume: z.number().finite().min(0).max(1).default(0.8),
+  positionSeconds: z.number().finite().nonnegative().default(0),
+  shuffleQueue: z.array(Id).default([]),
+  lastError: z.string().max(500).optional(),
+  updatedAt: z.string().datetime(),
+});
+export type MusicState = z.infer<typeof MusicStateSchema>;
+
 export const EventPackageSchema = z.object({
   id: Id,
   name: z.string().min(1),

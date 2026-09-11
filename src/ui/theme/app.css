@@ -505,6 +505,39 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .encounter-participant-picker label { display: inline-flex; align-items: center; gap: 5px; }
 .bottom-nav button { min-height: 36px; background: transparent; color: var(--gray-500); font-size: 12px; }
 .bottom-nav button.selected { background: var(--gray-100); color: var(--gray-600); }
+.music-app { display: grid; gap: 12px; }
+.music-now-playing, .music-mode-card, .music-list-card, .music-form-card { display: grid; gap: 12px; }
+.music-now-playing h3 { margin: 0; overflow-wrap: anywhere; }
+.music-progress { display: grid; gap: 4px; }
+.music-progress input[type='range'], .music-volume input[type='range'] { width: 100%; accent-color: var(--gray-600); }
+.music-progress > div { display: flex; justify-content: space-between; color: var(--gray-400); font-size: 11px; }
+.music-controls { display: flex; align-items: center; gap: 10px; }
+.icon-button, .music-play-button { display: inline-grid; place-items: center; flex: 0 0 auto; width: 36px; min-height: 36px; padding: 7px; border: 1px solid var(--gray-200); border-radius: 50%; background: var(--gray-0); color: var(--gray-600); }
+.icon-button svg, .music-play-button svg, .music-mode-buttons svg, .music-form button svg { width: 17px; height: 17px; }
+.music-play-button { width: 44px; min-height: 44px; background: var(--gray-700); color: var(--gray-0); }
+.music-volume { display: flex; align-items: center; gap: 8px; min-width: 110px; margin-left: auto; color: var(--gray-500); font-size: 12px; }
+.music-volume input { width: 94px; }
+.music-mode-buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.music-mode-buttons button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 8px; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--gray-0); color: var(--gray-600); font-size: 12px; }
+.music-mode-buttons button.selected { background: var(--gray-700); border-color: var(--gray-700); color: var(--gray-0); }
+.music-track-list { display: grid; gap: 6px; }
+.music-track-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; padding: 8px; border: 1px solid var(--gray-100); border-radius: 8px; background: var(--gray-25); }
+.music-track-row.active { border-color: var(--gray-400); background: var(--gray-50); }
+.music-track-main { min-width: 0; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 7px; padding: 0; background: transparent; color: var(--gray-700); text-align: left; }
+.music-track-main > span:last-child { min-width: 0; }
+.music-track-main strong, .music-track-main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.music-track-main small { margin-top: 2px; color: var(--gray-400); font-size: 11px; }
+.music-track-index { color: var(--gray-400); font-size: 12px; text-align: center; }
+.music-track-actions { align-items: center; justify-content: flex-end; }
+.music-track-actions .icon-button { width: 32px; min-height: 32px; padding: 6px; }
+.text-button { min-height: 30px; padding: 4px 6px; background: transparent; color: var(--gray-500); font-size: 11px; }
+.text-button:disabled { opacity: .4; cursor: not-allowed; }
+.danger-icon { color: var(--gray-600); }
+.music-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.music-form label { display: grid; gap: 5px; color: var(--gray-600); font-size: 12px; }
+.music-form .music-url-field { grid-column: 1 / -1; }
+.music-form > button { grid-column: 1 / -1; justify-self: start; display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 520px) { .music-track-row { grid-template-columns: 1fr; } .music-track-actions { justify-content: flex-start; } .music-form { grid-template-columns: 1fr; } .music-form .music-url-field, .music-form > button { grid-column: auto; } .music-volume { min-width: 0; } }
 @media (min-width: 761px) { .app-shell { min-height: 100vh; box-shadow: 0 0 30px rgb(63 63 63 / 0.08); } }
 @media (max-width: 520px) { .routing-list label { grid-template-columns: 1fr; } }
 @media (max-width: 520px) { .map-expand-row { grid-template-columns: 1fr 90px; } .map-expand-row button { grid-column: 1 / -1; } }

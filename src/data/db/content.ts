@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import { CharacterCardSchema, ChatRecordSchema, ChatRecoveryRecordSchema, MemoryVectorRecordSchema, PersonaSchema, PresetBundleSchema, PresetSchema, StoryScenePresetSchema, WorldbookEntrySchema, type CharacterCard, type ChatRecord, type ChatRecoveryRecord, type MemoryVectorRecord, type Persona, type Preset, type PresetBundle, type StoryScenePresetRecord, type WorldbookEntry } from '../content';
+import { CharacterCardSchema, ChatRecordSchema, ChatRecoveryRecordSchema, MemoryVectorRecordSchema, MusicStateSchema, PersonaSchema, PresetBundleSchema, PresetSchema, StoryScenePresetSchema, WorldbookEntrySchema, type CharacterCard, type ChatRecord, type ChatRecoveryRecord, type MemoryVectorRecord, type MusicState, type Persona, type Preset, type PresetBundle, type StoryScenePresetRecord, type WorldbookEntry } from '../content';
 
 export class ContentDatabase extends Dexie {
   characters!: Table<CharacterCard, string>;
@@ -11,6 +11,7 @@ export class ContentDatabase extends Dexie {
   chats!: Table<ChatRecord, string>;
   chatRecovery!: Table<ChatRecoveryRecord, string>;
   memoryVectors!: Table<MemoryVectorRecord, string>;
+  musicStates!: Table<MusicState, string>;
   constructor(name = 'tokimeki-content') {
     super(name);
     this.version(1).stores({ characters: 'id', worldbooks: 'id', presets: 'id' });
@@ -26,6 +27,7 @@ export class ContentDatabase extends Dexie {
     this.version(6).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId' });
     this.version(7).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId', chatRecovery: 'characterId' });
     this.version(8).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId', chatRecovery: 'characterId', memoryVectors: 'id, saveId, [saveId+characterId]' });
+    this.version(9).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId', chatRecovery: 'characterId', memoryVectors: 'id, saveId, [saveId+characterId]', musicStates: 'id' });
   }
 }
 
@@ -52,3 +54,5 @@ export async function clearChatRecovery(characterId: string): Promise<void> { aw
 export async function saveMemoryVectors(records: MemoryVectorRecord[]): Promise<MemoryVectorRecord[]> { const parsed = records.map((record) => MemoryVectorRecordSchema.parse(record)); await contentDb.memoryVectors.bulkPut(parsed); return parsed; }
 export async function loadMemoryVectors(saveId: string, characterId: string): Promise<MemoryVectorRecord[]> { return contentDb.memoryVectors.where('[saveId+characterId]').equals([saveId, characterId]).toArray(); }
 export async function clearMemoryVectors(saveId: string): Promise<void> { await contentDb.memoryVectors.where('saveId').equals(saveId).delete(); }
+export async function saveMusicState(state: MusicState): Promise<MusicState> { const parsed = MusicStateSchema.parse(state); await contentDb.musicStates.put(parsed); return parsed; }
+export async function loadMusicState(): Promise<MusicState | undefined> { const stored = await contentDb.musicStates.get('default'); if (!stored) return undefined; return MusicStateSchema.parse(stored); }
