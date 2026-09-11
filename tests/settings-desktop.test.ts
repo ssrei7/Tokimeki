@@ -133,6 +133,16 @@ describe('library desktop', () => {
     expect(source).toContain('recordTerminalCall');
     expect(source).toContain('navigation.activePage === \'calls\'');
   });
+
+  it('keeps remote appointment proposals separate from calendar confirmation', () => {
+    const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('aria-label="远程约定"');
+    expect(source).toContain('发起约定');
+    expect(source).toContain('模拟TA提议');
+    expect(source).toContain('模拟TA同意');
+    expect(source).toContain('加入日历');
+    expect(source).toContain('confirmTerminalAppointment');
+  });
 });
 
 describe('day desktop', () => {

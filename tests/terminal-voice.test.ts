@@ -21,12 +21,12 @@ function config(overrides: Partial<TtsConfig> = {}): TtsConfig {
 }
 
 describe('terminal voice', () => {
-  it('migrates v39 terminal messages to v40 without changing existing facts', () => {
+  it('migrates v39 terminal messages through the current schema without changing existing facts', () => {
     const save = makeSave();
     const legacy = structuredClone(save) as Record<string, unknown>;
     legacy.schemaVersion = 39;
     const migrated = migrateSave(legacy);
-    expect(migrated.schemaVersion).toBe(40);
+    expect(migrated.schemaVersion).toBe(41);
     expect(migrated.world.terminal.messageThreads).toEqual({});
     expect(migrated.world.player.stats.money).toBe(save.world.player.stats.money);
   });

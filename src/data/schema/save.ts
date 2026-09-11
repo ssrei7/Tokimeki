@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 40;
+export const CURRENT_SCHEMA_VERSION = 41;
 
 const IdSchema = z.string().min(1);
 
@@ -191,11 +191,25 @@ export const TerminalCallRecordSchema = z.object({
   status: z.enum(['missed', 'completed', 'cancelled']),
 });
 
+export const TerminalAppointmentRequestSchema = z.object({
+  id: IdSchema,
+  characterId: IdSchema,
+  direction: z.enum(['outgoing', 'incoming']),
+  day: z.number().int().positive(),
+  slotId: IdSchema,
+  nodeId: IdSchema,
+  status: z.enum(['pending', 'accepted', 'rejected', 'revoked']),
+  note: z.string().max(200).optional(),
+  createdDay: z.number().int().positive(),
+  updatedDay: z.number().int().positive(),
+});
+
 export const TerminalStateSchema = z.object({
   friendRequests: z.array(TerminalFriendRequestSchema).max(2000).default([]),
   messageThreads: z.record(z.string(), z.array(TerminalMessageSchema).max(2000)).default({}),
   transferRequests: z.array(TerminalTransferRequestSchema).max(1000).default([]),
   callRecords: z.array(TerminalCallRecordSchema).max(1000).default([]),
+  appointmentRequests: z.array(TerminalAppointmentRequestSchema).max(1000).default([]),
 });
 
 export const DEFAULT_TERMINAL_STATE = {
@@ -203,6 +217,7 @@ export const DEFAULT_TERMINAL_STATE = {
   messageThreads: {},
   transferRequests: [],
   callRecords: [],
+  appointmentRequests: [],
 } satisfies z.input<typeof TerminalStateSchema>;
 
 export const EncounterLogEntrySchema = z.object({
@@ -1027,5 +1042,6 @@ export type TerminalFriendRequest = z.infer<typeof TerminalFriendRequestSchema>;
 export type TerminalMessage = z.infer<typeof TerminalMessageSchema>;
 export type TerminalTransferRequest = z.infer<typeof TerminalTransferRequestSchema>;
 export type TerminalCallRecord = z.infer<typeof TerminalCallRecordSchema>;
+export type TerminalAppointmentRequest = z.infer<typeof TerminalAppointmentRequestSchema>;
 export type MemoryType = z.infer<typeof MemoryTypeSchema>;
 export type MemorySource = z.infer<typeof MemorySourceSchema>;

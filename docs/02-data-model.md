@@ -842,7 +842,7 @@ assets/<assetId>.<ext>
 
 ### 16.1 阶段 9 终端持久化容器（v39）
 
-`world.terminal` 是终端事实的本地容器。v39 联系人切片首次引入并预留消息、转账和通话数组，后续终端切片在 v40 内复用这些容器，避免为同一终端系统重复升级 schema：
+`world.terminal` 是终端事实的本地容器。v39 联系人切片首次引入并预留消息、转账和通话数组，后续终端切片在 v40 内复用这些容器；v41 为远程约定新增独立的待确认提议数组：
 
 ```ts
 interface TerminalState {
@@ -850,6 +850,7 @@ interface TerminalState {
   messageThreads: Record<string, TerminalMessage[]>;
   transferRequests: TerminalTransferRequest[];
   callRecords: TerminalCallRecord[];
+  appointmentRequests: TerminalAppointmentRequest[];
 }
 ```
 
@@ -876,6 +877,12 @@ TTS endpoint、API key、模型、voice、格式、调用统计和待重试请�
 ### 16.4 夜间主动来信（v40）
 
 夜间主动来信复用 `messageThreads`，不新增 schema 字段。时钟进入 `night` 或 `late-night` 时，若存在已接受好友，内核按日期在好友中确定性轮换一位角色，写入一条本地文本消息；同一日期与夜间槽重复触发时按发送者、日期和槽位幂等。消息不改变时间、关系、地点、预约、事件或剧情，也不调用 Provider。
+
+### 16.5 远程约定提议（v41）
+
+v41 新增 `world.terminal.appointmentRequests`。提议保存联系人、发起方向、未来日期、时段、地点、可选备注以及 `pending` / `accepted` / `rejected` / `revoked` 状态；v40→v41 migration 只初始化空数组，保留既有终端消息、转账、通话和世界事实。
+
+创建提议时必须本地校验联系人已是好友、日期晚于当前日期、时段存在于当前日历、地点存在于当前地图。提议被接受仍不会修改 `world.appointments`；只有玩家显式点击“加入日历”后，才通过现有 `make_appointment` 白名单再次校验并写入确定性预约。重复确认复用稳定 appointment ID，不重复插入，也不推进关系、时间、事件或剧情。
 
 ---
 
