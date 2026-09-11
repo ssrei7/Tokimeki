@@ -3,4 +3,6 @@ export { buildTerminalReplyPrompt, listTerminalMessages, sendTerminalReplyMessag
 export type { TerminalPromptMessage } from './messages';
 export { createIncomingTransferProposal, listTerminalTransfers, resolveIncomingTransfer, sendPlayerTransfer } from './transfers';
 export type { TerminalTransferResult, TransferAction } from './transfers';
+export { listTerminalCalls, recordTerminalCall } from './calls';
+export type { TerminalCallResult, TerminalCallStatus } from './calls';
 export type { ContactCandidate, ContactDirection, ContactOperationResult, FriendRequestAction } from './contacts';

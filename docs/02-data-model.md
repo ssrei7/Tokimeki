@@ -842,7 +842,7 @@ assets/<assetId>.<ext>
 
 ### 16.1 阶段 9 终端持久化容器（v39）
 
-`world.terminal` 是终端事实的本地容器，当前首个切片只使用 `friendRequests`。同一版本预留后续消息、转账和通话数组，避免后续切片重复升级 schema：
+`world.terminal` 是终端事实的本地容器。v39 联系人切片首次引入并预留消息、转账和通话数组，后续终端切片在 v40 内复用这些容器，避免为同一终端系统重复升级 schema：
 
 ```ts
 interface TerminalState {
@@ -866,6 +866,12 @@ interface TerminalState {
 v40 为 `TerminalMessage` 增加可选的 `audioFormat`、`durationMs` 和 `voiceRequestId`。新语音消息保存 `type: 'voice'`、本地音频 `AssetRef`、输入文本、格式、时长和稳定请求 ID；音频二进制继续只进入 Assets IndexedDB，导出存档时按现有资产打包逻辑处理。v39→v40 migration 只升级版本号，旧终端消息原样保留。
 
 TTS endpoint、API key、模型、voice、格式、调用统计和待重试请求保存在 Provider IndexedDB，不进入 `SaveFile`。语音默认关闭，只有用户显式连接测试或在消息 App 点击合成时调用一次 OpenAI-compatible Speech endpoint。请求中止或失败时保留请求 ID、联系人和文本，必须手动重试；成功插入前按 `voiceRequestId` 去重，不解析 ops，也不改变世界事实。
+
+### 16.3 本地通话记录（v40）
+
+本地通话壳复用 v39 已预留的 `callRecords`，不再新增 schema 字段。记录只保存确定性本地操作产生的通话事实：联系人、开始与结束时段以及 `completed` / `missed` / `cancelled` 状态。只有已接受好友可以呼叫或被模拟来电；呼叫、接听、模拟 TA 接听、拒绝、取消和结束都不调用 Provider，不修改时间、地点、关系、预约、事件或剧情状态。
+
+通话记录以稳定 `id` 幂等写入，重复结束或重复提交同一个 `callId` 只返回已有记录。头像和联系人信息继续从当前世界状态读取，缺失头像时由 UI 使用现有首字占位，不把展示信息复制进通话事实。
 
 ---
 

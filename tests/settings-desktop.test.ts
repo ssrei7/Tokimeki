@@ -108,9 +108,10 @@ describe('library desktop', () => {
     expect(source).toContain("navigation.activePage === 'contacts'");
     expect(source).toContain('data-testid="terminal-contacts"');
     expect(source).toContain('data-testid="terminal-messages"');
-    expect(source).toContain("['calls', 'music'].includes(navigation.activePage)");
+    expect(source).toContain("navigation.activePage === 'calls'");
+    expect(source).toContain("navigation.activePage === 'music'");
     expect(source).toContain('world.terminal.messageThreads');
-    expect(source).toContain('此入口将在终端功能切片中接入。');
+    expect(source).toContain('此入口将在音乐 App 切片中接入。');
   });
 
   it('exposes the local bidirectional transfer controls inside messages', () => {
@@ -121,6 +122,16 @@ describe('library desktop', () => {
     expect(source).toContain('模拟TA转入');
     expect(source).toContain('待收款');
     expect(source).toContain('转账记录');
+  });
+
+  it('exposes the local call shell without API wiring', () => {
+    const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('data-testid="terminal-calls"');
+    expect(source).toContain('模拟来电');
+    expect(source).toContain('模拟TA接听');
+    expect(source).toContain('通话记录');
+    expect(source).toContain('recordTerminalCall');
+    expect(source).toContain('navigation.activePage === \'calls\'');
   });
 });
 

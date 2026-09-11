@@ -347,6 +347,18 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .terminal-transfer-row .button-row { flex: 0 0 auto; }
 .terminal-transfer-row button { min-height: 32px; padding: 0 9px; font-size: 11px; }
 @media (max-width: 500px) { .terminal-transfer-form { grid-template-columns: 1fr 1fr; } .terminal-transfer-form button { grid-column: span 1; } .terminal-transfer-row { align-items: flex-start; flex-direction: column; } }
+.terminal-calls-view { display: grid; gap: 16px; }
+.terminal-call-active { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--gray-300); border-radius: 10px; background: var(--gray-25); }
+.terminal-call-person { display: flex; align-items: center; gap: 10px; }
+.terminal-call-person > div { display: grid; gap: 3px; }
+.terminal-call-person small, .terminal-call-contact small, .terminal-call-record small { display: block; color: var(--gray-500); font-size: 11px; }
+.terminal-call-contacts, .terminal-call-history { display: grid; gap: 8px; }
+.terminal-call-contact, .terminal-call-record { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--gray-100); }
+.terminal-call-contact > div:nth-child(2), .terminal-call-record > span:first-child { min-width: 0; }
+.terminal-call-contact .button-row { justify-content: flex-end; }
+.terminal-call-contact button { min-height: 34px; padding: 0 9px; font-size: 11px; }
+.terminal-call-record { grid-template-columns: minmax(0, 1fr) auto; color: var(--gray-600); font-size: 12px; }
+@media (max-width: 500px) { .terminal-call-contact { grid-template-columns: 38px minmax(0, 1fr); } .terminal-call-contact .button-row { grid-column: 1 / -1; justify-content: flex-start; } }
 .memory-library-card { display: grid; gap: 10px; }
 .memory-character { border-top: 1px solid var(--gray-100); padding-top: 8px; }
 .memory-character summary { cursor: pointer; font-weight: 600; }
