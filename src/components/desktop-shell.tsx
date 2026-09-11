@@ -1,8 +1,9 @@
 import type { LucideIcon } from 'lucide-react';
 import { ChevronLeft } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
+import { desktopIconContrastForLuminance, readWallpaperLuminance, type DesktopIconContrast } from '@/ui/desktop-icon-contrast';
 
 export type DesktopEntry = {
   id: string;
@@ -12,8 +13,23 @@ export type DesktopEntry = {
   badge?: string;
 };
 
-export function DesktopLauncher({ title, entries, onOpen }: { title: string; entries: readonly DesktopEntry[]; onOpen: (id: string) => void }) {
-  return <section className="desktop-launcher" aria-label={title}>
+export function DesktopLauncher({ title, entries, onOpen, wallpaperUrl }: { title: string; entries: readonly DesktopEntry[]; onOpen: (id: string) => void; wallpaperUrl?: string }) {
+  const [contrast, setContrast] = useState<DesktopIconContrast | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!wallpaperUrl) { setContrast(null); return () => { cancelled = true; }; }
+    void readWallpaperLuminance(wallpaperUrl).then((luminance) => {
+      if (!cancelled) setContrast(luminance === null ? null : desktopIconContrastForLuminance(luminance));
+    });
+    return () => { cancelled = true; };
+  }, [wallpaperUrl]);
+  const style = contrast ? {
+    '--desktop-icon-ink': contrast.ink,
+    '--desktop-icon-label': contrast.label,
+    '--desktop-icon-border': contrast.border,
+    '--desktop-icon-shadow': contrast.shadow,
+  } as CSSProperties : undefined;
+  return <section className="desktop-launcher" aria-label={title} style={style}>
     <PageHeader eyebrow="Tokimeki" title={title} />
     <div className="desktop-grid">
       {entries.map((entry) => <DesktopAppIcon key={entry.id} entry={entry} onOpen={onOpen} />)}

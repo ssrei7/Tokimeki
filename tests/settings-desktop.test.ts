@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BOTTOM_NAV_ITEMS, LIBRARY_PAGE_DEFINITIONS, SETTINGS_PAGE_DEFINITIONS } from '../src/App';
 import { DesktopLauncher, SubpageShell } from '../src/components/desktop-shell';
+import { desktopIconContrastForLuminance } from '../src/ui/desktop-icon-contrast';
 
 describe('settings desktop', () => {
   it('exposes nine unique reachable entries including vector memory', () => {
@@ -62,6 +63,17 @@ describe('settings desktop', () => {
     expect(appCss).toContain('backdrop-filter: blur(14px)');
     expect(appCss).toContain('.desktop-app-icon-glyph.tone-blue, .desktop-app-icon-glyph.tone-green');
     expect(appCss).not.toMatch(/desktop-app-icon-glyph\.tone-(blue|green|amber|rose|violet)\s*\{[^}]*#[0-9a-f]/i);
+  });
+
+  it('maps dark and light wallpaper luminance to non-extreme icon grays', () => {
+    const dark = desktopIconContrastForLuminance(0.08);
+    const light = desktopIconContrastForLuminance(0.92);
+    expect(dark.ink).toBe('#eeeeee');
+    expect(light.ink).toBe('#333333');
+    expect(dark.ink).not.toBe('#ffffff');
+    expect(light.ink).not.toBe('#000000');
+    expect(dark.border).toContain('255 255 255');
+    expect(light.border).toContain('23 23 23');
   });
 });
 
