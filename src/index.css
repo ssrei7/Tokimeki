@@ -40,6 +40,9 @@
   --chat-empty-surface: var(--gray-50);
   --chat-empty-line: rgb(115 115 115 / 0.08);
   --chat-empty-mark: rgb(115 115 115 / 0.12);
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --app-bottom-nav-space: calc(92px + var(--safe-area-bottom));
   --radius: 0.5rem;
 }
 
@@ -65,6 +68,7 @@
 
 @layer base {
   :root { color-scheme: light; }
-  body { background: var(--background); color: var(--foreground); }
+  html, body, #root { min-height: 100%; }
+  body { min-height: 100dvh; background: var(--background); color: var(--foreground); }
   :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 }

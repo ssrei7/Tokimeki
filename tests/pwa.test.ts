@@ -8,10 +8,12 @@ describe('PWA shell', () => {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
       display?: string;
       orientation?: string;
+      background_color?: string;
       icons?: Array<{ src: string }>;
     };
     expect(manifest.display).toBe('standalone');
     expect(manifest.orientation).toBe('portrait-primary');
+    expect(manifest.background_color).toBe('#fafafa');
     expect(manifest.icons?.length).toBeGreaterThan(0);
     expect(existsSync(resolve(process.cwd(), 'public', manifest.icons?.[0]?.src ?? ''))).toBe(true);
   });
@@ -22,5 +24,16 @@ describe('PWA shell', () => {
     expect(html).toContain('viewport-fit=cover');
     expect(html).toContain('apple-mobile-web-app-capable');
     expect(html).toContain('theme-color');
+  });
+
+  it('keeps the app shell stable across standalone viewport heights', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/ui/theme/app.css'), 'utf8');
+    const themeCss = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
+    expect(css).toContain('min-height: 100svh');
+    expect(css).toContain('height: 100dvh');
+    expect(css).toContain('var(--safe-area-top)');
+    expect(css).toContain('var(--safe-area-bottom)');
+    expect(themeCss).toContain('--safe-area-top: env(safe-area-inset-top, 0px);');
+    expect(themeCss).toContain('--safe-area-bottom: env(safe-area-inset-bottom, 0px);');
   });
 });
