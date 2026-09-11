@@ -17,6 +17,8 @@ export interface HybridMemorySearchOptions extends MemorySearchOptions {
   vectorWeight?: number;
   /** Weight for the normalized deterministic kernel score. Defaults to 0.5. */
   keywordWeight?: number;
+  /** Keep semantically similar candidates even when they do not share a query token. */
+  requireKeywordMatch?: boolean;
 }
 
 export interface RetrievedMemory {
@@ -42,7 +44,7 @@ export function retrieveRelationshipMemoriesHybrid(
   charId: string,
   options: HybridMemorySearchOptions = {},
 ): RetrievedMemory[] {
-  const candidates = collectCandidates(world, charId, options);
+  const candidates = collectCandidates(world, charId, options, options.requireKeywordMatch !== false);
   const vectorScores = options.vectorScores;
   const vectorWeight = nonNegativeFinite(options.vectorWeight, 0.5);
   const keywordWeight = nonNegativeFinite(options.keywordWeight, 0.5);
@@ -69,7 +71,7 @@ export function searchRelationshipMemories(world: WorldState, charId: string, op
   return retrieveRelationshipMemories(world, charId, options).map(({ memory }) => memory);
 }
 
-function collectCandidates(world: WorldState, charId: string, options: MemorySearchOptions): RetrievedMemory[] {
+function collectCandidates(world: WorldState, charId: string, options: MemorySearchOptions, requireKeywordMatch = true): RetrievedMemory[] {
   const memories = world.relations[charId]?.memories ?? [];
   const queryTokens = tokenize(options.query ?? '');
   const typeSet = options.types?.length ? new Set(options.types) : undefined;
@@ -80,7 +82,7 @@ function collectCandidates(world: WorldState, charId: string, options: MemorySea
     .filter((memory) => !typeSet || typeSet.has(memory.type ?? 'interaction'))
     .filter((memory) => !sourceSet || sourceSet.has(memory.source?.kind ?? 'legacy'))
     .map((memory) => ({ memory, score: scoreMemory(memory, options.nodeId, queryTokens) }))
-    .filter(({ memory }) => queryTokens.length === 0 || matchesQuery(memory.text, queryTokens));
+    .filter(({ memory }) => !requireKeywordMatch || queryTokens.length === 0 || matchesQuery(memory.text, queryTokens));
 }
 
 function sortAndLimit(candidates: RetrievedMemory[], limit: number | undefined): RetrievedMemory[] {

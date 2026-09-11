@@ -97,6 +97,16 @@ describe('relationship memory library operations', () => {
     }).map(({ memory }) => memory.id)).toEqual(['second', 'first']);
   });
 
+  it('can broaden hybrid candidates semantically without changing the default keyword boundary', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'relationship-memory-semantic', title: 'Relationship memory semantic' }));
+    save.world.relations.seir = { axes: {}, knots: [], memories: [
+      { id: 'keyword', text: '码头的约定', day: 1 },
+      { id: 'semantic', text: '海边再见', day: 2 },
+    ] };
+    expect(retrieveRelationshipMemoriesHybrid(save.world, 'seir', { query: '码头', vectorScores: new Map([['keyword', 0], ['semantic', 1]]), requireKeywordMatch: false, vectorWeight: 1, keywordWeight: 0 }).map(({ memory }) => memory.id)).toEqual(['semantic', 'keyword']);
+    expect(retrieveRelationshipMemoriesHybrid(save.world, 'seir', { query: '码头', vectorScores: new Map([['keyword', 0], ['semantic', 1]]) }).map(({ memory }) => memory.id)).toEqual(['keyword']);
+  });
+
   it('falls back to the existing retrieval order without vector scores', () => {
     const save = seedScenario(createCurrentSaveScenario({ id: 'relationship-memory-hybrid-fallback', title: 'Relationship memory hybrid fallback' }));
     save.world.relations.seir = { axes: {}, knots: [], memories: [

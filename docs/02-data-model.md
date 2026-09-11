@@ -621,7 +621,7 @@ interface PlayerState {
 
 `job` 已在 v35 绑定节点并占用 `work.slotCost`；`shop` 在 v37 绑定节点，并以 `operate_shop` 成本占用营业时段。工资金额不得写进契约或广告正文，必须由岗位规则指向 `player.stats` 中的通用数值；店铺转让广告同样不能直接创建经营权。
 
-向量记忆属于阶段 7 的可选外部检索索引，不是事实字段。浏览器只保存索引状态、Provider 引用和可重建的向量缓存；embedding 文本必须经过用户选择的 Provider，默认不发送。Prompt 组装仍以确定性筛选后的记忆正文为准，向量 API 不得直接修改 `WorldState`。
+向量记忆属于可选外部检索索引，不是事实字段。阶段 9 的 embedding 配置、API key、调用计数和失败状态保存在独立 Provider IndexedDB；派生向量按 `saveId + characterId + memoryId` 保存在 Content IndexedDB。两者均不进入 `SaveFile`，因此不改变当前 v38 schema。embedding 文本只在用户显式启用后发送到所配置端点；Prompt 组装仍以确定性筛选后的记忆正文为准，向量 API 不得直接修改 `WorldState`。
 
 经济系统的货币展示不使用固定字段名或固定中文名称。阶段 8 计划由世界配置提供 `defaultCurrencyId` 与 `currencies` 映射，每项包含稳定货币 ID、展示名称、可选符号、小数位和对应的 ASCII `statKey`；余额数值仍写入 `player.stats`，经济 ops/规则负责校验收入、支出、工资和租金。若未来支持多货币，结算记录也应按货币 ID 分开保存，而不是把不同货币混入单一数字。
 

@@ -218,6 +218,21 @@ describe('prompt assembler', () => {
     expect(memory?.text).toContain('第 6 天');
   });
 
+  it('uses caller-supplied hybrid memory results for the character memory block', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks()) assembler.register(block);
+    const semanticMemory = { id: 'semantic', text: '语义检索选中的海边约定', day: 2, nodeId: 'start' };
+    const result = assembler.assemble({
+      input: '码头', worldbooks: [], history: [],
+      participants: [{ id: 'rin', name: '凛', description: '', personality: '', updatedAt: '2026-01-01T00:00:00.000Z' }],
+      relationshipMemories: { rin: [semanticMemory] },
+      world: { clock: { day: 3, slotId: 'morning' }, slotsUsedToday: 0, player: { name: 'P', nodeId: 'start', stats: {}, flags: {}, inventory: [] }, stats: {}, flags: {}, items: {}, relations: { rin: { axes: {}, knots: [], memories: [{ id: 'keyword', text: '码头', day: 1 }] } }, settlements: [], characters: {}, npcs: {}, npcTemplates: {}, encounterLog: [], map: createDefaultMap(), diary: [] },
+    }, { budget: 4096, task: 'narrate_main' });
+    const memory = result.blocks.find((block) => block.id === 'char_memory');
+    expect(memory?.text).toContain('语义检索选中的海边约定');
+    expect(memory?.text).not.toContain('码头');
+  });
+
   it('injects recent node memories with local character names', () => {
     const assembler = new PromptAssembler();
     for (const block of createDefaultPromptBlocks()) assembler.register(block);

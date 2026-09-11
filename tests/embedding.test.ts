@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createEmbeddings, EmbeddingProviderError, parseEmbeddingResponse } from '../src/providers/embedding';
+import { EmbeddingConfigSchema } from '../src/providers/types';
 
 describe('explicit embedding provider', () => {
   it('batches texts into one request and preserves indexed order', async () => {
@@ -19,5 +20,12 @@ describe('explicit embedding provider', () => {
     expect(await createEmbeddings({ endpoint: 'https://embedding.test', model: 'model', texts: [], fetchImpl: async () => { calls += 1; return new Response('{}'); } })).toEqual([]);
     expect(calls).toBe(0);
     expect(() => parseEmbeddingResponse({ data: [{ embedding: [1, Number.NaN] }] })).toThrow(EmbeddingProviderError);
+  });
+
+  it('allows an unconfigured disabled option but requires endpoint and model when enabled', () => {
+    const base = { id: 'embedding', endpoint: '', model: '', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: new Date().toISOString() };
+    expect(EmbeddingConfigSchema.safeParse({ ...base, enabled: false }).success).toBe(true);
+    expect(EmbeddingConfigSchema.safeParse({ ...base, enabled: true }).success).toBe(false);
+    expect(EmbeddingConfigSchema.safeParse({ ...base, enabled: true, endpoint: 'https://example.com/v1/embeddings', model: 'embed' }).success).toBe(true);
   });
 });

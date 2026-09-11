@@ -81,6 +81,18 @@ export const ChatRecoveryRecordSchema = z.object({
 });
 export type ChatRecoveryRecord = z.infer<typeof ChatRecoveryRecordSchema>;
 
+export const MemoryVectorRecordSchema = z.object({
+  id: Id,
+  saveId: Id,
+  characterId: Id,
+  memoryId: Id,
+  text: z.string(),
+  providerFingerprint: z.string().min(1),
+  vector: z.array(z.number().finite()).min(1),
+  updatedAt: z.string().datetime(),
+});
+export type MemoryVectorRecord = z.infer<typeof MemoryVectorRecordSchema>;
+
 export const EventPackageSchema = z.object({
   id: Id,
   name: z.string().min(1),

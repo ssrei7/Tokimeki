@@ -32,6 +32,27 @@ export type ProviderBinding = z.infer<typeof ProviderBindingSchema>;
 export const ProviderSettingSchema = z.object({ key: z.enum(['defaultProviderId', 'chatPlayerLabel']), value: z.string().min(1) });
 export type ProviderSetting = z.infer<typeof ProviderSettingSchema>;
 
+export const EmbeddingConfigSchema = z.object({
+  id: z.literal('embedding').default('embedding'),
+  enabled: z.boolean().default(false),
+  endpoint: z.string().default(''),
+  apiKey: z.string().optional(),
+  model: z.string().default(''),
+  headers: z.record(z.string(), z.string()).optional(),
+  requestCount: z.number().int().nonnegative().default(0),
+  failureCount: z.number().int().nonnegative().default(0),
+  lastStatus: z.enum(['idle', 'success', 'error']).default('idle'),
+  lastError: z.string().optional(),
+  lastCalledAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime(),
+}).superRefine((config, context) => {
+  if (!config.enabled) return;
+  if (!config.endpoint.trim()) context.addIssue({ code: 'custom', path: ['endpoint'], message: 'Embedding endpoint is required.' });
+  else { try { new URL(config.endpoint); } catch { context.addIssue({ code: 'custom', path: ['endpoint'], message: 'Embedding endpoint must be a valid URL.' }); } }
+  if (!config.model.trim()) context.addIssue({ code: 'custom', path: ['model'], message: 'Embedding model is required.' });
+});
+export type EmbeddingConfig = z.infer<typeof EmbeddingConfigSchema>;
+
 export interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string }
 export interface ChatRequest { messages: ChatMessage[]; stream?: boolean; taskId?: TaskId; outputMode?: ProviderOutputMode }
 export interface PreparedRequest { url: string; init: RequestInit }

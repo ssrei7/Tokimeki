@@ -1,5 +1,6 @@
 import type { CharacterCard, ChatMessage, Persona, PresetBundle, WorldbookEntry } from '../../data/content';
 import type { SaveFile } from '../../data/schema/save';
+import type { MemoryEntry } from '../../data/schema/save';
 import type { PromptBlock, PromptFacts } from './assembler';
 import { buildRelationshipStatePrompt, type RelationshipPromptState } from '../relationship';
 import { retrieveRelationshipMemories } from '../relationship';
@@ -21,6 +22,7 @@ export interface DefaultPromptFacts extends PromptFacts {
   playerPersona?: Persona;
   regenerationRequest?: string;
   relationshipState?: RelationshipPromptState;
+  relationshipMemories?: Record<string, MemoryEntry[]>;
   giftContext?: {
     giftId: string;
     charId: string;
@@ -110,7 +112,7 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
       const characterNames = new Map(Object.values(world.characters).map((item) => [item.id, item.name]));
       for (const participant of selected) characterNames.set(participant.id, participant.name);
       const sections = [...new Set(selected.map((item) => item.id))].flatMap((charId) => {
-        const memories = retrieveRelationshipMemories(world, charId, { query: factsOf(facts).input, nodeId: world.player.nodeId, limit: 5 }).map(({ memory }) => memory);
+        const memories = factsOf(facts).relationshipMemories?.[charId] ?? retrieveRelationshipMemories(world, charId, { query: factsOf(facts).input, nodeId: world.player.nodeId, limit: 5 }).map(({ memory }) => memory);
         if (!memories.length) return [];
         const name = characterNames.get(charId) ?? charId;
         return [`${name}：\n${memories.map((memory) => `- 第 ${memory.day} 天${memory.nodeId ? ` · 地点 ${memory.nodeId}` : ''}：${memory.text}`).join('\n')}`];

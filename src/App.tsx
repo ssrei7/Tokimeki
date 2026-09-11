@@ -14,7 +14,7 @@ import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/o
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
 import { PresetBundleSchema, PresetSchema, type CharacterCard, type ChatMessage, type ChatRecord, type ChatRecoveryRecord, type Persona, type Preset, type PresetBundle, type WorldbookEntry } from './data/content';
-import { clearChatRecovery, clearChats, contentDb, deleteCharacter, deletePersona, deletePreset, deletePresetBundle, deleteStoryScenePreset, deleteWorldbook, loadChat, loadChatRecovery, saveCharacter, saveChat, saveChatRecovery, savePersona, savePreset, savePresetBundle, saveStoryScenePreset, saveWorldbook } from './data/db/content';
+import { clearChatRecovery, clearChats, clearMemoryVectors, contentDb, deleteCharacter, deletePersona, deletePreset, deletePresetBundle, deleteStoryScenePreset, deleteWorldbook, loadChat, loadChatRecovery, loadMemoryVectors, saveCharacter, saveChat, saveChatRecovery, saveMemoryVectors, savePersona, savePreset, savePresetBundle, saveStoryScenePreset, saveWorldbook } from './data/db/content';
 import { BUILTIN_NARRATION_PRESET_BUNDLE_ID, createBuiltinNarrationPresetBundle, mergeBuiltinNarrationPresetBundle } from './data/presets/builtins';
 import { deleteAsset, loadAsset, saveAsset } from './data/db/assets';
 import { listSnapshots, loadCurrentSave, loadSnapshot, saveCurrentSave, saveDailySnapshot, type SaveSnapshot } from './data/db/save';
@@ -26,6 +26,8 @@ import { providerDb } from './providers/db';
 import { listProviderModels } from './providers/models';
 import { resolveProviderForTask, resolveProviderForTaskGroup } from './providers/router';
 import { streamChat, type StreamStatus } from './providers/stream';
+import { createEmbeddings } from './providers/embedding';
+import { queryVectorMemories, rebuildVectorMemoryRecords } from './providers/vector-memory';
 import { createMockProviderConfig } from './providers/adapters/mock';
 import { MOCK_FIXTURE_IDS, type MockFixtureId } from './providers/mock/fixtures';
 import { createStage4EncounterScenario } from './dev/scenarios/stage4';
@@ -34,12 +36,12 @@ import { simulateDays } from './dev/simulator';
 import { simulateEncounterDistribution } from './dev/encounter-simulator';
 import { simulateLeadDistribution } from './dev/lead-simulator';
 import { simulateTopicDistribution } from './dev/topic-simulator';
-import { ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, type ProviderBinding, type ProviderConfig, type TaskId } from './providers/types';
+import { EmbeddingConfigSchema, ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, type EmbeddingConfig, type ProviderBinding, type ProviderConfig, type TaskId } from './providers/types';
 import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from './ui/chat-state';
 import { createChatRequestId, markBackgroundRequestInterrupted, recoveryMessagesForRetry } from './ui/chat-recovery';
 import { latestDialogueSpeakerId, splitDialogueMessage } from './ui/dialogue';
 import { deleteChatMessage, isEditableChatMessage, updateChatMessage } from './ui/chat-history';
-import { deleteRelationshipMemory, deriveRelationshipPromptState, removeRelationshipMemoriesFromMessage, setRelationshipMemoryArchived, setRelationshipMemoryInject, updateRelationshipMemory } from './core/relationship';
+import { deleteRelationshipMemory, deriveRelationshipPromptState, removeRelationshipMemoriesFromMessage, retrieveRelationshipMemoriesHybrid, setRelationshipMemoryArchived, setRelationshipMemoryInject, updateRelationshipMemory } from './core/relationship';
 import { buildMemoryConsolidationPrompt, parseMemoryConsolidationResponse, shouldConsolidateMemories, type MemoryConsolidationCandidate } from './core/relationship/consolidation';
 import { markAppointmentOnEnter, markAppointmentOnTimeAdvance, settleAppointments } from './core/appointments';
 import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
@@ -90,6 +92,7 @@ function writeEncounterChatSession(session: EncounterChatSession | null): void {
 const now = () => new Date().toISOString();
 const slug = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '') || `item-${Date.now()}`;
 const newProvider = (): ProviderConfig => ({ id: `provider-${Date.now()}`, name: '新 Provider', kind: 'openai-compatible', endpoint: '', model: '', contextWindow: 8192, maxOutputTokens: 1024, temperature: 0.7 });
+const newEmbeddingConfig = (): EmbeddingConfig => ({ id: 'embedding', enabled: false, endpoint: '', model: '', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 const TASK_LABELS: Record<TaskId, string> = {
   narrate_main: '主线叙述', narrate_daily: '日常对话', topic_tree: '话题树', world_morning: '晨间世界更新',
@@ -176,6 +179,10 @@ export function App() {
   const [defaultProviderId, setDefaultProviderId] = useState('');
   const [headersDraft, setHeadersDraft] = useState('{}');
   const [models, setModels] = useState<string[]>([]);
+  const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingConfig>(newEmbeddingConfig);
+  const embeddingConfigRef = useRef<EmbeddingConfig>(newEmbeddingConfig());
+  const [embeddingHeadersDraft, setEmbeddingHeadersDraft] = useState('{}');
+  const [embeddingBusy, setEmbeddingBusy] = useState(false);
   const [requestStatus, setRequestStatus] = useState<RequestStatus>('idle');
   const [busy, setBusy] = useState(false);
   const [replyInProgress, setReplyInProgress] = useState(false);
@@ -221,7 +228,7 @@ export function App() {
   }
 
   useEffect(() => {
-    void Promise.all([contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), contentDb.presetBundles.toArray(), contentDb.storyScenePresets.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.settings.get('defaultProviderId'), loadCurrentSave(), listSnapshots()]).then(([c, masks, w, p, bundles, scenePresets, ps, bs, setting, persistedSave, savedSnapshots]) => {
+    void Promise.all([contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), contentDb.presetBundles.toArray(), contentDb.storyScenePresets.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.settings.get('defaultProviderId'), providerDb.embeddingConfigs.get('embedding'), loadCurrentSave(), listSnapshots()]).then(([c, masks, w, p, bundles, scenePresets, ps, bs, setting, storedEmbedding, persistedSave, savedSnapshots]) => {
       if (persistedSave) {
         const parsedSave = SaveFileSchema.parse(persistedSave);
         saveRef.current = parsedSave;
@@ -261,6 +268,7 @@ export function App() {
       if (!storedBuiltin || storedBuiltin.entries.length !== builtinBundle.entries.length) void savePresetBundle(builtinBundle);
       if (legacyBundle) void savePresetBundle(legacyBundle);
       setBindings(bs);
+      if (storedEmbedding) { embeddingConfigRef.current = storedEmbedding; setEmbeddingConfig(storedEmbedding); setEmbeddingHeadersDraft(JSON.stringify(storedEmbedding.headers ?? {}, null, 2)); }
       if (c[0] && !readEncounterChatSession()) setSelectedCharacterId(c[0].id);
       if (ps[0]) setProvider(ps[0]);
       const resolvedDefaultProviderId = ps.some((item) => item.id === setting?.value) ? setting?.value ?? '' : ps[0]?.id ?? '';
@@ -1561,7 +1569,8 @@ export function App() {
     const participants = participantIds.map((id) => characters.find((item) => item.id === id)).filter((character): character is CharacterCard => Boolean(character));
     const generationCharacter = characters.find((item) => item.id === generationCharacterId);
     const relationshipState = generationCharacter ? deriveRelationshipPromptState(saveRef.current.world, generationCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
-    const promptFacts = { input: latestInput, character: generationCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, giftContext: giftContext ? { ...giftContext, description: saveRef.current.world.items[giftContext.itemId]?.description, tags: saveRef.current.world.items[giftContext.itemId]?.tags ?? [] } : undefined, collectionContext, worldbooks, history: next, world: saveRef.current.world };
+    const relationshipMemories = await relationshipMemoryOverride(latestInput, generationCharacterId);
+    const promptFacts = { input: latestInput, character: generationCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, relationshipMemories, giftContext: giftContext ? { ...giftContext, description: saveRef.current.world.items[giftContext.itemId]?.description, tags: saveRef.current.world.items[giftContext.itemId]?.tags ?? [] } : undefined, collectionContext, worldbooks, history: next, world: saveRef.current.world };
     promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
     const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
     setDebug((current) => ({ ...current, prompt: assembled }));
@@ -1625,7 +1634,8 @@ export function App() {
     const participants = participantIds.map((id) => characters.find((item) => item.id === id)).filter((character): character is CharacterCard => Boolean(character));
     const latestInput = [...baseMessages].reverse().find((message) => message.role === 'user')?.content ?? '';
     const relationshipState = activeCharacter ? deriveRelationshipPromptState(saveRef.current.world, activeCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
-    const promptFacts = { input: latestInput, regenerationRequest: requirement, character: activeCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, worldbooks, history: originalMessages, world: saveRef.current.world };
+    const relationshipMemories = await relationshipMemoryOverride(latestInput, selectedCharacterId);
+    const promptFacts = { input: latestInput, regenerationRequest: requirement, character: activeCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, relationshipMemories, worldbooks, history: originalMessages, world: saveRef.current.world };
     promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
     const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
     setDebug((current) => ({ ...current, prompt: assembled }));
@@ -1802,6 +1812,86 @@ export function App() {
   function parseEditedProvider(): ProviderConfig {
     const candidate = provider.kind === 'generic' ? { ...provider, headers: parseHeadersDraft(headersDraft) } : provider;
     return ProviderConfigSchema.parse(candidate);
+  }
+
+  function parseEditedEmbeddingConfig(): EmbeddingConfig {
+    return EmbeddingConfigSchema.parse({ ...embeddingConfig, headers: parseHeadersDraft(embeddingHeadersDraft), updatedAt: now() });
+  }
+
+  async function persistEmbeddingResult(config: EmbeddingConfig, ok: boolean, message?: string): Promise<EmbeddingConfig> {
+    const updated = EmbeddingConfigSchema.parse({ ...config, requestCount: config.requestCount + 1, failureCount: config.failureCount + (ok ? 0 : 1), lastStatus: ok ? 'success' : 'error', lastError: ok ? undefined : message, lastCalledAt: now(), updatedAt: now() });
+    await providerDb.embeddingConfigs.put(updated);
+    embeddingConfigRef.current = updated;
+    setEmbeddingConfig(updated);
+    return updated;
+  }
+
+  async function relationshipMemoryOverride(query: string, characterId: string): Promise<Record<string, SaveFile['world']['relations'][string]['memories']> | undefined> {
+    const config = embeddingConfigRef.current;
+    if (!config.enabled || !query.trim()) return undefined;
+    const memories = saveRef.current.world.relations[characterId]?.memories ?? [];
+    if (!memories.some((memory) => memory.archived !== true && memory.inject !== false)) return undefined;
+    let requestAttempted = false;
+    try {
+      const existingRecords = await loadMemoryVectors(saveRef.current.meta.id, characterId);
+      requestAttempted = true;
+      const result = await queryVectorMemories({ config, saveId: saveRef.current.meta.id, characterId, query, memories, existingRecords });
+      if (result.records.length) await saveMemoryVectors(result.records);
+      await persistEmbeddingResult(config, true).catch(() => undefined);
+      return { [characterId]: retrieveRelationshipMemoriesHybrid(saveRef.current.world, characterId, { query, nodeId: saveRef.current.world.player.nodeId, vectorScores: result.scores, requireKeywordMatch: false, limit: 5 }).map(({ memory }) => memory) };
+    } catch (error) {
+      const message = errorMessage(error, '向量记忆请求失败。');
+      if (requestAttempted) await persistEmbeddingResult(config, false, message).catch(() => undefined);
+      return undefined;
+    }
+  }
+
+  async function saveEmbeddingSettings(): Promise<void> {
+    try {
+      const parsed = parseEditedEmbeddingConfig();
+      await providerDb.embeddingConfigs.put(parsed);
+      embeddingConfigRef.current = parsed;
+      setEmbeddingConfig(parsed);
+      setFeedback({ tone: 'success', text: parsed.enabled ? '向量记忆 API 已启用并保存。' : '向量记忆设置已保存；当前保持关闭。' });
+    } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '向量记忆配置无效。') }); }
+  }
+
+  async function testEmbeddingConnection(): Promise<void> {
+    setEmbeddingBusy(true);
+    let config: EmbeddingConfig | undefined;
+    try {
+      config = parseEditedEmbeddingConfig();
+      if (!config.endpoint.trim() || !config.model.trim()) throw new Error('请填写 embedding 请求端点和模型。');
+      const vectors = await createEmbeddings({ endpoint: config.endpoint, model: config.model, apiKey: config.apiKey, headers: config.headers, texts: ['Tokimeki 向量记忆连接测试'] });
+      await persistEmbeddingResult(config, true);
+      setFeedback({ tone: 'success', text: `Embedding 连接成功，返回 ${vectors[0]?.length ?? 0} 维向量。` });
+    } catch (error) {
+      const message = errorMessage(error, 'Embedding 连接失败。');
+      if (config) await persistEmbeddingResult(config, false, message);
+      setFeedback({ tone: 'error', text: message });
+    } finally { setEmbeddingBusy(false); }
+  }
+
+  async function rebuildEmbeddingIndex(): Promise<void> {
+    setEmbeddingBusy(true);
+    const config = embeddingConfigRef.current;
+    let requestAttempted = false;
+    try {
+      if (!config.enabled) throw new Error('请先启用并保存向量记忆 API。');
+      const entries = Object.entries(saveRef.current.world.relations).flatMap(([characterId, relation]) => (relation.memories ?? []).map((memory) => ({ characterId, memory })));
+      const eligibleCount = entries.filter(({ memory }) => memory.archived !== true && memory.inject !== false).length;
+      if (!eligibleCount) { setFeedback({ tone: 'info', text: '当前世界没有可注入的关系记忆，无需重建索引。' }); return; }
+      requestAttempted = true;
+      const records = await rebuildVectorMemoryRecords({ config, saveId: saveRef.current.meta.id, entries });
+      await clearMemoryVectors(saveRef.current.meta.id);
+      if (records.length) await saveMemoryVectors(records);
+      await persistEmbeddingResult(config, true);
+      setFeedback({ tone: 'success', text: `向量索引已重建，共 ${records.length} 条可注入记忆。` });
+    } catch (error) {
+      const message = errorMessage(error, '向量索引重建失败。');
+      if (requestAttempted) await persistEmbeddingResult(config, false, message).catch(() => undefined);
+      setFeedback({ tone: 'error', text: message });
+    } finally { setEmbeddingBusy(false); }
   }
 
   async function saveProviderConfig() {
@@ -2106,7 +2196,7 @@ export function App() {
       {tab === 'library' && <StorySceneLibraryView save={save} storyScenePresets={storyScenePresets} onSavePreset={saveStoryScenePresetCopy} onUpdatePreset={updateStoryScenePreset} onDeletePreset={removeStoryScenePreset} onCreateDraft={createStorySceneDraftFromInput} onEditDraft={editStorySceneDraft} onDeleteDraft={removeStorySceneDraft} onConfirmDraft={confirmStorySceneDraft} onAdvanceStage={advanceStoryScene} onSetStatus={setStorySceneStatus} onReadStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'read')} onSelectStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'select')} />}
       {tab === 'library' && <MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} />}
       {tab === 'library' && <CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} />}
-      {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
+      {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
     </main>
     <nav className="bottom-nav">{([['map', '地图'], ['day', '日程'], ['chat', '聊天'], ['library', '资料'], ['settings', '设置']] as const).map(([id, label]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
   </div>;
@@ -2802,6 +2892,14 @@ function SettingsView(props: {
   headersDraft: string;
   setHeadersDraft: (value: string) => void;
   models: string[];
+  embeddingConfig: EmbeddingConfig;
+  setEmbeddingConfig: (config: EmbeddingConfig) => void;
+  embeddingHeadersDraft: string;
+  setEmbeddingHeadersDraft: (value: string) => void;
+  embeddingBusy: boolean;
+  onSaveEmbedding: () => Promise<void>;
+  onTestEmbedding: () => Promise<void>;
+  onRebuildEmbedding: () => Promise<void>;
   requestStatus: RequestStatus;
   onNewProvider: () => void;
   onSaveProvider: () => Promise<void>;
@@ -2869,6 +2967,18 @@ function SettingsView(props: {
       <div className="button-row"><button onClick={() => void props.onSaveProvider()}>保存配置</button><button className="secondary" onClick={() => void props.onDiscoverModels()}>拉取模型</button><button className="secondary" onClick={() => void props.onTestConnection()}>连接测试</button>{isSaved && <button className="danger" onClick={() => void props.onDeleteProvider()}>删除配置</button>}</div>
     </div>
     </div></details>
+    <details className="fold-card" open><summary>向量记忆 API · {props.embeddingConfig.enabled ? '已启用' : '已关闭'}</summary><div className="fold-body"><div className="provider-card">
+      <div className="list-heading"><div><span className="eyebrow">可选外部检索</span><h3>向量记忆 API</h3></div><span className={`request-status ${props.embeddingConfig.lastStatus === 'error' ? 'error' : ''}`}>{props.embeddingBusy ? '请求中…' : props.embeddingConfig.lastStatus === 'success' ? '最近成功' : props.embeddingConfig.lastStatus === 'error' ? '最近失败' : '尚未调用'}</span></div>
+      <label className="checkbox-line"><input type="checkbox" checked={props.embeddingConfig.enabled} onChange={(event) => props.setEmbeddingConfig({ ...props.embeddingConfig, enabled: event.target.checked })} />启用外部 embedding 混合检索</label>
+      <p className="io-scope">默认关闭。启用后，仅在生成面对面回复且存在可注入记忆时，把当前输入与缺失或已变更的记忆批量发送到此端点；查看和管理记忆不会调用 API。失败时自动回退本地关键词检索。</p>
+      <label>Embedding 请求端点<input placeholder="https://example.com/v1/embeddings" value={props.embeddingConfig.endpoint} onChange={(event) => props.setEmbeddingConfig({ ...props.embeddingConfig, endpoint: event.target.value })} /></label>
+      <label>API key（仅本地）<input type="password" value={props.embeddingConfig.apiKey ?? ''} onChange={(event) => props.setEmbeddingConfig({ ...props.embeddingConfig, apiKey: event.target.value || undefined })} /></label>
+      <label>Embedding 模型<input placeholder="text-embedding-model" value={props.embeddingConfig.model} onChange={(event) => props.setEmbeddingConfig({ ...props.embeddingConfig, model: event.target.value })} /></label>
+      <label>自定义 headers（JSON）<textarea spellCheck={false} value={props.embeddingHeadersDraft} onChange={(event) => props.setEmbeddingHeadersDraft(event.target.value)} /></label>
+      <div className="stat-list"><span>调用 {props.embeddingConfig.requestCount} 次</span><span>失败 {props.embeddingConfig.failureCount} 次</span>{props.embeddingConfig.lastCalledAt && <span>最近调用 {new Date(props.embeddingConfig.lastCalledAt).toLocaleString()}</span>}</div>
+      {props.embeddingConfig.lastError && <p className="io-scope" role="alert">最近错误：{props.embeddingConfig.lastError}</p>}
+      <div className="button-row"><button onClick={() => void props.onSaveEmbedding()} disabled={props.embeddingBusy}>保存设置</button><button className="secondary" onClick={() => void props.onTestEmbedding()} disabled={props.embeddingBusy}>连接测试</button><button className="secondary" onClick={() => void props.onRebuildEmbedding()} disabled={props.embeddingBusy || !props.embeddingConfig.enabled}>重建当前世界索引</button></div>
+    </div></div></details>
     <details className="fold-card"><summary>任务路由</summary><div className="fold-body"><div className="provider-card routing-card">
       <h3>任务路由</h3>
       <label>默认 Provider<select aria-label="默认 Provider" value={props.defaultProviderId} disabled={props.providers.length === 0} onChange={(event) => void props.onDefaultProviderChange(event.target.value)}><option value="">未设置</option>{props.providers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
