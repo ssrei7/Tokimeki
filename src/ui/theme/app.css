@@ -21,11 +21,11 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .desktop-launcher { min-height: 100%; }
 .page-header { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .page-header h2 { margin-top: 3px; font-size: 20px; line-height: 1.2; }
-.desktop-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 22px 10px; align-items: start; }
-.desktop-app-icon { position: relative; min-width: 0; min-height: 92px; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 0 2px; border: 0; border-radius: 8px; background: transparent; color: var(--gray-700); box-shadow: none; }
+.desktop-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--desktop-grid-row-gap) var(--desktop-grid-column-gap); align-items: start; }
+.desktop-app-icon { position: relative; min-width: 0; min-height: calc(var(--desktop-icon-size) + 38px); display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 0 2px; border: 0; border-radius: var(--desktop-icon-radius); background: transparent; color: var(--gray-700); box-shadow: none; }
 .desktop-app-icon:hover { background: transparent; }
 .desktop-app-icon:focus-visible { background: transparent; }
-.desktop-app-icon-glyph { width: 54px; height: 54px; flex: 0 0 54px; display: grid; place-items: center; border: 1px solid var(--desktop-icon-border); border-radius: 8px; background: var(--desktop-icon-surface); color: var(--desktop-icon-ink, var(--gray-800)); box-shadow: 0 5px 14px var(--desktop-icon-shadow); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease; }
+.desktop-app-icon-glyph { width: var(--desktop-icon-size); height: var(--desktop-icon-size); flex: 0 0 var(--desktop-icon-size); display: grid; place-items: center; border: 1px solid var(--desktop-icon-border); border-radius: var(--desktop-icon-radius); background: var(--desktop-icon-surface); color: var(--desktop-icon-ink, var(--gray-800)); box-shadow: 0 5px 14px var(--desktop-icon-shadow); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease; }
 .desktop-app-icon:hover .desktop-app-icon-glyph, .desktop-app-icon:focus-visible .desktop-app-icon-glyph { background: var(--desktop-icon-surface-hover); border-color: var(--gray-0); box-shadow: 0 6px 16px rgb(23 23 23 / 0.2); }
 .desktop-app-icon-glyph svg { width: 27px; height: 27px; stroke-width: 1.8; }
 .desktop-app-icon-glyph.tone-blue, .desktop-app-icon-glyph.tone-green, .desktop-app-icon-glyph.tone-amber, .desktop-app-icon-glyph.tone-rose, .desktop-app-icon-glyph.tone-violet, .desktop-app-icon-glyph.tone-gray { background: var(--desktop-icon-surface); color: var(--desktop-icon-ink, var(--gray-800)); }
@@ -66,7 +66,7 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .subpage-content[data-page='presets'] > *,
 .subpage-content[data-page='inventory'] > *,
 .subpage-content[data-page='save'] > * { display: block; }
-.surface-card { border: 1px solid var(--gray-100); border-radius: 8px; padding: 16px; background: var(--gray-0); box-shadow: 0 4px 16px rgb(63 63 63 / 0.05); }
+.surface-card { border: 1px solid var(--gray-100); border-radius: var(--surface-radius); padding: 16px; background: var(--gray-0); box-shadow: var(--surface-shadow); }
 .empty-state { padding: 28px 12px; color: var(--gray-400); text-align: center; }
 .library-subpage-content .library-legacy-content > * { display: none; }
 .library-subpage-content[data-page='characters'] .library-legacy-content > :nth-child(-n+4) { display: block; }
@@ -79,7 +79,8 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .library-subpage-content[data-page='inventory'] .library-legacy-content > :nth-child(7),
 .library-subpage-content[data-page='save'] .library-legacy-content > :nth-child(1),
 .library-subpage-content[data-page='save'] .library-legacy-content > :nth-child(8) { display: block; }
-@media (min-width: 700px) { .desktop-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 24px 14px; } }
+@media (min-width: 700px) { :root { --desktop-grid-row-gap: 24px; --desktop-grid-column-gap: 14px; } .desktop-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@media (max-width: 399px) { :root { --desktop-icon-size: 50px; --desktop-grid-row-gap: 18px; --desktop-grid-column-gap: 6px; } .desktop-app-icon-label { font-size: 11px; } }
 .map-screen { position: relative; min-height: calc(100dvh - 150px); display: flex; flex-direction: column; gap: 14px; }
 .map-screen-host .map-screen { flex: 1; min-height: 0; gap: 8px; }
 .map-top-panel { position: sticky; z-index: 4; top: -16px; display: grid; gap: 8px; margin: -16px -16px 0; padding: 14px 16px 10px; border-bottom: 1px solid var(--gray-100); background: rgb(250 250 250 / 0.93); backdrop-filter: blur(10px); }

@@ -39,7 +39,20 @@ describe('settings desktop', () => {
   it('uses four mobile columns and six wide-screen columns', () => {
     const css = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
     expect(css).toMatch(/\.desktop-grid\s*\{[^}]*grid-template-columns:\s*repeat\(4,/s);
-    expect(css).toMatch(/@media\s*\(min-width:\s*700px\)[^{]*\{[^}]*\.desktop-grid\s*\{[^}]*grid-template-columns:\s*repeat\(6,/s);
+    expect(css).toContain('@media (min-width: 700px)');
+    expect(css).toContain('.desktop-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }');
+    expect(css).toContain('@media (max-width: 399px)');
+  });
+
+  it('uses shared desktop and surface tokens for stable sizing', () => {
+    const themeCss = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
+    const appCss = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
+    expect(themeCss).toContain('--desktop-icon-size: 54px;');
+    expect(themeCss).toContain('--desktop-icon-radius: 8px;');
+    expect(themeCss).toContain('--surface-radius: 8px;');
+    expect(appCss).toContain('min-height: calc(var(--desktop-icon-size) + 38px)');
+    expect(appCss).toContain('width: var(--desktop-icon-size)');
+    expect(appCss).toContain('box-shadow: var(--surface-shadow)');
   });
 
   it('keeps system CSS achromatic and uses the requested bottom navigation order', () => {

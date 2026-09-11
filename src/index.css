@@ -31,6 +31,12 @@
   --desktop-icon-surface-hover: rgb(255 255 255 / 0.82);
   --desktop-icon-border: rgb(255 255 255 / 0.78);
   --desktop-icon-shadow: rgb(23 23 23 / 0.16);
+  --desktop-icon-size: 54px;
+  --desktop-icon-radius: 8px;
+  --desktop-grid-row-gap: 22px;
+  --desktop-grid-column-gap: 10px;
+  --surface-radius: 8px;
+  --surface-shadow: 0 4px 16px rgb(63 63 63 / 0.05);
   --radius: 0.5rem;
 }
 
@@ -48,6 +54,7 @@
   --color-warning: var(--warning);
   --color-destructive: var(--destructive);
   --color-ring: var(--ring);
+  --radius-surface: var(--surface-radius);
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);
