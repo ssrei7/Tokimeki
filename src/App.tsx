@@ -13,8 +13,8 @@ import { addCharacterToWorld, deriveNodeScope, nodeScopeLabel, proposeDeparture,
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
-import { PresetBundleSchema, PresetSchema, type CharacterCard, type ChatMessage, type ChatRecord, type Persona, type Preset, type PresetBundle, type WorldbookEntry } from './data/content';
-import { clearChats, contentDb, deleteCharacter, deletePersona, deletePreset, deletePresetBundle, deleteStoryScenePreset, deleteWorldbook, loadChat, saveCharacter, saveChat, savePersona, savePreset, savePresetBundle, saveStoryScenePreset, saveWorldbook } from './data/db/content';
+import { PresetBundleSchema, PresetSchema, type CharacterCard, type ChatMessage, type ChatRecord, type ChatRecoveryRecord, type Persona, type Preset, type PresetBundle, type WorldbookEntry } from './data/content';
+import { clearChatRecovery, clearChats, contentDb, deleteCharacter, deletePersona, deletePreset, deletePresetBundle, deleteStoryScenePreset, deleteWorldbook, loadChat, loadChatRecovery, saveCharacter, saveChat, saveChatRecovery, savePersona, savePreset, savePresetBundle, saveStoryScenePreset, saveWorldbook } from './data/db/content';
 import { BUILTIN_NARRATION_PRESET_BUNDLE_ID, createBuiltinNarrationPresetBundle, mergeBuiltinNarrationPresetBundle } from './data/presets/builtins';
 import { deleteAsset, loadAsset, saveAsset } from './data/db/assets';
 import { listSnapshots, loadCurrentSave, loadSnapshot, saveCurrentSave, saveDailySnapshot, type SaveSnapshot } from './data/db/save';
@@ -36,6 +36,7 @@ import { simulateLeadDistribution } from './dev/lead-simulator';
 import { simulateTopicDistribution } from './dev/topic-simulator';
 import { ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, type ProviderBinding, type ProviderConfig, type TaskId } from './providers/types';
 import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from './ui/chat-state';
+import { createChatRequestId, markBackgroundRequestInterrupted, recoveryMessagesForRetry } from './ui/chat-recovery';
 import { latestDialogueSpeakerId, splitDialogueMessage } from './ui/dialogue';
 import { deleteChatMessage, isEditableChatMessage, updateChatMessage } from './ui/chat-history';
 import { deleteRelationshipMemory, deriveRelationshipPromptState, removeRelationshipMemoriesFromMessage, setRelationshipMemoryArchived, setRelationshipMemoryInject, updateRelationshipMemory } from './core/relationship';
@@ -57,7 +58,7 @@ type ContentKind = 'character' | 'worldbook' | 'preset' | 'memory';
 type RequestStatus = 'idle' | StreamStatus;
 type Feedback = { tone: 'info' | 'success' | 'error'; text: string } | null;
 type DebugState = { prompt: AssembledPrompt | null; raw: string; ops: string; state: string };
-type PendingOpsRecovery = { raw: string; actorId?: string; messageIndex?: number; streamError?: string };
+type PendingOpsRecovery = { raw: string; actorId?: string; messageIndex?: number; streamError?: string; requestId?: string };
 type GiftGenerationContext = { giftId: string; itemId: string; itemName: string; charId: string; charName: string };
 type CollectionGenerationContext = { entryId: string; itemId: string; title: string; description: string; tags: string[]; evidenceReaction?: { eventId: string; response: string } };
 type TopicRetryContext = { charId: string; nodeId: string; participantIds: string[]; entryId?: string };
@@ -185,6 +186,9 @@ export function App() {
   const pendingDiaryDaysRef = useRef<number[]>([]);
   const pendingMemoryCandidatesRef = useRef<PendingMemoryCandidate[]>([]);
   const [pendingOps, setPendingOps] = useState<PendingOpsRecovery | null>(null);
+  const [chatRecovery, setChatRecovery] = useState<ChatRecoveryRecord | null>(null);
+  const chatRecoveryRef = useRef<ChatRecoveryRecord | null>(null);
+  const appliedRequestIdsRef = useRef(new Set<string>());
   const [manualOps, setManualOps] = useState('[]');
   const [mockFixtureId, setMockFixtureId] = useState<MockFixtureId | ''>('');
   const [itemName, setItemName] = useState('');
@@ -275,11 +279,41 @@ export function App() {
     setLoadedChatCharacterId('');
     if (!selectedCharacterId) { setMessages([]); return () => { cancelled = true; }; }
     setMessages([]);
-    void loadChat(selectedCharacterId).then((record) => {
-      if (!cancelled) { setMessages(record?.messages ?? []); setLoadedChatCharacterId(selectedCharacterId); }
+    void Promise.all([loadChat(selectedCharacterId), loadChatRecovery(selectedCharacterId)]).then(([record, recovery]) => {
+      if (cancelled) return;
+      setMessages(record?.messages ?? []);
+      const restored = markBackgroundRequestInterrupted(recovery);
+      if (restored) {
+        updateChatRecovery(restored);
+        setInput(restored.input);
+        if (restored.status === 'interrupted' || restored.status === 'error') {
+          setRequestStatus('error');
+          if (restored.raw) setPendingOps({ raw: restored.raw, actorId: restored.actorId, messageIndex: restored.messageIndex, streamError: restored.error, requestId: restored.requestId });
+          setFeedback({ tone: 'info', text: restored.status === 'interrupted' ? '上次回复在页面进入后台时中断，正文已保留；请手动重试。' : '上次回复未完成，正文已保留；请手动重试。' });
+        }
+        if (restored.messages.length) setMessages(restored.messages);
+      } else updateChatRecovery(recovery ?? null);
+      setLoadedChatCharacterId(selectedCharacterId);
     });
     return () => { cancelled = true; };
   }, [selectedCharacterId]);
+
+  useEffect(() => {
+    const persist = () => {
+      if (!selectedCharacterId) return;
+      const current = chatRecoveryRef.current;
+      if (current && (current.status === 'requesting' || current.status === 'generating')) {
+        const interrupted = markBackgroundRequestInterrupted(current);
+        if (interrupted) updateChatRecovery({ ...interrupted, input, messages, assistantText: messages.at(-1)?.role === 'assistant' ? messages.at(-1)?.content ?? '' : interrupted.assistantText });
+      } else if (input.trim()) updateChatRecovery(draftRecoveryRecord(selectedCharacterId, input, messages));
+      void saveChat({ characterId: selectedCharacterId, messages, updatedAt: now() });
+    };
+    const onVisibility = () => { if (document.visibilityState === 'hidden') persist(); };
+    const onPageHide = () => persist();
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', onPageHide);
+    return () => { document.removeEventListener('visibilitychange', onVisibility); window.removeEventListener('pagehide', onPageHide); };
+  }, [input, messages, selectedCharacterId]);
 
   useEffect(() => {
     if (!selectedCharacterId || loadedChatCharacterId !== selectedCharacterId) return;
@@ -348,6 +382,17 @@ export function App() {
       })().catch((error) => setFeedback({ tone: 'error', text: `自动快照保存失败：${errorMessage(error, '未知错误')}` }));
       queueMicrotask(() => settledDays.forEach((day) => { void generateDayDiary(day); }));
     }
+  }
+
+  function updateChatRecovery(record: ChatRecoveryRecord | null): void {
+    chatRecoveryRef.current = record;
+    setChatRecovery(record);
+    if (record) void saveChatRecovery(record);
+    else if (selectedCharacterId) void clearChatRecovery(selectedCharacterId);
+  }
+
+  function draftRecoveryRecord(characterId: string, draft: string, currentMessages: ChatMessage[]): ChatRecoveryRecord {
+    return { characterId, requestId: `draft-${characterId}`, status: 'draft', input: draft, messages: currentMessages, baseMessages: currentMessages, assistantText: '', raw: '', opsApplied: false, updatedAt: now() };
   }
 
   function updateStorySceneReading(sceneId: string, stageId: string, mode: 'read' | 'select'): void {
@@ -1505,13 +1550,15 @@ export function App() {
 
     setMessages(next); setInput(''); setBusy(true); setReplyInProgress(true); setRequestStatus('requesting'); setFeedback(null); setPendingOps(null);
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
+    const generationCharacterId = giftContext?.charId ?? selectedCharacterId;
+    const requestId = createChatRequestId();
+    updateChatRecovery({ characterId: selectedCharacterId, requestId, status: 'requesting', input: text, messages: next, baseMessages: next, assistantText: '', raw: '', actorId: generationCharacterId, messageIndex: next.length, opsApplied: false, updatedAt: now() });
     let narrative = '';
     const splitter = new OpsStreamSplitter();
     const latestInput = [...next].reverse().find((message) => message.role === 'user')?.content ?? '';
     const activePresetBundle = presetBundles.find((item) => item.id === selectedPresetBundleId);
     const participantIds = chatParticipantIds.length ? chatParticipantIds : [selectedCharacterId];
     const participants = participantIds.map((id) => characters.find((item) => item.id === id)).filter((character): character is CharacterCard => Boolean(character));
-    const generationCharacterId = giftContext?.charId ?? selectedCharacterId;
     const generationCharacter = characters.find((item) => item.id === generationCharacterId);
     const relationshipState = generationCharacter ? deriveRelationshipPromptState(saveRef.current.world, generationCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
     const promptFacts = { input: latestInput, character: generationCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, giftContext: giftContext ? { ...giftContext, description: saveRef.current.world.items[giftContext.itemId]?.description, tags: saveRef.current.world.items[giftContext.itemId]?.tags ?? [] } : undefined, collectionContext, worldbooks, history: next, world: saveRef.current.world };
@@ -1522,6 +1569,7 @@ export function App() {
       await streamChat(parsed, assembled.messages, (delta) => {
         narrative += splitter.push(delta);
         setMessages([...next, { role: 'assistant', content: narrative }]);
+        updateChatRecovery({ characterId: selectedCharacterId, requestId, status: 'generating', input: text, messages: [...next, { role: 'assistant', content: narrative }], baseMessages: next, assistantText: narrative, raw: '', actorId: generationCharacterId, messageIndex: next.length, opsApplied: false, updatedAt: now() });
       }, { taskId: 'narrate_main', onStatus: (status) => setRequestStatus(status) });
       const finished = splitter.finish();
       narrative += finished.text;
@@ -1534,7 +1582,7 @@ export function App() {
       const safeReply = suppressItemGains
         ? { ...reply, ops: reply.ops.filter((op) => !itemGainOps.includes(op)), warnings: [...reply.warnings, ...(itemGainOps.length ? ['出示收藏的回应中检测到 give_item，已忽略以避免把出示误记为再次获得物品。'] : [])] }
         : reply;
-      applyReplyOps(safeReply, generationCharacterId, giftContext?.giftId, completed.length - 1);
+      if (applyReplyOps(safeReply, generationCharacterId, giftContext?.giftId, completed.length - 1, requestId)) updateChatRecovery(null);
     } catch (error) {
       const message = errorMessage(error, '请求失败');
       const finished = splitter.finish();
@@ -1547,7 +1595,8 @@ export function App() {
         setMessages(next);
       }
       setRequestStatus('error'); setFeedback({ tone: 'error', text: message });
-      if (finished.raw) setPendingOps({ raw: finished.raw, actorId: generationCharacterId, messageIndex: narrative ? next.length : undefined, streamError: message });
+      updateChatRecovery({ characterId: selectedCharacterId, requestId, status: 'error', input: text, messages: narrative ? [...next, { role: 'assistant', content: narrative }] : next, baseMessages: next, assistantText: narrative, raw: finished.raw, actorId: generationCharacterId, messageIndex: narrative ? next.length : undefined, opsApplied: false, error: message, updatedAt: now() });
+      if (finished.raw) setPendingOps({ raw: finished.raw, actorId: generationCharacterId, messageIndex: narrative ? next.length : undefined, streamError: message, requestId });
       setDebug((current) => ({
         ...current,
         raw: finished.raw || message,
@@ -1611,6 +1660,17 @@ export function App() {
     } finally { setBusy(false); setReplyInProgress(false); }
   }
 
+  async function retryInterruptedReply(): Promise<void> {
+    const recovery = chatRecoveryRef.current;
+    if (!recovery || (recovery.status !== 'interrupted' && recovery.status !== 'error') || busy) return;
+    const baseMessages = recoveryMessagesForRetry(recovery);
+    updateChatRecovery(null);
+    setMessages(baseMessages);
+    setInput(recovery.input);
+    setRequestStatus('idle');
+    await generateReply(undefined, baseMessages);
+  }
+
   async function extractOps(rawReply: string): Promise<string> {
     const candidate = mockFixtureId
       ? createMockProviderConfig(mockFixtureId)
@@ -1625,13 +1685,14 @@ export function App() {
     return extracted;
   }
 
-  function applyReplyOps(reply: ParsedReply, actorId?: string, giftId?: string, messageIndex?: number): void {
+  function applyReplyOps(reply: ParsedReply, actorId?: string, giftId?: string, messageIndex?: number, requestId?: string): boolean {
+    if (requestId && appliedRequestIdsRef.current.has(requestId)) return true;
     if (reply.opsFailed) {
       setPendingOps({ raw: reply.raw, actorId, ...(messageIndex === undefined ? {} : { messageIndex }) });
       setManualOps('[]');
       setDebug((current) => ({ ...current, raw: reply.raw, ops: JSON.stringify({ stage: reply.stage, opsFailed: true, warnings: reply.warnings, message: '本回合未产生状态变更。' }, null, 2) }));
       setFeedback({ tone: 'info', text: '回复正文已保留，但状态变化解析失败；本回合未产生状态变更。' });
-      return;
+      return false;
     }
 
     const memoryOps = reply.ops.filter((op) => Boolean(op && typeof op === 'object' && (op as { op?: unknown }).op === 'add_memory'));
@@ -1663,6 +1724,10 @@ export function App() {
       log: (message) => logs.push(message),
     }, nextSave.config.opsLimitPerTurn);
     if (applied.changes.length) commitSave(nextSave);
+    if (requestId) appliedRequestIdsRef.current.add(requestId);
+    if (requestId && chatRecoveryRef.current?.requestId === requestId) {
+      updateChatRecovery({ ...chatRecoveryRef.current, opsApplied: true, status: 'error', updatedAt: now() });
+    }
     promptEvents.emit('onOpsApply', { changes: applied.changes });
     setPendingOps(null);
     setManualOps('[]');
@@ -1676,6 +1741,7 @@ export function App() {
     } else {
       setFeedback({ tone: issues ? 'info' : 'success', text: applied.changes.length ? `回复已生成并应用 ${applied.applied} 个状态操作。${memoryOps.length ? `另有 ${memoryOps.length} 条记忆候选将在告别时整理。` : ''}` : memoryOps.length ? `回复已生成；${memoryOps.length} 条记忆候选将在告别时整理。` : '回复已生成，本回合没有状态变化。' });
     }
+    return true;
   }
 
   async function retryOpsExtraction(): Promise<void> {
@@ -1683,7 +1749,7 @@ export function App() {
     setBusy(true); setRequestStatus('requesting'); setFeedback({ tone: 'info', text: '正在重新提取状态变化…' });
     try {
       const reply = await parseReply(pendingOps.raw, extractOps);
-      applyReplyOps(reply, pendingOps.actorId, undefined, pendingOps.messageIndex);
+      if (applyReplyOps(reply, pendingOps.actorId, undefined, pendingOps.messageIndex, pendingOps.requestId)) updateChatRecovery(null);
       setRequestStatus('success');
     } catch (error) {
       setRequestStatus('error');
@@ -1698,7 +1764,7 @@ export function App() {
       setFeedback({ tone: 'error', text: '手动 ops 不是有效的 JSON 数组。' });
       return;
     }
-    applyReplyOps({ ...reply, raw: pendingOps.raw }, pendingOps.actorId, undefined, pendingOps.messageIndex);
+    if (applyReplyOps({ ...reply, raw: pendingOps.raw }, pendingOps.actorId, undefined, pendingOps.messageIndex, pendingOps.requestId)) updateChatRecovery(null);
   }
 
   function addItemDefinition(): void {
@@ -2035,7 +2101,7 @@ export function App() {
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView save={save} snapshots={snapshots} morningBriefs={save.world.morningBriefs} morningUpdates={save.world.morningUpdates} morningStyle={save.config.morningStyle} summarizingDay={summarizingDay} onAction={runDayAction} onAcceptRental={acceptRental} onRequestHousingUpgrade={requestHousingUpgrade} onAcceptJob={acceptJob} onWorkJob={workJob} onAcceptShop={acceptShop} onOperateShop={operateShop} onSleep={sleepEarly} onRestoreSnapshot={restoreSnapshot} onSaveDiary={saveDiaryEdit} onPresetChange={setCalendarPreset} onRevealEvent={revealEvent} onResolveEventChoice={resolveChoice} onExportEventHistory={exportEventHistory} onExportChatArchive={exportChatArchive} canExportChatArchive={Boolean(selectedCharacterId && messages.length)} onDeleteEventHistory={deleteEventHistory} onMove={(nodeId) => { if (moveToNode(nodeId)) setTab('map'); }} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
+      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} interrupted={Boolean(chatRecovery && (chatRecovery.status === 'interrupted' || chatRecovery.status === 'error'))} onRetryInterrupted={retryInterruptedReply} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
       {tab === 'library' && <LibraryView characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} />}
       {tab === 'library' && <StorySceneLibraryView save={save} storyScenePresets={storyScenePresets} onSavePreset={saveStoryScenePresetCopy} onUpdatePreset={updateStoryScenePreset} onDeletePreset={removeStoryScenePreset} onCreateDraft={createStorySceneDraftFromInput} onEditDraft={editStorySceneDraft} onDeleteDraft={removeStorySceneDraft} onConfirmDraft={confirmStorySceneDraft} onAdvanceStage={advanceStoryScene} onSetStatus={setStorySceneStatus} onReadStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'read')} onSelectStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'select')} />}
       {tab === 'library' && <MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} />}
@@ -2484,6 +2550,8 @@ function ChatView(props: {
   busy: boolean;
   replyInProgress: boolean;
   pendingOps: PendingOpsRecovery | null;
+  interrupted: boolean;
+  onRetryInterrupted: () => Promise<void>;
   manualOps: string;
   setManualOps: (value: string) => void;
   onRetryOps: () => Promise<void>;
@@ -2714,6 +2782,7 @@ function ChatView(props: {
       <textarea value={props.regenerateInput} onChange={(event) => props.setRegenerateInput(event.target.value)} placeholder="告诉角色换一种说法……" aria-label="重新生成要求" />
       <button className="secondary" onClick={() => void props.onRegenerate()} disabled={props.busy}>重新生成</button>
     </div>}
+    {props.interrupted && <div className="ops-recovery" role="alert"><strong>上次回复已中断</strong><p>页面离开后台后请求无法确认完成，已保留草稿和已收到正文。不会自动重试或重复应用状态变化。</p><div className="button-row"><button onClick={() => void props.onRetryInterrupted()} disabled={props.busy}>手动重试</button></div></div>}
     {props.pendingOps && <div className="ops-recovery" role="alert">
       <strong>本回合未产生状态变更</strong>
       <p>{props.pendingOps.streamError ? '回复流中断，已保留收到的正文。你可以重试提取或手动补录。' : '正文已保留，但 ops 无法解析。你可以重试提取或手动补录。'}</p>

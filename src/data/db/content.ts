@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import { CharacterCardSchema, ChatRecordSchema, PersonaSchema, PresetBundleSchema, PresetSchema, StoryScenePresetSchema, WorldbookEntrySchema, type CharacterCard, type ChatRecord, type Persona, type Preset, type PresetBundle, type StoryScenePresetRecord, type WorldbookEntry } from '../content';
+import { CharacterCardSchema, ChatRecordSchema, ChatRecoveryRecordSchema, PersonaSchema, PresetBundleSchema, PresetSchema, StoryScenePresetSchema, WorldbookEntrySchema, type CharacterCard, type ChatRecord, type ChatRecoveryRecord, type Persona, type Preset, type PresetBundle, type StoryScenePresetRecord, type WorldbookEntry } from '../content';
 
 export class ContentDatabase extends Dexie {
   characters!: Table<CharacterCard, string>;
@@ -9,6 +9,7 @@ export class ContentDatabase extends Dexie {
   presetBundles!: Table<PresetBundle, string>;
   storyScenePresets!: Table<StoryScenePresetRecord, string>;
   chats!: Table<ChatRecord, string>;
+  chatRecovery!: Table<ChatRecoveryRecord, string>;
   constructor(name = 'tokimeki-content') {
     super(name);
     this.version(1).stores({ characters: 'id', worldbooks: 'id', presets: 'id' });
@@ -22,6 +23,7 @@ export class ContentDatabase extends Dexie {
       });
     });
     this.version(6).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId' });
+    this.version(7).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId', chatRecovery: 'characterId' });
   }
 }
 
@@ -41,4 +43,7 @@ export async function saveStoryScenePreset(preset: StoryScenePresetRecord): Prom
 export async function deleteStoryScenePreset(id: string): Promise<void> { await contentDb.storyScenePresets.delete(id); }
 export async function saveChat(record: ChatRecord): Promise<ChatRecord> { const parsed = ChatRecordSchema.parse(record); await contentDb.chats.put(parsed); return parsed; }
 export async function loadChat(characterId: string): Promise<ChatRecord | undefined> { return contentDb.chats.get(characterId); }
-export async function clearChats(): Promise<void> { await contentDb.chats.clear(); }
+export async function clearChats(): Promise<void> { await Promise.all([contentDb.chats.clear(), contentDb.chatRecovery.clear()]); }
+export async function saveChatRecovery(record: ChatRecoveryRecord): Promise<ChatRecoveryRecord> { const parsed = ChatRecoveryRecordSchema.parse(record); await contentDb.chatRecovery.put(parsed); return parsed; }
+export async function loadChatRecovery(characterId: string): Promise<ChatRecoveryRecord | undefined> { return contentDb.chatRecovery.get(characterId); }
+export async function clearChatRecovery(characterId: string): Promise<void> { await contentDb.chatRecovery.delete(characterId); }

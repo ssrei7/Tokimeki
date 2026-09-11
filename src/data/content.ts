@@ -64,6 +64,23 @@ export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export const ChatRecordSchema = z.object({ characterId: Id, messages: z.array(ChatMessageSchema), updatedAt: z.string().datetime() });
 export type ChatRecord = z.infer<typeof ChatRecordSchema>;
 
+export const ChatRecoveryRecordSchema = z.object({
+  characterId: Id,
+  requestId: Id,
+  status: z.enum(['draft', 'requesting', 'generating', 'interrupted', 'error']),
+  input: z.string(),
+  messages: z.array(ChatMessageSchema),
+  baseMessages: z.array(ChatMessageSchema),
+  assistantText: z.string().default(''),
+  raw: z.string().default(''),
+  actorId: Id.optional(),
+  messageIndex: z.number().int().nonnegative().optional(),
+  opsApplied: z.boolean().default(false),
+  error: z.string().optional(),
+  updatedAt: z.string().datetime(),
+});
+export type ChatRecoveryRecord = z.infer<typeof ChatRecoveryRecordSchema>;
+
 export const EventPackageSchema = z.object({
   id: Id,
   name: z.string().min(1),
