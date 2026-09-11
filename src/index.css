@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+:root {
+  --background: #eef2f6;
+  --foreground: #1d2433;
+  --surface: #f8fafc;
+  --surface-raised: #ffffff;
+  --surface-muted: #eef2f6;
+  --muted-foreground: #667085;
+  --border: #d7dce5;
+  --primary: #315efb;
+  --primary-foreground: #ffffff;
+  --success: #067647;
+  --warning: #b54708;
+  --destructive: #b42318;
+  --ring: #315efb;
+  --radius: 0.5rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-muted: var(--surface-muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-destructive: var(--destructive);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+}
+
+@layer base {
+  :root { color-scheme: light; }
+  body { background: var(--background); color: var(--foreground); }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+}
