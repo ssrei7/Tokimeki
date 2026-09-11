@@ -507,6 +507,11 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .bottom-nav button.selected { background: var(--gray-100); color: var(--gray-600); }
 .music-app { display: grid; gap: 12px; }
 .music-now-playing, .music-mode-card, .music-list-card, .music-form-card { display: grid; gap: 12px; }
+.music-list-card > summary { list-style: none; cursor: pointer; }
+.music-list-card > summary::-webkit-details-marker { display: none; }
+.music-list-card > summary::after { content: '+'; color: var(--gray-400); font-size: 16px; }
+.music-list-card[open] > summary::after { content: '-'; }
+.music-list-card > summary h3 { margin: 0; }
 .music-now-playing h3 { margin: 0; overflow-wrap: anywhere; }
 .music-progress { display: grid; gap: 4px; }
 .music-progress input[type='range'], .music-volume input[type='range'] { width: 100%; accent-color: var(--gray-600); }

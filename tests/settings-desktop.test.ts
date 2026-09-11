@@ -105,6 +105,7 @@ describe('library desktop', () => {
 
   it('keeps terminal placeholders local and does not add API calls', () => {
     const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    const musicSource = readFileSync(new URL('../src/components/music-app.tsx', import.meta.url), 'utf8');
     expect(source).toContain("navigation.activePage === 'contacts'");
     expect(source).toContain('data-testid="terminal-contacts"');
     expect(source).toContain('data-testid="terminal-messages"');
@@ -114,6 +115,8 @@ describe('library desktop', () => {
     expect(source).toContain('<MusicApp player={props.musicPlayer} />');
     expect(source).toContain('<audio ref={musicPlayer.audioRef}');
     expect(source).not.toContain('此入口将在音乐 App 切片中接入。');
+    expect(musicSource).toContain('className="surface-card music-list-card"');
+    expect(musicSource).toContain('const [playlistOpen, setPlaylistOpen] = useState(false);');
   });
 
   it('exposes the local bidirectional transfer controls inside messages', () => {
