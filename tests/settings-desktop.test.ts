@@ -105,7 +105,9 @@ describe('library desktop', () => {
     const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     expect(source).toContain("navigation.activePage === 'contacts'");
     expect(source).toContain('data-testid="terminal-contacts"');
-    expect(source).toContain("['messages', 'calls', 'music'].includes(navigation.activePage)");
+    expect(source).toContain('data-testid="terminal-messages"');
+    expect(source).toContain("['calls', 'music'].includes(navigation.activePage)");
+    expect(source).toContain('world.terminal.messageThreads');
     expect(source).toContain('此入口将在终端功能切片中接入。');
   });
 });

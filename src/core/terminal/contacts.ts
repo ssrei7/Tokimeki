@@ -99,6 +99,18 @@ export function resolveFriendRequest(world: WorldState, requestId: string, actio
   return { ok: true, changed: true, request };
 }
 
+/** Local test/sandbox action: simulate the contact accepting an outgoing request. */
+export function simulateFriendAcceptance(world: WorldState, requestId: string, day = world.clock.day): ContactOperationResult {
+  const request = world.terminal.friendRequests.find((item) => item.id === requestId);
+  if (!request) return { ok: false, changed: false, warning: '好友申请不存在。' };
+  if (request.direction !== 'outgoing') return { ok: false, changed: false, warning: '只能模拟对方接受自己发出的申请。', request };
+  if (request.status === 'accepted') return { ok: true, changed: false, request };
+  if (request.status !== 'pending') return { ok: true, changed: false, request };
+  request.status = 'accepted';
+  request.updatedDay = Math.max(1, Math.floor(day));
+  return { ok: true, changed: true, request };
+}
+
 export function isAcceptedFriend(world: WorldState, characterId: string): boolean {
   return world.terminal.friendRequests.some((request) => request.characterId === characterId && request.status === 'accepted');
 }

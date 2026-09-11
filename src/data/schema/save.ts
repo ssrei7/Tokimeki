@@ -917,7 +917,7 @@ export const WorldV38Schema = WorldV37Schema.extend({
   economy: EconomyStateSchema,
 });
 export const WorldV39Schema = WorldV38Schema.extend({
-  terminal: TerminalStateSchema.default(DEFAULT_TERMINAL_STATE),
+  terminal: TerminalStateSchema.default(() => structuredClone(DEFAULT_TERMINAL_STATE)),
 });
 
 export const EncounterConfigSchema = z.object({

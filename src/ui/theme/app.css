@@ -310,6 +310,27 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .contact-card-actions button { min-height: 34px; padding: 0 9px; font-size: 11px; }
 .contact-status { align-self: center; color: var(--gray-500); font-size: 11px; white-space: nowrap; }
 @media (max-width: 500px) { .contact-card { grid-template-columns: 38px minmax(0, 1fr); } .contact-avatar { width: 38px; height: 38px; } .contact-card-actions { grid-column: 1 / -1; justify-content: flex-start; } }
+.terminal-messages-view { display: grid; gap: 12px; min-height: 0; }
+.terminal-messages-empty { display: grid; justify-items: center; gap: 10px; padding: 30px 12px; }
+.terminal-contact-picker { display: grid; gap: 6px; }
+.terminal-contact-picker label { display: grid; gap: 5px; color: var(--gray-600); font-size: 12px; }
+.terminal-friend-context { color: var(--gray-500); font-size: 11px; }
+.terminal-thread { display: grid; gap: 9px; min-height: 220px; max-height: min(52vh, 560px); overflow-y: auto; padding: 4px 0; }
+.terminal-message { position: relative; display: grid; gap: 5px; max-width: 88%; padding: 10px 12px; border: 1px solid var(--gray-100); border-radius: 10px; background: var(--gray-0); box-shadow: var(--surface-shadow); }
+.terminal-message.mine { justify-self: end; background: var(--gray-100); }
+.terminal-message-meta { display: flex; justify-content: space-between; gap: 10px; color: var(--gray-600); font-size: 11px; font-weight: 600; }
+.terminal-message-meta span { color: var(--gray-400); font-weight: 400; }
+.terminal-message p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.terminal-message-quote, .terminal-quote { min-height: 28px; padding: 0 8px; border: 1px solid var(--gray-200); background: transparent; color: var(--gray-600); font-size: 11px; text-align: left; }
+.terminal-quote-draft { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-left: 3px solid var(--gray-500); background: var(--gray-50); color: var(--gray-600); font-size: 12px; }
+.terminal-quote-draft button { flex: 0 0 auto; min-height: 30px; }
+.terminal-composer { display: grid; gap: 7px; }
+.terminal-composer textarea { min-height: 70px; resize: vertical; }
+.terminal-sticker-url { display: flex; gap: 7px; }
+.terminal-sticker-url input { min-width: 0; flex: 1; }
+.terminal-sticker-url button { flex: 0 0 auto; }
+.terminal-sticker { display: block; width: min(220px, 100%); max-height: 220px; object-fit: contain; border-radius: 7px; }
+.terminal-sticker-missing { color: var(--gray-500); font-size: 12px; }
 .memory-library-card { display: grid; gap: 10px; }
 .memory-character { border-top: 1px solid var(--gray-100); padding-top: 8px; }
 .memory-character summary { cursor: pointer; font-weight: 600; }
