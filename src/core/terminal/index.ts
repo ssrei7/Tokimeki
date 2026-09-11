@@ -5,4 +5,5 @@ export { createIncomingTransferProposal, listTerminalTransfers, resolveIncomingT
 export type { TerminalTransferResult, TransferAction } from './transfers';
 export { listTerminalCalls, recordTerminalCall } from './calls';
 export type { TerminalCallResult, TerminalCallStatus } from './calls';
+export { deliverNightlyTerminalMessage, isNightTerminalSlot } from './nightly';
 export type { ContactCandidate, ContactDirection, ContactOperationResult, FriendRequestAction } from './contacts';

@@ -10,7 +10,7 @@ import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGener
 import { parseGeneratedTopicTree } from './core/topics/parser';
 import { isTopicTreeFresh, mergeDailyTopicTree, topicResponse, topicTreeKey, topicVisibility, visibleTopics } from './core/topics';
 import { addCharacterToWorld, deriveNodeScope, nodeScopeLabel, proposeDeparture, recentEncounterTraces, resolveDeparture, triggerEncounter, updateEncounterOutcome, whoIsHere, whoIsWhere, type EncounterCandidate, type EncounterTrace } from './core/encounter';
-import { buildTerminalReplyPrompt, createFriendRequest, createIncomingTransferProposal, isAcceptedFriend, listContactCandidates, listTerminalCalls, listTerminalMessages, listTerminalTransfers, recordTerminalCall, resolveFriendRequest, resolveIncomingTransfer, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, sendTerminalVoiceMessage, simulateFriendAcceptance, type ContactDirection, type TerminalCallStatus, type TransferAction } from './core/terminal';
+import { buildTerminalReplyPrompt, createFriendRequest, createIncomingTransferProposal, deliverNightlyTerminalMessage, isAcceptedFriend, listContactCandidates, listTerminalCalls, listTerminalMessages, listTerminalTransfers, recordTerminalCall, resolveFriendRequest, resolveIncomingTransfer, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, sendTerminalVoiceMessage, simulateFriendAcceptance, type ContactDirection, type TerminalCallStatus, type TransferAction } from './core/terminal';
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
@@ -447,6 +447,7 @@ export function App() {
     const unsubscribeTime = promptEvents.subscribe('onTimeAdvance', ({ day, toSlotId, world }) => {
       const currentWorld = world ?? saveRef.current.world;
       markAppointmentOnTimeAdvance(currentWorld, saveRef.current.config.calendar, day, toSlotId);
+      deliverNightlyTerminalMessage(currentWorld, day, toSlotId);
     });
     const unsubscribeSettle = promptEvents.subscribe('onDaySettle', ({ day, settlement, world }) => {
       settleAppointments(world ?? saveRef.current.world, day, settlement);
