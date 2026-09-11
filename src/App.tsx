@@ -288,7 +288,7 @@ export function App() {
         setInput(restored.input);
         if (restored.status === 'interrupted' || restored.status === 'error') {
           setRequestStatus('error');
-          if (restored.raw) setPendingOps({ raw: restored.raw, actorId: restored.actorId, messageIndex: restored.messageIndex, streamError: restored.error, requestId: restored.requestId });
+          if (restored.raw && !restored.opsApplied) setPendingOps({ raw: restored.raw, actorId: restored.actorId, messageIndex: restored.messageIndex, streamError: restored.error, requestId: restored.requestId });
           setFeedback({ tone: 'info', text: restored.status === 'interrupted' ? '上次回复在页面进入后台时中断，正文已保留；请手动重试。' : '上次回复未完成，正文已保留；请手动重试。' });
         }
         if (restored.messages.length) setMessages(restored.messages);
@@ -1686,7 +1686,7 @@ export function App() {
   }
 
   function applyReplyOps(reply: ParsedReply, actorId?: string, giftId?: string, messageIndex?: number, requestId?: string): boolean {
-    if (requestId && appliedRequestIdsRef.current.has(requestId)) return true;
+    if (requestId && (appliedRequestIdsRef.current.has(requestId) || (chatRecoveryRef.current?.requestId === requestId && chatRecoveryRef.current.opsApplied))) return true;
     if (reply.opsFailed) {
       setPendingOps({ raw: reply.raw, actorId, ...(messageIndex === undefined ? {} : { messageIndex }) });
       setManualOps('[]');
