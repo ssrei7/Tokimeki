@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 38;
+export const CURRENT_SCHEMA_VERSION = 39;
 
 const IdSchema = z.string().min(1);
 
@@ -142,6 +142,65 @@ export const NpcTemplateSchema = z.object({
   occupationPool: z.array(z.string()),
   tagPool: z.array(z.string()),
 });
+
+export const TerminalFriendRequestStatusSchema = z.enum(['pending', 'accepted', 'rejected', 'revoked']);
+export const TerminalFriendRequestSchema = z.object({
+  id: IdSchema,
+  characterId: IdSchema,
+  direction: z.enum(['outgoing', 'incoming']),
+  status: TerminalFriendRequestStatusSchema,
+  createdDay: z.number().int().positive(),
+  updatedDay: z.number().int().positive(),
+});
+
+export const TerminalMessageTypeSchema = z.enum(['text', 'voice', 'sticker', 'transfer', 'system']);
+export const TerminalMessageSchema = z.object({
+  id: IdSchema,
+  threadId: IdSchema,
+  senderId: IdSchema,
+  type: TerminalMessageTypeSchema,
+  text: z.string().optional(),
+  asset: AssetRefSchema.optional(),
+  createdDay: z.number().int().positive(),
+  createdSlotId: IdSchema,
+  quoteMessageId: IdSchema.optional(),
+  quotePreview: z.string().max(240).optional(),
+});
+
+export const TerminalTransferRequestSchema = z.object({
+  id: IdSchema,
+  characterId: IdSchema,
+  direction: z.enum(['outgoing', 'incoming']),
+  currencyId: IdSchema,
+  amount: z.number().finite().positive(),
+  status: z.enum(['pending', 'accepted', 'rejected']),
+  createdDay: z.number().int().positive(),
+  updatedDay: z.number().int().positive(),
+});
+
+export const TerminalCallRecordSchema = z.object({
+  id: IdSchema,
+  characterId: IdSchema,
+  startedDay: z.number().int().positive(),
+  startedSlotId: IdSchema,
+  endedDay: z.number().int().positive().optional(),
+  endedSlotId: IdSchema.optional(),
+  status: z.enum(['missed', 'completed', 'cancelled']),
+});
+
+export const TerminalStateSchema = z.object({
+  friendRequests: z.array(TerminalFriendRequestSchema).max(2000).default([]),
+  messageThreads: z.record(z.string(), z.array(TerminalMessageSchema).max(2000)).default({}),
+  transferRequests: z.array(TerminalTransferRequestSchema).max(1000).default([]),
+  callRecords: z.array(TerminalCallRecordSchema).max(1000).default([]),
+});
+
+export const DEFAULT_TERMINAL_STATE = {
+  friendRequests: [],
+  messageThreads: {},
+  transferRequests: [],
+  callRecords: [],
+} satisfies z.input<typeof TerminalStateSchema>;
 
 export const EncounterLogEntrySchema = z.object({
   id: IdSchema,
@@ -857,6 +916,9 @@ export const WorldV37Schema = WorldV36Schema.extend({
 export const WorldV38Schema = WorldV37Schema.extend({
   economy: EconomyStateSchema,
 });
+export const WorldV39Schema = WorldV38Schema.extend({
+  terminal: TerminalStateSchema.default(DEFAULT_TERMINAL_STATE),
+});
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -893,12 +955,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV38Schema,
+  world: WorldV39Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV38Schema>;
+export type WorldState = z.infer<typeof WorldV39Schema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;
@@ -957,5 +1019,10 @@ export type ChapterSummary = z.infer<typeof ChapterSummarySchema>;
 export type Milestone = z.infer<typeof MilestoneSchema>;
 export type StoryScene = z.infer<typeof StorySceneSchema>;
 export type StorySceneStage = z.infer<typeof StorySceneStageSchema>;
+export type TerminalState = z.infer<typeof TerminalStateSchema>;
+export type TerminalFriendRequest = z.infer<typeof TerminalFriendRequestSchema>;
+export type TerminalMessage = z.infer<typeof TerminalMessageSchema>;
+export type TerminalTransferRequest = z.infer<typeof TerminalTransferRequestSchema>;
+export type TerminalCallRecord = z.infer<typeof TerminalCallRecordSchema>;
 export type MemoryType = z.infer<typeof MemoryTypeSchema>;
 export type MemorySource = z.infer<typeof MemorySourceSchema>;

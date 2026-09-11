@@ -295,6 +295,21 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .button-row button { font-size: 13px; }
 .list-card { margin: 12px 0; }
 .list-card h3 { margin-bottom: 8px; }
+.contacts-view { display: grid; gap: 18px; }
+.contacts-section { display: grid; gap: 8px; }
+.contacts-section .section-heading { margin-bottom: 0; }
+.contacts-section .section-heading h3 { font-size: 15px; }
+.contacts-section .section-heading > span { color: var(--gray-500); font-size: 12px; }
+.contact-card { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--gray-100); border-radius: 8px; background: var(--gray-0); box-shadow: var(--surface-shadow); }
+.contact-avatar { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; object-fit: cover; background: var(--gray-100); color: var(--gray-700); font-size: 17px; font-weight: 700; }
+.contact-avatar-fallback { border: 1px solid var(--gray-200); }
+.contact-card-main { min-width: 0; display: grid; gap: 2px; }
+.contact-card-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contact-card-main span, .contact-card-main small { color: var(--gray-500); font-size: 11px; line-height: 1.35; }
+.contact-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.contact-card-actions button { min-height: 34px; padding: 0 9px; font-size: 11px; }
+.contact-status { align-self: center; color: var(--gray-500); font-size: 11px; white-space: nowrap; }
+@media (max-width: 500px) { .contact-card { grid-template-columns: 38px minmax(0, 1fr); } .contact-avatar { width: 38px; height: 38px; } .contact-card-actions { grid-column: 1 / -1; justify-content: flex-start; } }
 .memory-library-card { display: grid; gap: 10px; }
 .memory-character { border-top: 1px solid var(--gray-100); padding-top: 8px; }
 .memory-character summary { cursor: pointer; font-weight: 600; }

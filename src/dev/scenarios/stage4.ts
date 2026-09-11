@@ -1,4 +1,4 @@
-import { CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_ECONOMY_STATE, DEFAULT_SLOT_DEFS, createDefaultMap, type SaveFile } from '../../data/schema/save';
+import { CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_ECONOMY_STATE, DEFAULT_SLOT_DEFS, DEFAULT_TERMINAL_STATE, createDefaultMap, type SaveFile } from '../../data/schema/save';
 import type { ScenarioDefinition } from './seeder';
 
 export function createStage4EncounterScenario(): ScenarioDefinition {
@@ -37,7 +37,7 @@ export function createStage4EncounterScenario(): ScenarioDefinition {
           characters: {
             seir: { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '在码头等人的青年。', personality: '安静而敏锐。' }, visuals: { portraits: [], accentColor: '#315efb' }, homeNodeId: 'start', giftPrefs: { likeTags: ['flower'], dislikeTags: ['metal'], specialItems: { 'white-flower': 4 } }, schedule: { grid: { '2:noon': { nodeId: 'docks', activity: '靠着栏杆等人' } }, overrides: {} } },
             rin: { id: 'rin', name: '凛', tier: 'formal', card: { description: '偶尔来码头买花的女孩。', personality: '爽朗。' }, visuals: { portraits: [], accentColor: '#d97706' }, homeNodeId: 'start', giftPrefs: { likeTags: ['sweet'], dislikeTags: ['metal'], specialItems: { 'lemon-candy': 3 } }, schedule: { grid: { '2:noon': { nodeId: 'docks', activity: '在摊位旁挑花' } }, overrides: {} } },
-          },
+          }, terminal: structuredClone(DEFAULT_TERMINAL_STATE),
           npcs: { 'vendor-1': { id: 'vendor-1', name: '摊主', tier: 'semi', facts: ['卖花'], tags: ['merchant'], homeNodeId: 'docks', lightMemory: [] } },
           npcTemplates: {}, encounterLog: [], topicTrees: {}, usedTopics: {}, appointments: [], eventDefs: {}, director: { scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: 1 }, eventHistory: [], chapters: [], milestones: [], storyScenes: [], economy: structuredClone(DEFAULT_ECONOMY_STATE), giftHistory: [], collection: [
             { id: 'collection-white-flower-3-1', itemId: 'white-flower', title: '白色小花', description: '塞伊尔的特殊礼物测试项。', tags: ['flower'], day: 3, nodeId: 'start' },

@@ -834,10 +834,28 @@ interface SaveFile {
 导出包结构：
 
 ```
+
 manifest.json      { type: 'save'|'character'|'world'|'events', appVersion, schemaVersion }
 save.json          （或 character.json / world.json / events.json）
 assets/<assetId>.<ext>
 ```
+
+### 16.1 阶段 9 终端持久化容器（v39）
+
+`world.terminal` 是终端事实的本地容器，当前首个切片只使用 `friendRequests`。同一版本预留后续消息、转账和通话数组，避免后续切片重复升级 schema：
+
+```ts
+interface TerminalState {
+  friendRequests: TerminalFriendRequest[];
+  messageThreads: Record<string, TerminalMessage[]>;
+  transferRequests: TerminalTransferRequest[];
+  callRecords: TerminalCallRecord[];
+}
+```
+
+好友申请状态为 `pending` / `accepted` / `rejected` / `revoked`，并记录 `outgoing` 或 `incoming` 方向。联系人候选从当前存档已生成的正式角色、半正式角色和 NPC 构建；头像复用角色 `visuals.avatar`，缺失时只在 UI 使用首字占位。所在地点由确定性日程和本地 `whoIsWhere` 查询得到，不调用 Provider。v38 存档迁移时只补空终端容器，不修改关系、时间、事件或剧情事实。
+
+终端查看与好友申请管理为纯本地操作；后续消息、转账、TTS 和通话切片必须继续遵守各自的显式 API 边界，不能将终端叙述直接写入内核事实。
 
 ---
 
