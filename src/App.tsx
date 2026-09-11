@@ -53,9 +53,23 @@ import { findMatchingHooks, syncLeadHooks, triggerHook } from './core/world/hook
 import { createEconomyOpRegistry, formatCurrency, getHousingTier, getHousingUpgradeOffer, getJobQuote, getJobShiftStatus, getRentalQuote, getShopOffer, getShopStatus, injectEconomyMorningAds, registerEconomyHooks } from './features/economy';
 import { getSoftGoals } from './features/life';
 import { canAffordEnergy, energyCostForAction, getEnergyState, movementEnergyKind, registerEnergyOps } from './features/energy';
+import { Bot, BrainCircuit, Bug, Palette, Route, ShieldCheck, SlidersHorizontal, UserRound, Wrench } from 'lucide-react';
+import { DesktopLauncher, SubpageShell, type DesktopEntry } from './components/desktop-shell';
 import './ui/theme/app.css';
 
 type Tab = 'map' | 'day' | 'chat' | 'library' | 'settings';
+export type SettingsPage = 'player' | 'provider' | 'vector-memory' | 'routing' | 'display' | 'rules' | 'privacy' | 'debug' | 'dev-tools';
+export const SETTINGS_PAGE_DEFINITIONS: readonly (Omit<DesktopEntry, 'id' | 'badge' | 'tone'> & { id: SettingsPage; tone: NonNullable<DesktopEntry['tone']> })[] = [
+  { id: 'player', label: '玩家身份', description: '面具与称呼', icon: UserRound, tone: 'blue' },
+  { id: 'provider', label: '对话模型', description: 'Provider 配置', icon: Bot, tone: 'violet' },
+  { id: 'vector-memory', label: '向量记忆', description: '混合检索 API', icon: BrainCircuit, tone: 'gray' },
+  { id: 'routing', label: '任务路由', description: '模型任务分配', icon: Route, tone: 'amber' },
+  { id: 'display', label: '显示选项', description: '数值与晨报', icon: Palette, tone: 'rose' },
+  { id: 'rules', label: '游戏规则', description: '体力与状态', icon: SlidersHorizontal, tone: 'green' },
+  { id: 'privacy', label: '数据与隐私', description: '本地数据边界', icon: ShieldCheck, tone: 'blue' },
+  { id: 'debug', label: '高级调试', description: 'Prompt 与 Ops', icon: Bug, tone: 'violet' },
+  { id: 'dev-tools', label: '开发工具', description: 'Mock 与模拟器', icon: Wrench, tone: 'amber' },
+];
 type ContentKind = 'character' | 'worldbook' | 'preset' | 'memory';
 type RequestStatus = 'idle' | StreamStatus;
 type Feedback = { tone: 'info' | 'success' | 'error'; text: string } | null;
@@ -151,6 +165,7 @@ const defaultSave: SaveFile = SaveFileSchema.parse({
 
 export function App() {
   const [tab, setTab] = useState<Tab>('map');
+  const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(null);
   const [characters, setCharacters] = useState<CharacterCard[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [worldbooks, setWorldbooks] = useState<WorldbookEntry[]>([]);
@@ -2196,7 +2211,7 @@ export function App() {
       {tab === 'library' && <StorySceneLibraryView save={save} storyScenePresets={storyScenePresets} onSavePreset={saveStoryScenePresetCopy} onUpdatePreset={updateStoryScenePreset} onDeletePreset={removeStoryScenePreset} onCreateDraft={createStorySceneDraftFromInput} onEditDraft={editStorySceneDraft} onDeleteDraft={removeStorySceneDraft} onConfirmDraft={confirmStorySceneDraft} onAdvanceStage={advanceStoryScene} onSetStatus={setStorySceneStatus} onReadStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'read')} onSelectStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'select')} />}
       {tab === 'library' && <MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} />}
       {tab === 'library' && <CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} />}
-      {tab === 'settings' && <SettingsView provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
+      {tab === 'settings' && <SettingsView activePage={settingsPage} onOpenPage={setSettingsPage} onBack={() => setSettingsPage(null)} provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
     </main>
     <nav className="bottom-nav">{([['map', '地图'], ['day', '日程'], ['chat', '聊天'], ['library', '资料'], ['settings', '设置']] as const).map(([id, label]) => <button key={id} className={tab === id ? 'selected' : ''} onClick={() => setTab(id)}>{label}</button>)}</nav>
   </div>;
@@ -2884,6 +2899,9 @@ function ChatView(props: {
 }
 
 function SettingsView(props: {
+  activePage: SettingsPage | null;
+  onOpenPage: (page: SettingsPage) => void;
+  onBack: () => void;
   provider: ProviderConfig;
   setProvider: (provider: ProviderConfig) => void;
   providers: ProviderConfig[];
@@ -2945,7 +2963,14 @@ function SettingsView(props: {
 }) {
   const isSaved = props.providers.some((item) => item.id === props.provider.id);
   const energy = getEnergyState(props.save.world);
-  return <section>
+  const entries: readonly DesktopEntry[] = SETTINGS_PAGE_DEFINITIONS.map((entry) => entry.id === 'provider'
+    ? { ...entry, ...(props.requestStatus === 'requesting' ? { badge: '请求中' } : {}) }
+    : entry.id === 'vector-memory'
+      ? { ...entry, tone: props.embeddingConfig.enabled ? 'green' : 'gray', badge: props.embeddingConfig.enabled ? '已启用' : '已关闭' }
+      : entry);
+  const pageTitle = entries.find((entry) => entry.id === props.activePage)?.label ?? '设置';
+  if (!props.activePage) return <DesktopLauncher title="设置" entries={entries} onOpen={(id) => props.onOpenPage(id as SettingsPage)} />;
+  return <SubpageShell title={pageTitle} pageId={props.activePage} onBack={props.onBack}>
     <details className="fold-card" open><summary>玩家身份 · 面具身份</summary><div className="fold-body"><div className="provider-card persona-card"><div className="list-heading"><div><span className="eyebrow">玩家身份</span><h3>面具身份</h3></div><span className="io-scope">每个世界绑定一个</span></div><div className="persona-fields"><input placeholder="身份名称，例如：旅人" value={props.personaName} onChange={(event) => props.setPersonaName(event.target.value)} /><input placeholder="对话框称呼，例如：小明" value={props.personaDisplayName} onChange={(event) => props.setPersonaDisplayName(event.target.value)} /><textarea placeholder="自我描述（会注入面对面提示词）" value={props.personaDescription} onChange={(event) => props.setPersonaDescription(event.target.value)} /></div><div className="button-row"><button onClick={() => void props.onSavePersona()}>{props.personaEditingId ? '更新面具' : '保存面具'}</button><button className="secondary" onClick={() => { props.setPersonaEditingId(''); props.setPersonaName(''); props.setPersonaDisplayName(''); props.setPersonaDescription(''); }}>新建面具</button></div>{props.personas.length ? <div className="persona-list">{props.personas.map((persona) => <div className="list-row" key={persona.id}><span>{persona.name}<small>对话框：{persona.displayName}{persona.description ? ` · ${persona.description}` : ''}</small></span><span className="button-row"><button className={props.personaId === persona.id ? '' : 'secondary'} onClick={() => props.onBindPersona(persona.id)}>{props.personaId === persona.id ? '当前绑定' : '绑定'}</button><button className="secondary" onClick={() => { props.setPersonaEditingId(persona.id); props.setPersonaName(persona.name); props.setPersonaDisplayName(persona.displayName); props.setPersonaDescription(persona.description); }}>编辑</button><button className="danger" onClick={() => void props.onDeletePersona(persona.id)}>删除</button></span></div>)}</div> : <p className="empty">还没有面具身份，聊天名牌默认使用玩家名字。</p>}</div></div></details>
     <details className="fold-card" open><summary>Provider 配置 {props.requestStatus === 'requesting' ? '· 请求中' : ''}</summary><div className="fold-body"><div className="section-heading"><div><span className="eyebrow">本地设置</span><h2>Provider</h2></div>{props.requestStatus === 'requesting' && <span className="request-status requesting">请求中…</span>}</div>
     <div className="provider-card">
@@ -2979,19 +3004,22 @@ function SettingsView(props: {
       {props.embeddingConfig.lastError && <p className="io-scope" role="alert">最近错误：{props.embeddingConfig.lastError}</p>}
       <div className="button-row"><button onClick={() => void props.onSaveEmbedding()} disabled={props.embeddingBusy}>保存设置</button><button className="secondary" onClick={() => void props.onTestEmbedding()} disabled={props.embeddingBusy}>连接测试</button><button className="secondary" onClick={() => void props.onRebuildEmbedding()} disabled={props.embeddingBusy || !props.embeddingConfig.enabled}>重建当前世界索引</button></div>
     </div></div></details>
-    <details className="fold-card"><summary>任务路由</summary><div className="fold-body"><div className="provider-card routing-card">
+    <details className="fold-card" open><summary>任务路由</summary><div className="fold-body"><div className="provider-card routing-card">
       <h3>任务路由</h3>
       <label>默认 Provider<select aria-label="默认 Provider" value={props.defaultProviderId} disabled={props.providers.length === 0} onChange={(event) => void props.onDefaultProviderChange(event.target.value)}><option value="">未设置</option>{props.providers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <div className="routing-list">{TASK_IDS.map((taskId) => <label key={taskId}><span>{TASK_LABELS[taskId]}<small>{taskId}</small></span><select aria-label={`${TASK_LABELS[taskId]} Provider`} value={props.bindings.find((binding) => binding.taskId === taskId)?.providerId ?? ''} disabled={props.providers.length === 0} onChange={(event) => void props.onBindingChange(taskId, event.target.value)}><option value="">使用默认 Provider</option>{props.providers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>)}</div>
     </div></div></details>
-    <details className="fold-card" open><summary>自定义 stats</summary><div className="fold-body"><div className="provider-card">
+    <details className="fold-card settings-rule-page" open><summary>游戏规则</summary><div className="fold-body"><div className="provider-card">
+      <h3>生活资源</h3>
+      <label className="checkbox-line"><input type="checkbox" checked={energy?.enabled ?? false} disabled={!energy} onChange={(event) => props.onEnergyEnabledChange(event.target.checked)} />启用体力消耗</label>
+      <p className="io-scope">体力作为通用 stat 保存。关闭后行动不扣体力，当前数值仍保留；重新开启后继续使用。</p>
       <h3>自定义 stats</h3>
       <p className="io-scope">给玩家增加通用数字状态，例如 money、trust 或 custom-reputation。AI 可通过已注册的 stat op 修改它，不需要改代码；这里仅设置初始值。</p>
       <div className="field-with-action"><input placeholder="stat 名称" value={props.statKey} onChange={(event) => props.setStatKey(event.target.value)} /><input type="number" placeholder="初始值" value={props.statValue} onChange={(event) => props.setStatValue(event.target.value)} /></div>
       <button className="secondary" onClick={props.onAddStat}>保存玩家 stat</button>
       <div className="stat-list">{Object.entries(props.save.world.player.stats).map(([key, value]) => <span key={key}>{key}: {value}</span>)}</div>
     </div></div></details>
-    <details className="fold-card"><summary>显示选项</summary><div className="fold-body"><div className="provider-card">
+    <details className="fold-card" open><summary>显示选项</summary><div className="fold-body"><div className="provider-card">
       <h3>生活资源</h3>
       <label className="checkbox-line"><input type="checkbox" checked={energy?.enabled ?? false} disabled={!energy} onChange={(event) => props.onEnergyEnabledChange(event.target.checked)} />启用体力消耗</label>
       <p className="io-scope">体力作为通用 stat 保存。关闭后行动不扣体力，当前数值仍保留；重新开启后继续使用。</p>
@@ -3002,10 +3030,16 @@ function SettingsView(props: {
       <label>世界动态入口<select aria-label="晨报呈现" value={props.save.config.morningStyle} onChange={(event) => props.onMorningStyleChange(event.target.value as SaveFile['config']['morningStyle'])}><option value="newspaper">报纸</option><option value="notice_board">委托板</option><option value="terminal">终端推送</option><option value="tavern">酒馆流言</option></select></label>
       <p className="io-scope">只改变晨报的界面文案，不改变世界事实、条目内容或 API 调用。</p>
     </div></div></details>
-    <details className="advanced"><summary>高级与调试</summary><p className="io-scope">生成回复后打开下方“Ops diff”标签，可查看解析阶段、被拒绝操作、clamp 警告和状态前后变化。</p><DebugView debug={props.debug} tab={props.debugTab} setTab={props.setDebugTab} /></details>
-    <details className="advanced"><summary>Mock provider 验收工具</summary><div className="provider-card mock-tools"><p className="io-scope">仅开发验收使用，不进入普通 Provider 列表；先在资料页创建角色并进入聊天，选择 fixture 后点击“生成回复”即可零 API 重现。</p><label>fixture<select aria-label="Mock fixture" value={props.mockFixtureId} onChange={(event) => props.setMockFixtureId(event.target.value as MockFixtureId | '')}><option value="">关闭 Mock</option>{MOCK_FIXTURE_IDS.map((id) => <option key={id} value={id}>{id}</option>)}</select></label>{props.mockFixtureId && <div className="fixture-help"><strong>预期结果</strong><p>{MOCK_FIXTURE_DESCRIPTIONS[props.mockFixtureId]}</p></div>}<div className="fixture-list">{MOCK_FIXTURE_IDS.map((id) => <div key={id}><strong>{id}</strong><span>{MOCK_FIXTURE_DESCRIPTIONS[id]}</span></div>)}</div><div className="fixture-help"><strong>阶段 4 相遇测试</strong><p>载入独立测试世界后，第 3 天中午前往西码头，会遇见两位正式角色和一位半正式 NPC。</p><button className="secondary" onClick={props.onLoadStage4Fixture}>载入阶段 4 测试存档</button></div></div></details>
-    <details className="advanced"><summary>播种器与无头调参台</summary><div className="provider-card mock-tools"><p className="io-scope">纯本地开发工具：所有模拟都运行在当前存档的克隆上，不写回正式世界、不调用 API。播种器用于生成可重复的基准场景；调参台用于比较固定 seed 下的多日结果。</p><div className="field-with-action"><label>Seed<input type="number" value={props.devToolSeed} onChange={(event) => props.setDevToolSeed(event.target.value)} /></label><label>天数<input type="number" min="1" value={props.devToolDays} onChange={(event) => props.setDevToolDays(event.target.value)} /></label></div><div className="button-row"><button onClick={() => props.onRunDevTool('seed')}>生成测试场景</button><button className="secondary" onClick={() => props.onRunDevTool('days')}>推进多日</button><button className="secondary" onClick={() => props.onRunDevTool('lead')}>Lead 忽略率</button><button className="secondary" onClick={() => props.onRunDevTool('topic')}>话题消耗</button><button className="secondary" onClick={() => props.onRunDevTool('encounter')}>相遇分布</button></div>{props.devToolReport && <div className="fixture-help"><div className="list-heading"><strong>{props.devToolReport.title}</strong><button className="secondary" onClick={() => props.onRunDevTool('seed')}>生成基准场景</button></div><pre className="debug-output">{props.devToolReport.body}</pre></div>}</div></details>
-  </section>;
+    <details className="fold-card settings-privacy-page" open><summary>数据与隐私</summary><div className="fold-body"><div className="provider-card">
+      <h3>数据存放</h3>
+      <p className="io-scope">世界存档、聊天、内容包和 API key 只保存在当前浏览器。世界存档导出不包含 Provider 配置或 API key。</p>
+      <h3>网络请求</h3>
+      <p className="io-scope">查看设置、记忆和已有内容不会调用 API。只有用户触发生成、连接测试、模型列表、向量测试或索引重建时，才会请求对应的显式配置端点。</p>
+    </div></div></details>
+    <details className="advanced" open><summary>高级与调试</summary><p className="io-scope">生成回复后打开下方“Ops diff”标签，可查看解析阶段、被拒绝操作、clamp 警告和状态前后变化。</p><DebugView debug={props.debug} tab={props.debugTab} setTab={props.setDebugTab} /></details>
+    <details className="advanced" open><summary>Mock provider 验收工具</summary><div className="provider-card mock-tools"><p className="io-scope">仅开发验收使用，不进入普通 Provider 列表；先在资料页创建角色并进入聊天，选择 fixture 后点击“生成回复”即可零 API 重现。</p><label>fixture<select aria-label="Mock fixture" value={props.mockFixtureId} onChange={(event) => props.setMockFixtureId(event.target.value as MockFixtureId | '')}><option value="">关闭 Mock</option>{MOCK_FIXTURE_IDS.map((id) => <option key={id} value={id}>{id}</option>)}</select></label>{props.mockFixtureId && <div className="fixture-help"><strong>预期结果</strong><p>{MOCK_FIXTURE_DESCRIPTIONS[props.mockFixtureId]}</p></div>}<div className="fixture-list">{MOCK_FIXTURE_IDS.map((id) => <div key={id}><strong>{id}</strong><span>{MOCK_FIXTURE_DESCRIPTIONS[id]}</span></div>)}</div><div className="fixture-help"><strong>阶段 4 相遇测试</strong><p>载入独立测试世界后，第 3 天中午前往西码头，会遇见两位正式角色和一位半正式 NPC。</p><button className="secondary" onClick={props.onLoadStage4Fixture}>载入阶段 4 测试存档</button></div></div></details>
+    <details className="advanced" open><summary>播种器与无头调参台</summary><div className="provider-card mock-tools"><p className="io-scope">纯本地开发工具：所有模拟都运行在当前存档的克隆上，不写回正式世界、不调用 API。播种器用于生成可重复的基准场景；调参台用于比较固定 seed 下的多日结果。</p><div className="field-with-action"><label>Seed<input type="number" value={props.devToolSeed} onChange={(event) => props.setDevToolSeed(event.target.value)} /></label><label>天数<input type="number" min="1" value={props.devToolDays} onChange={(event) => props.setDevToolDays(event.target.value)} /></label></div><div className="button-row"><button onClick={() => props.onRunDevTool('seed')}>生成测试场景</button><button className="secondary" onClick={() => props.onRunDevTool('days')}>推进多日</button><button className="secondary" onClick={() => props.onRunDevTool('lead')}>Lead 忽略率</button><button className="secondary" onClick={() => props.onRunDevTool('topic')}>话题消耗</button><button className="secondary" onClick={() => props.onRunDevTool('encounter')}>相遇分布</button></div>{props.devToolReport && <div className="fixture-help"><div className="list-heading"><strong>{props.devToolReport.title}</strong><button className="secondary" onClick={() => props.onRunDevTool('seed')}>生成基准场景</button></div><pre className="debug-output">{props.devToolReport.body}</pre></div>}</div></details>
+  </SubpageShell>;
 }
 
 function PresetBundleView(props: { presetBundles: PresetBundle[]; selectedPresetBundleId: string; setSelectedPresetBundleId: (value: string) => void; presetBundleName: string; setPresetBundleName: (value: string) => void; onCreatePresetBundle: () => Promise<void>; onRenamePresetBundle: () => Promise<void>; onDeletePresetBundle: (id: string) => Promise<void>; onSetPresetEntryEnabled: (bundleId: string, entryId: string, enabled: boolean) => Promise<void>; onMovePresetEntry: (bundleId: string, entryId: string, direction: -1 | 1) => Promise<void>; onExportPresetBundle: () => Promise<void>; onImportPresetBundle: (file?: File) => Promise<void>; onEditPreset: (entry: Preset) => void; onDeletePreset: (id: string) => Promise<void>; onExportPreset: (entry: Preset) => void }) {
