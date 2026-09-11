@@ -37,6 +37,9 @@
   --desktop-grid-column-gap: 10px;
   --surface-radius: 8px;
   --surface-shadow: 0 4px 16px rgb(63 63 63 / 0.05);
+  --chat-empty-surface: var(--gray-50);
+  --chat-empty-line: rgb(115 115 115 / 0.08);
+  --chat-empty-mark: rgb(115 115 115 / 0.12);
   --radius: 0.5rem;
 }
 
