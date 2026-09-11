@@ -58,9 +58,12 @@ describe('settings desktop', () => {
   });
 
   it('keeps system CSS achromatic and uses the requested bottom navigation order', () => {
-    expect(BOTTOM_NAV_ITEMS.map(([, label]) => label)).toEqual(['日程', '聊天', '地图', '资料', '设置']);
+    expect(BOTTOM_NAV_ITEMS.map(([, label]) => label)).toEqual(['日程', '聊天', '地图', '终端', '设置']);
+    expect(BOTTOM_NAV_ITEMS.every(([, , icon]) => typeof icon === 'object' || typeof icon === 'function')).toBe(true);
     const themeCss = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
     const appCss = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
+    expect(appCss).toContain('.bottom-nav button { min-height: 44px;');
+    expect(appCss).toContain('.bottom-nav button svg { width: 25px; height: 25px; }');
     const grayHexes = [...themeCss.matchAll(/--gray-[\w-]+:\s*#([\da-f]{6})/gi)].map((match) => match[1]);
     expect(grayHexes.length).toBeGreaterThan(0);
     expect(grayHexes.every((hex) => hex.slice(0, 2) === hex.slice(2, 4) && hex.slice(2, 4) === hex.slice(4, 6))).toBe(true);
@@ -93,14 +96,24 @@ describe('settings desktop', () => {
 });
 
 describe('library desktop', () => {
-  it('exposes twelve unique reachable entries with short launcher labels', () => {
+  it('exposes all terminal and moved schedule entries with short launcher labels', () => {
     const ids = LIBRARY_PAGE_DEFINITIONS.map((entry) => entry.id);
-    expect(ids).toHaveLength(12);
+    expect(ids).toHaveLength(20);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(LIBRARY_PAGE_DEFINITIONS.map((entry) => entry.label)).toEqual(['消息', '联系人', '通话', '音乐', '记忆', '收藏', '背包', '角色', '世界书', '预设', '多人剧情', '存档']);
+    expect(LIBRARY_PAGE_DEFINITIONS.map((entry) => entry.label)).toEqual(['消息', '联系人', '通话', '音乐', '日历', '目标', '住所', '事业', '日记', '事件', '进展', '快照', '记忆', '收藏', '背包', '角色', '世界书', '预设', '多人剧情', '存档']);
     expect(LIBRARY_PAGE_DEFINITIONS.every((entry) => Array.from(entry.label).length <= 4)).toBe(true);
     expect(LIBRARY_PAGE_DEFINITIONS.find((entry) => entry.id === 'save')?.pageTitle).toBe('存档与导入导出');
     expect(LIBRARY_PAGE_DEFINITIONS.find((entry) => entry.id === 'memories')?.pageTitle).toBe('记忆库');
+  });
+
+  it('does not attach desktop badges and uses the terminal desktop title', () => {
+    expect(LIBRARY_PAGE_DEFINITIONS.every((entry) => !('badge' in entry))).toBe(true);
+    expect(SETTINGS_PAGE_DEFINITIONS.every((entry) => !('badge' in entry))).toBe(true);
+    const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    const appCss = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
+    expect(source).toContain('DesktopLauncher title="终端"');
+    expect(source).toContain('day-default-view');
+    expect(appCss).toContain('.day-default-view .day-moved-content');
   });
 
   it('keeps terminal placeholders local and does not add API calls', () => {
@@ -155,7 +168,7 @@ describe('day desktop', () => {
     const ids = DAY_PAGE_DEFINITIONS.map((entry) => entry.id);
     expect(ids).toHaveLength(9);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(DAY_PAGE_DEFINITIONS.map((entry) => entry.label)).toEqual(['日历', '目标', '住所', '事业', '结算', '日记', '事件', '剧情', '快照']);
+    expect(DAY_PAGE_DEFINITIONS.map((entry) => entry.label)).toEqual(['日历', '目标', '住所', '事业', '结算', '日记', '事件', '进展', '快照']);
     expect(DAY_PAGE_DEFINITIONS.every((entry) => Array.from(entry.label).length <= 2)).toBe(true);
     expect(DAY_PAGE_DEFINITIONS.find((entry) => entry.id === 'career')?.pageTitle).toBe('工作与事业');
   });

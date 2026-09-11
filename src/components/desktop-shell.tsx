@@ -10,7 +10,6 @@ export type DesktopEntry = {
   label: string;
   icon: LucideIcon;
   tone?: 'blue' | 'green' | 'amber' | 'rose' | 'violet' | 'gray';
-  badge?: string;
 };
 
 export function DesktopLauncher({ title, entries, onOpen, wallpaperUrl }: { title: string; entries: readonly DesktopEntry[]; onOpen: (id: string) => void; wallpaperUrl?: string }) {
@@ -42,7 +41,6 @@ export function DesktopAppIcon({ entry, onOpen }: { entry: DesktopEntry; onOpen:
   return <button type="button" className="desktop-app-icon" onClick={() => onOpen(entry.id)} aria-label={`打开${entry.label}`}>
     <span className={cn('desktop-app-icon-glyph', `tone-${entry.tone ?? 'gray'}`)} aria-hidden="true"><Icon /></span>
     <span className="desktop-app-icon-label">{entry.label}</span>
-    {entry.badge && <StatusBadge>{entry.badge}</StatusBadge>}
   </button>;
 }
 
@@ -66,8 +64,4 @@ export function SurfaceCard({ children, className }: { children: ReactNode; clas
 
 export function EmptyState({ children }: { children: ReactNode }) {
   return <p className="empty-state">{children}</p>;
-}
-
-export function StatusBadge({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'success' | 'warning' | 'error' }) {
-  return <span className={cn('status-badge', `status-${tone}`)}>{children}</span>;
 }

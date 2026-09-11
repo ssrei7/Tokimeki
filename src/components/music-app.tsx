@@ -42,7 +42,7 @@ export function MusicApp({ player, onNotify }: { player: MusicPlayerController; 
   return <div className="music-app" data-testid="music-app">
     {notice && <p className={`feedback ${notice.tone}`} role="status">{notice.text}<button type="button" aria-label="关闭提示" onClick={() => setNotice(null)}>×</button></p>}
     <SurfaceCard className="music-now-playing">
-      <div className="list-heading"><div><span className="eyebrow">当前播放</span><h3>{current?.title ?? '尚未选择曲目'}</h3><p className="io-scope">{current?.artist || '外链音频'}{player.isPlaying ? ' · 正在播放' : ' · 已暂停'}</p></div><span className="status-badge">{musicModeLabel(player.state.mode)}</span></div>
+      <div className="list-heading"><div><span className="eyebrow">当前播放</span><h3>{current?.title ?? '尚未选择曲目'}</h3><p className="io-scope">{current?.artist || '外链音频'}{player.isPlaying ? ' · 正在播放' : ' · 已暂停'} · {musicModeLabel(player.state.mode)}</p></div></div>
       <div className="music-progress"><input aria-label="播放进度" type="range" min="0" max={max} step="0.1" value={Math.min(player.currentTime, max)} onChange={(event) => player.seek(Number(event.target.value))} /><div><span>{formatTime(player.currentTime)}</span><span>{formatTime(player.duration)}</span></div></div>
       <div className="music-controls" aria-label="播放控制">
         <button type="button" className="icon-button" aria-label="上一首" onClick={player.previous}><SkipBack aria-hidden="true" /></button>
