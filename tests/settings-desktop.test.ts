@@ -200,6 +200,8 @@ describe('library desktop', () => {
     expect(css).toContain('.terminal-conversation-row');
     expect(css).toContain('.terminal-conversation-row { width: 100%');
     expect(css).toContain('.terminal-more-panel { position: absolute');
+    expect(css).toContain('.subpage-content[data-page=\'messages\'] > .terminal-thread-view { display: flex');
+    expect(css).toContain('.terminal-more-actions { order: 2');
     expect(css).toContain('.terminal-thread-view { position: relative');
     expect(css).toContain('.terminal-message-row.mine');
     expect(css).toContain('.terminal-thread-header { position: relative');
