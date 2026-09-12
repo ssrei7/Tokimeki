@@ -1,5 +1,6 @@
 export const CONTACT_GROUPS_STORAGE_KEY = 'tokimeki.contactGroups.v1';
 export const CONTACT_GROUP_COLLAPSED_STORAGE_KEY = 'tokimeki.contactGroupCollapsed.v1';
+export const CALL_HISTORY_COLLAPSED_STORAGE_KEY = 'tokimeki.callHistoryCollapsed.v1';
 
 export type ContactCustomGroup = { id: string; name: string };
 export type ContactGroupPreferences = { groups: ContactCustomGroup[]; assignments: Record<string, string> };
@@ -36,4 +37,14 @@ export function readContactGroupCollapsed(): Record<string, boolean> {
 export function writeContactGroupCollapsed(collapsed: Record<string, boolean>): void {
   if (typeof window === 'undefined') return;
   try { window.localStorage.setItem(CONTACT_GROUP_COLLAPSED_STORAGE_KEY, JSON.stringify(collapsed)); } catch { /* local preference unavailable */ }
+}
+
+export function readCallHistoryCollapsed(): boolean {
+  const value = readJson(CALL_HISTORY_COLLAPSED_STORAGE_KEY);
+  return value === true;
+}
+
+export function writeCallHistoryCollapsed(collapsed: boolean): void {
+  if (typeof window === 'undefined') return;
+  try { window.localStorage.setItem(CALL_HISTORY_COLLAPSED_STORAGE_KEY, JSON.stringify(collapsed)); } catch { /* local preference unavailable */ }
 }

@@ -7,7 +7,7 @@ import { BOTTOM_NAV_ITEMS, DAY_PAGE_DEFINITIONS, LIBRARY_PAGE_DEFINITIONS, SETTI
 import { DesktopLauncher, SubpageShell } from '../src/components/desktop-shell';
 import { clearDesktopOrder, clearDesktopPages, moveIdBefore, moveIdToPageEnd, readDesktopOrder, readDesktopPages, reconcileDesktopOrder, writeDesktopOrder, writeDesktopPage } from '../src/components/desktop-order';
 import { desktopIconContrastForLuminance } from '../src/ui/desktop-icon-contrast';
-import { readContactGroupCollapsed, readContactGroupPreferences, writeContactGroupCollapsed, writeContactGroupPreferences } from '../src/ui/contact-groups';
+import { readCallHistoryCollapsed, readContactGroupCollapsed, readContactGroupPreferences, writeCallHistoryCollapsed, writeContactGroupCollapsed, writeContactGroupPreferences } from '../src/ui/contact-groups';
 
 describe('settings desktop', () => {
   it('persists and validates contact group preferences locally', () => {
@@ -264,6 +264,33 @@ describe('library desktop', () => {
     expect(source).toContain('模拟TA同意');
     expect(source).toContain('加入日历');
     expect(source).toContain('confirmTerminalAppointment');
+  });
+
+  it('uses compact call rows and persists collapsible call history locally', () => {
+    const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    const css = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
+    expect(source).toContain('candidate.summary');
+    expect(source).toContain("callAction('呼叫'");
+    expect(source).toContain("callAction('模拟来电'");
+    expect(source).toContain('terminal-call-history-heading');
+    expect(source).toContain('readCallHistoryCollapsed');
+    expect(source).toContain('writeCallHistoryCollapsed');
+    expect(source).toContain('aria-expanded={!historyCollapsed}');
+    expect(css).toContain('.terminal-call-contact, .terminal-call-record');
+    expect(css).toContain('.terminal-call-history-heading');
+    const originalWindow = globalThis.window;
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: { localStorage: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) } } });
+    try {
+      expect(readCallHistoryCollapsed()).toBe(false);
+      writeCallHistoryCollapsed(true);
+      expect(readCallHistoryCollapsed()).toBe(true);
+      values.set('tokimeki.callHistoryCollapsed.v1', '{broken');
+      expect(readCallHistoryCollapsed()).toBe(false);
+    } finally {
+      if (originalWindow === undefined) delete (globalThis as { window?: Window }).window;
+      else Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+    }
   });
 });
 

@@ -431,18 +431,27 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .terminal-appointment-row small { color: var(--gray-500); font-size: 11px; margin-top: 3px; }
 .terminal-appointment-row button { min-height: 32px; padding: 0 9px; font-size: 11px; }
 @media (max-width: 600px) { .terminal-appointment-form { grid-template-columns: 1fr 1fr; } .terminal-appointment-row { align-items: flex-start; grid-template-columns: 1fr; } }
-.terminal-calls-view { display: grid; gap: 16px; }
-.terminal-call-active { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--gray-300); border-radius: 10px; background: var(--gray-25); }
-.terminal-call-person { display: flex; align-items: center; gap: 10px; }
-.terminal-call-person > div { display: grid; gap: 3px; }
-.terminal-call-person small, .terminal-call-contact small, .terminal-call-record small { display: block; color: var(--gray-500); font-size: 11px; }
-.terminal-call-contacts, .terminal-call-history { display: grid; gap: 8px; }
-.terminal-call-contact, .terminal-call-record { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--gray-100); }
-.terminal-call-contact > div:nth-child(2), .terminal-call-record > span:first-child { min-width: 0; }
-.terminal-call-contact .button-row { justify-content: flex-end; }
-.terminal-call-contact button { min-height: 34px; padding: 0 9px; font-size: 11px; }
-.terminal-call-record { grid-template-columns: minmax(0, 1fr) auto; color: var(--gray-600); font-size: 12px; }
-@media (max-width: 500px) { .terminal-call-contact { grid-template-columns: 38px minmax(0, 1fr); } .terminal-call-contact .button-row { grid-column: 1 / -1; justify-content: flex-start; } }
+.terminal-calls-view { display: grid; gap: 12px; }
+.terminal-call-active { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 4px; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--gray-25); }
+.terminal-call-person { display: flex; min-width: 0; align-items: center; gap: 9px; }
+.terminal-call-person-info, .terminal-call-contact-main, .terminal-call-record-main { min-width: 0; display: grid; gap: 2px; }
+.terminal-call-person small, .terminal-call-contact small, .terminal-call-record small { display: block; overflow: hidden; color: var(--gray-500); font-size: 11px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-call-name-line { display: flex; min-width: 0; align-items: baseline; gap: 7px; }
+.terminal-call-name-line strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-call-name-line > span, .terminal-call-summary { overflow: hidden; color: var(--gray-500); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-call-contacts, .terminal-call-history { display: grid; gap: 5px; }
+.terminal-call-contact, .terminal-call-record { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 52px; padding: 6px 4px; border-top: 1px solid var(--gray-100); }
+.terminal-call-contact .contact-avatar, .terminal-call-record .contact-avatar { width: 36px; height: 36px; font-size: 14px; }
+.terminal-call-actions { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 4px; }
+.terminal-call-actions .terminal-small-icon-button { width: 32px; min-width: 32px; min-height: 32px; padding: 0; }
+.terminal-call-actions svg { width: 16px; height: 16px; }
+.terminal-call-history-heading { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 4px; border: 0; border-bottom: 1px solid var(--gray-100); background: transparent; color: var(--gray-700); text-align: left; }
+.terminal-call-history-heading > span { display: flex; align-items: baseline; gap: 7px; }
+.terminal-call-history-heading small { color: var(--gray-500); font-size: 11px; }
+.terminal-call-history-heading svg { width: 16px; height: 16px; color: var(--gray-500); }
+.terminal-call-history-list { display: grid; gap: 0; }
+.terminal-call-record { grid-template-columns: 38px minmax(0, 1fr); color: var(--gray-600); font-size: 12px; }
+@media (max-width: 500px) { .terminal-call-active { grid-template-columns: minmax(0, 1fr) auto; } .terminal-call-contact, .terminal-call-record { grid-template-columns: 36px minmax(0, 1fr) auto; min-height: 50px; padding-inline: 0; } .terminal-call-record { grid-template-columns: 36px minmax(0, 1fr); } .terminal-call-contact .contact-avatar, .terminal-call-record .contact-avatar { width: 34px; height: 34px; } .terminal-call-actions .terminal-small-icon-button { width: 30px; min-width: 30px; min-height: 30px; } }
 .memory-library-card { display: grid; gap: 10px; }
 .memory-character { border-top: 1px solid var(--gray-100); padding-top: 8px; }
 .memory-character summary { cursor: pointer; font-weight: 600; }
