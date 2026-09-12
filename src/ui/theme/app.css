@@ -24,6 +24,8 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
 .section-heading h2 { margin-top: 4px; }
 .desktop-launcher { min-height: 100%; }
+.desktop-reorder-actions { display: flex; align-items: center; gap: 6px; }
+.desktop-reorder-actions button { min-height: 34px; padding: 0 10px; font-size: 12px; }
 .page-header { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .subpage-shell > .page-header { position: sticky; z-index: 6; top: -16px; margin: -16px -16px 18px; padding: calc(16px + var(--safe-area-top)) 16px 10px; border-bottom: 1px solid var(--gray-100); background: rgb(250 250 250 / 0.96); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .page-header h2 { margin-top: 3px; font-size: 20px; line-height: 1.2; }
@@ -33,6 +35,10 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .desktop-pagination button span { width: 18px; height: 4px; display: block; border-radius: 999px; background: var(--gray-300); transition: width 140ms ease, background-color 140ms ease; }
 .desktop-pagination button.active span { width: 28px; background: var(--gray-700); }
 .desktop-app-icon { position: relative; min-width: 0; min-height: calc(var(--desktop-icon-size) + 38px); display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 0 2px; border: 0; border-radius: var(--desktop-icon-radius); background: transparent; color: var(--gray-700); box-shadow: none; }
+.desktop-app-icon.reorderable { touch-action: none; cursor: grab; animation: desktop-icon-wiggle 420ms ease-in-out infinite alternate; }
+.desktop-app-icon.reorderable:active, .desktop-app-icon.dragged { cursor: grabbing; }
+.desktop-app-icon.dragged { opacity: .42; }
+.desktop-app-icon.reorder-focused .desktop-app-icon-glyph { outline: 2px solid var(--gray-500); outline-offset: 3px; }
 .desktop-app-icon:hover { background: transparent; }
 .desktop-app-icon:focus-visible { background: transparent; }
 .desktop-app-icon-glyph { width: var(--desktop-icon-size); height: var(--desktop-icon-size); flex: 0 0 var(--desktop-icon-size); display: grid; place-items: center; border: 1px solid var(--desktop-icon-border); border-radius: var(--desktop-icon-radius); background: var(--desktop-icon-surface); color: var(--desktop-icon-ink, var(--gray-800)); box-shadow: 0 5px 14px var(--desktop-icon-shadow); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease; }
@@ -40,6 +46,10 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .desktop-app-icon-glyph svg { width: 27px; height: 27px; stroke-width: 1.8; }
 .desktop-app-icon-glyph.tone-blue, .desktop-app-icon-glyph.tone-green, .desktop-app-icon-glyph.tone-amber, .desktop-app-icon-glyph.tone-rose, .desktop-app-icon-glyph.tone-violet, .desktop-app-icon-glyph.tone-gray { background: var(--desktop-icon-surface); color: var(--desktop-icon-ink, var(--gray-800)); }
 .desktop-app-icon-label { width: 100%; min-height: 2.6em; color: var(--desktop-icon-label, var(--gray-700)); font-size: 12px; font-weight: 600; line-height: 1.3; text-align: center; overflow-wrap: anywhere; }
+.desktop-reorder-hint { margin: 14px 0 0; color: var(--gray-500); font-size: 11px; text-align: center; }
+.desktop-pagination button.drop-target span { background: var(--gray-600); box-shadow: 0 0 0 3px var(--gray-200); }
+@keyframes desktop-icon-wiggle { from { transform: rotate(-1.1deg); } to { transform: rotate(1.1deg); } }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .subpage-shell { min-height: 100%; }
 .subpage-back { min-height: 36px; display: inline-flex; align-items: center; gap: 3px; padding: 0 9px; border: 1px solid var(--gray-200); background: var(--gray-0); color: var(--gray-700); font-size: 12px; }
 .subpage-back svg { width: 17px; height: 17px; }

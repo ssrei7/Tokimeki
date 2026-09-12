@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BOTTOM_NAV_ITEMS, DAY_PAGE_DEFINITIONS, LIBRARY_PAGE_DEFINITIONS, SETTINGS_PAGE_DEFINITIONS } from '../src/App';
 import { DesktopLauncher, SubpageShell } from '../src/components/desktop-shell';
+import { clearDesktopOrder, moveIdBefore, moveIdToPageEnd, readDesktopOrder, reconcileDesktopOrder, writeDesktopOrder } from '../src/components/desktop-order';
 import { desktopIconContrastForLuminance } from '../src/ui/desktop-icon-contrast';
 
 describe('settings desktop', () => {
@@ -22,7 +23,7 @@ describe('settings desktop', () => {
   });
 
   it('renders every launcher as a named button', () => {
-    const html = renderToStaticMarkup(createElement(DesktopLauncher, { title: '设置', entries: SETTINGS_PAGE_DEFINITIONS, onOpen: () => undefined }));
+    const html = renderToStaticMarkup(createElement(DesktopLauncher, { launcherId: 'settings', title: '设置', entries: SETTINGS_PAGE_DEFINITIONS, onOpen: () => undefined }));
     for (const entry of SETTINGS_PAGE_DEFINITIONS) {
       expect(html).toContain(`aria-label="打开${entry.label}"`);
     }
@@ -33,7 +34,7 @@ describe('settings desktop', () => {
   it('paginates launcher entries with short page bars and accepts a local app name', () => {
     const icon = SETTINGS_PAGE_DEFINITIONS[0].icon;
     const entries = Array.from({ length: 25 }, (_, index) => ({ id: `entry-${index}`, label: `项目${index}`, icon, tone: 'gray' as const }));
-    const html = renderToStaticMarkup(createElement(DesktopLauncher, { title: '终端', appName: '我的世界', entries, onOpen: () => undefined }));
+    const html = renderToStaticMarkup(createElement(DesktopLauncher, { launcherId: 'terminal', title: '终端', appName: '我的世界', entries, onOpen: () => undefined }));
     expect((html.match(/class="desktop-app-icon"/g) ?? [])).toHaveLength(24);
     expect((html.match(/class="desktop-pagination/g) ?? [])).toHaveLength(1);
     expect((html.match(/aria-label="第 [12] 页"/g) ?? [])).toHaveLength(2);
@@ -65,6 +66,14 @@ describe('settings desktop', () => {
     expect(appCss).toContain('min-height: calc(var(--desktop-icon-size) + 38px)');
     expect(appCss).toContain('width: var(--desktop-icon-size)');
     expect(appCss).toContain('box-shadow: var(--surface-shadow)');
+  });
+
+  it('exposes reorder controls and keeps stable launcher identifiers', () => {
+    const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    const appCss = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
+    expect(source).toContain('DesktopLauncher launcherId="settings" title="设置"');
+    expect(appCss).toContain('.desktop-app-icon.reorderable');
+    expect(appCss).toContain('.desktop-reorder-actions');
   });
 
   it('keeps system CSS achromatic and uses the requested bottom navigation order', () => {
@@ -130,7 +139,7 @@ describe('library desktop', () => {
     expect(SETTINGS_PAGE_DEFINITIONS.every((entry) => !('badge' in entry))).toBe(true);
     const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     const appCss = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
-    expect(source).toContain('DesktopLauncher title="终端"');
+    expect(source).toContain('DesktopLauncher launcherId="terminal" title="终端"');
     expect(source).toContain('day-default-view');
     expect(appCss).toContain('.day-default-view .day-moved-content');
   });
@@ -179,6 +188,36 @@ describe('library desktop', () => {
     expect(source).toContain('模拟TA同意');
     expect(source).toContain('加入日历');
     expect(source).toContain('confirmTerminalAppointment');
+  });
+});
+
+describe('desktop order preferences', () => {
+  it('reconciles saved IDs while appending new entries', () => {
+    expect(reconcileDesktopOrder(['b', 'missing', 'b', 1], ['a', 'b', 'c'])).toEqual(['b', 'a', 'c']);
+  });
+
+  it('moves entries within and across paginated pages', () => {
+    const order = ['a', 'b', 'c', 'd', 'e'];
+    expect(moveIdBefore(order, 'e', 'b')).toEqual(['a', 'e', 'b', 'c', 'd']);
+    expect(moveIdToPageEnd(order, 'a', 1, 2)).toEqual(['b', 'c', 'd', 'e', 'a']);
+  });
+
+  it('persists each launcher order independently in local storage', () => {
+    const originalWindow = globalThis.window;
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: { localStorage: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) } } });
+    try {
+      writeDesktopOrder('terminal', ['b', 'a']);
+      writeDesktopOrder('settings', ['y', 'x']);
+      expect(readDesktopOrder('terminal', ['a', 'b', 'c'])).toEqual(['b', 'a', 'c']);
+      expect(readDesktopOrder('settings', ['x', 'y'])).toEqual(['y', 'x']);
+      clearDesktopOrder('terminal');
+      expect(readDesktopOrder('terminal', ['a', 'b', 'c'])).toEqual(['a', 'b', 'c']);
+      expect(readDesktopOrder('settings', ['x', 'y'])).toEqual(['y', 'x']);
+    } finally {
+      if (originalWindow === undefined) delete (globalThis as { window?: Window }).window;
+      else Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+    }
   });
 });
 
