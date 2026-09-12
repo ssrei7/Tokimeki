@@ -15,12 +15,36 @@ export interface TerminalPromptMessage {
   content: string;
 }
 
+export interface TerminalThreadSummary {
+  characterId: string;
+  lastMessage: TerminalMessage;
+}
+
 export function terminalThreadId(characterId: string): string {
   return `terminal-thread-${characterId}`;
 }
 
 export function listTerminalMessages(world: WorldState, characterId: string): TerminalMessage[] {
   return world.terminal.messageThreads[terminalThreadId(characterId)] ?? [];
+}
+
+export function listTerminalMessageThreads(world: WorldState, slotIds: readonly string[]): TerminalThreadSummary[] {
+  const slotOrder = new Map(slotIds.map((slotId, index) => [slotId, index]));
+  const characterIds = [...Object.keys(world.characters), ...Object.keys(world.npcs)];
+  return characterIds
+    .map((characterId) => {
+      const messages = listTerminalMessages(world, characterId);
+      const lastMessage = messages.at(-1);
+      return lastMessage ? { characterId, lastMessage } : undefined;
+    })
+    .filter((summary): summary is TerminalThreadSummary => Boolean(summary))
+    .sort((a, b) => {
+      if (a.lastMessage.createdDay !== b.lastMessage.createdDay) return b.lastMessage.createdDay - a.lastMessage.createdDay;
+      const aSlot = slotOrder.get(a.lastMessage.createdSlotId) ?? -1;
+      const bSlot = slotOrder.get(b.lastMessage.createdSlotId) ?? -1;
+      if (aSlot !== bSlot) return bSlot - aSlot;
+      return a.characterId.localeCompare(b.characterId);
+    });
 }
 
 export function buildTerminalReplyPrompt(world: WorldState, characterId: string): TerminalPromptMessage[] {

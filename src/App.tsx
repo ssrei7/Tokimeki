@@ -10,7 +10,7 @@ import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGener
 import { parseGeneratedTopicTree } from './core/topics/parser';
 import { isTopicTreeFresh, mergeDailyTopicTree, topicResponse, topicTreeKey, topicVisibility, visibleTopics } from './core/topics';
 import { addCharacterToWorld, deriveNodeScope, nodeScopeLabel, proposeDeparture, recentEncounterTraces, resolveDeparture, triggerEncounter, updateEncounterOutcome, whoIsHere, whoIsWhere, type EncounterCandidate, type EncounterTrace } from './core/encounter';
-import { buildTerminalReplyPrompt, confirmTerminalAppointment, createFriendRequest, createTerminalAppointmentRequest, createTerminalOpRegistry, deliverNightlyTerminalMessage, isAcceptedFriend, listContactCandidates, listTerminalAppointmentRequests, listTerminalCalls, listTerminalMessages, listTerminalTransfers, recordTerminalCall, resolveFriendRequest, resolveIncomingTransfer as resolveIncomingTransferOp, resolveTerminalAppointmentRequest, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, sendTerminalVoiceMessage, simulateTerminalAppointmentAcceptance, type ContactDirection, type TerminalAppointmentAction, type TerminalAppointmentInput, type TerminalCallStatus, type TransferAction } from './core/terminal';
+import { buildTerminalReplyPrompt, confirmTerminalAppointment, createFriendRequest, createTerminalAppointmentRequest, createTerminalOpRegistry, deliverNightlyTerminalMessage, isAcceptedFriend, listContactCandidates, listTerminalAppointmentRequests, listTerminalCalls, listTerminalMessages, listTerminalMessageThreads, listTerminalTransfers, recordTerminalCall, resolveFriendRequest, resolveIncomingTransfer as resolveIncomingTransferOp, resolveTerminalAppointmentRequest, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, sendTerminalVoiceMessage, simulateTerminalAppointmentAcceptance, TERMINAL_PLAYER_ID, type ContactDirection, type TerminalAppointmentAction, type TerminalAppointmentInput, type TerminalCallStatus, type TransferAction } from './core/terminal';
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
@@ -56,7 +56,7 @@ import { findMatchingHooks, syncLeadHooks, triggerHook } from './core/world/hook
 import { createEconomyOpRegistry, formatCurrency, getHousingTier, getHousingUpgradeOffer, getJobQuote, getJobShiftStatus, getRentalQuote, getShopOffer, getShopStatus, injectEconomyMorningAds, registerEconomyHooks } from './features/economy';
 import { getSoftGoals } from './features/life';
 import { canAffordEnergy, energyCostForAction, getEnergyState, movementEnergyKind, registerEnergyOps } from './features/energy';
-import { AlertTriangle, Backpack, BookOpen, Bot, BrainCircuit, Bug, CalendarDays, Camera, ContactRound, FileArchive, Gift, History, House, LogOut, MessageCircle, Milestone, Music2, NotebookPen, Palette, Phone, ReceiptText, RefreshCw, Route, Send, ShieldCheck, SlidersHorizontal, Sparkles, Target, UserRound, UsersRound, BriefcaseBusiness, Wrench } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Backpack, BookOpen, Bot, BrainCircuit, Bug, CalendarDays, Camera, ContactRound, FileArchive, Gift, History, House, LogOut, MessageCircle, Milestone, Music2, NotebookPen, Palette, Phone, Plus, ReceiptText, RefreshCw, Reply, Route, Send, ShieldCheck, SlidersHorizontal, Smile, Sparkles, Target, UserRound, UsersRound, BriefcaseBusiness, Wrench } from 'lucide-react';
 import { DesktopLauncher, EmptyState, SubpageShell, type DesktopEntry } from './components/desktop-shell';
 import { MusicApp } from './components/music-app';
 import { useMusicPlayer, type MusicPlayerController } from './features/music/player';
@@ -145,6 +145,8 @@ type DevToolReport = { title: string; body: string } | null;
 type ActiveChatPanel = 'gift' | 'collection' | 'regenerate' | 'recovery' | null;
 const ENCOUNTER_CHAT_SESSION_KEY = 'tokimeki.encounter-chat-session';
 const APP_NAME_STORAGE_KEY = 'tokimeki.appName';
+const TERMINAL_SELECTED_CONTACT_KEY = 'tokimeki.terminal.selectedContact';
+const TERMINAL_DRAFTS_KEY = 'tokimeki.terminal.drafts.v1';
 const DEFAULT_APP_NAME = 'Tokimeki';
 
 function readAppName(): string {
@@ -153,6 +155,39 @@ function readAppName(): string {
     const stored = window.localStorage.getItem(APP_NAME_STORAGE_KEY)?.trim();
     return stored ? stored.slice(0, 32) : DEFAULT_APP_NAME;
   } catch { return DEFAULT_APP_NAME; }
+}
+
+function readTerminalSelectedContact(): string {
+  if (typeof window === 'undefined') return '';
+  try { return window.localStorage.getItem(TERMINAL_SELECTED_CONTACT_KEY) ?? ''; }
+  catch { return ''; }
+}
+
+function writeTerminalSelectedContact(characterId: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (characterId) window.localStorage.setItem(TERMINAL_SELECTED_CONTACT_KEY, characterId);
+    else window.localStorage.removeItem(TERMINAL_SELECTED_CONTACT_KEY);
+  } catch { /* Local UI preference may be unavailable. */ }
+}
+
+function readTerminalDraft(characterId: string): string {
+  if (typeof window === 'undefined' || !characterId) return '';
+  try {
+    const drafts = JSON.parse(window.localStorage.getItem(TERMINAL_DRAFTS_KEY) ?? '{}') as Record<string, unknown>;
+    return typeof drafts[characterId] === 'string' ? drafts[characterId] : '';
+  } catch { return ''; }
+}
+
+function writeTerminalDraft(characterId: string, draft: string): void {
+  if (typeof window === 'undefined' || !characterId) return;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(TERMINAL_DRAFTS_KEY) ?? '{}') as Record<string, unknown>;
+    const drafts = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    if (draft) drafts[characterId] = draft;
+    else delete drafts[characterId];
+    window.localStorage.setItem(TERMINAL_DRAFTS_KEY, JSON.stringify(drafts));
+  } catch { /* Local UI preference may be unavailable. */ }
 }
 
 function readEncounterChatSession(): EncounterChatSession | null {
@@ -3487,7 +3522,7 @@ function SettingsView(props: {
     <details className="fold-card" open><summary>语音生成 · {props.ttsConfig.enabled ? '已启用' : '已关闭'}</summary><div className="fold-body"><div className="provider-card">
       <div className="list-heading"><div><span className="eyebrow">可选外部语音</span><h3>语音 API</h3></div><span className={`request-status ${props.ttsConfig.lastStatus === 'error' ? 'error' : ''}`}>{props.ttsBusy ? '请求中…' : props.ttsConfig.lastStatus === 'success' ? '最近成功' : props.ttsConfig.lastStatus === 'error' ? '最近失败' : '尚未调用'}</span></div>
       <label className="checkbox-line"><input type="checkbox" checked={props.ttsConfig.enabled} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, enabled: event.target.checked })} />启用语音生成</label>
-      <p className="io-scope">默认关闭。只有你在消息 App 中显式点击“合成并发送语音”或这里的连接测试时才调用 API；配置和 API key 只保存在当前浏览器。</p>
+      <p className="io-scope">默认关闭。消息 App 的用户侧语音合成发送入口已移除，已有语音仍可播放；这里只在你显式执行连接测试时调用 API，配置和 API key 只保存在当前浏览器。</p>
       <label>Speech 请求端点<input placeholder="https://example.com/v1/audio/speech" value={props.ttsConfig.endpoint} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, endpoint: event.target.value })} /></label>
       <label>API key（仅本地）<input type="password" value={props.ttsConfig.apiKey ?? ''} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, apiKey: event.target.value || undefined })} /></label>
       <label>语音模型<input placeholder="gpt-4o-mini-tts" value={props.ttsConfig.model} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, model: event.target.value })} /></label>
@@ -3647,14 +3682,14 @@ function ContactAvatar({ name, avatar }: { name: string; avatar?: AssetRef }) {
   return src ? <img className="contact-avatar" src={src} alt="" /> : <span className="contact-avatar contact-avatar-fallback" aria-hidden="true">{Array.from(name.trim())[0] ?? '?'}</span>;
 }
 
-function ContactsView(props: { save: SaveFile; onRequestFriend: (characterId: string, direction: ContactDirection) => void; onResolveFriend: (requestId: string, action: 'accept' | 'reject' | 'revoke') => void }) {
+function ContactsView(props: { save: SaveFile; onRequestFriend: (characterId: string, direction: ContactDirection) => void; onResolveFriend: (requestId: string, action: 'accept' | 'reject' | 'revoke') => void; onOpenMessage: (characterId: string) => void }) {
   const candidates = listContactCandidates(props.save.world, props.save.world.clock.day, props.save.world.clock.slotId, props.save.config.calendar.daysPerWeek);
   const pendingIncoming = candidates.filter((candidate) => candidate.request?.direction === 'incoming' && candidate.request.status === 'pending');
   const accepted = candidates.filter((candidate) => candidate.request?.status === 'accepted');
   const available = candidates.filter((candidate) => !candidate.request || (candidate.request.direction === 'outgoing' && candidate.request.status === 'pending'));
   const history = candidates.filter((candidate) => candidate.request && ['rejected', 'revoked'].includes(candidate.request.status));
   const locationText = (candidate: (typeof candidates)[number]) => candidate.location ? `${candidate.location.nodeName} · ${candidate.location.activity}` : '当前没有公开地点';
-  const card = (candidate: (typeof candidates)[number]) => <article className="contact-card" key={candidate.id} data-character-id={candidate.id}><ContactAvatar name={candidate.name} avatar={candidate.avatar} /><div className="contact-card-main"><strong>{candidate.name}</strong><span>{candidate.tier === 'formal' ? '正式角色' : '半正式角色 / NPC'}</span><small>{locationText(candidate)}</small></div><div className="contact-card-actions">{!candidate.request && <><button type="button" onClick={() => props.onRequestFriend(candidate.id, 'outgoing')}>我加TA</button><button type="button" className="secondary" onClick={() => props.onRequestFriend(candidate.id, 'incoming')}>TA加我</button></>}{candidate.request?.status === 'pending' && candidate.request.direction === 'outgoing' && <><span className="contact-status">已通过</span><button type="button" className="secondary" onClick={() => props.onResolveFriend(candidate.request!.id, 'revoke')}>撤回</button></>}{candidate.request?.status === 'pending' && candidate.request.direction === 'incoming' && <><button type="button" onClick={() => props.onResolveFriend(candidate.request!.id, 'accept')}>接受</button><button type="button" className="secondary" onClick={() => props.onResolveFriend(candidate.request!.id, 'reject')}>拒绝</button></>}{candidate.request?.status === 'accepted' && <span className="contact-status">已通过</span>}</div></article>;
+  const card = (candidate: (typeof candidates)[number]) => <article className="contact-card" key={candidate.id} data-character-id={candidate.id}><ContactAvatar name={candidate.name} avatar={candidate.avatar} /><div className="contact-card-main"><strong>{candidate.name}</strong><span>{candidate.tier === 'formal' ? '正式角色' : '半正式角色 / NPC'}</span><small>{locationText(candidate)}</small></div><div className="contact-card-actions">{!candidate.request && <><button type="button" onClick={() => props.onRequestFriend(candidate.id, 'outgoing')}>我加TA</button><button type="button" className="secondary" onClick={() => props.onRequestFriend(candidate.id, 'incoming')}>TA加我</button></>}{candidate.request?.status === 'pending' && candidate.request.direction === 'outgoing' && <span className="contact-status">已通过</span>}{candidate.request?.status === 'pending' && candidate.request.direction === 'incoming' && <><button type="button" onClick={() => props.onResolveFriend(candidate.request!.id, 'accept')}>接受</button><button type="button" className="secondary" onClick={() => props.onResolveFriend(candidate.request!.id, 'reject')}>拒绝</button></>}{candidate.request?.status === 'accepted' && <><span className="contact-status">已通过</span><button type="button" className="terminal-small-icon-button secondary" aria-label={`给${candidate.name}发消息`} title="发消息" onClick={() => props.onOpenMessage(candidate.id)}><MessageCircle aria-hidden="true" /></button></>}</div></article>;
   const section = (title: string, items: typeof candidates, empty: string) => <section className="contacts-section"><div className="section-heading"><h3>{title}</h3><span>{items.length}</span></div>{items.length ? items.map(card) : <p className="empty">{empty}</p>}</section>;
   return <div className="contacts-view" data-testid="terminal-contacts">{section('待加好友', available, '暂无可添加的联系人。')}{section('待处理申请', pendingIncoming, '暂无待处理申请。')}{section('已通过好友', accepted, '还没有已通过的好友。')}{section('历史申请', history, '暂无历史申请。')}</div>;
 }
@@ -3682,26 +3717,66 @@ function TerminalVoiceAudio({ asset, durationMs }: { asset?: AssetRef; durationM
   return src ? <div className="terminal-voice"><audio controls preload="metadata" src={src} /><small>{durationMs ? `${(durationMs / 1000).toFixed(1)} 秒` : '语音消息'}</small></div> : <span className="terminal-sticker-missing">语音不可用</span>;
 }
 
-function TerminalMessagesView(props: { save: SaveFile; onOpenContacts: () => void; onSendText: (characterId: string, text: string, quoteMessageId?: string) => void; onSendStickerUrl: (characterId: string, url: string, quoteMessageId?: string) => void; onSendStickerFile: (characterId: string, file?: File, quoteMessageId?: string) => Promise<void>; onGenerateReply: (characterId: string) => Promise<void>; onSendVoice: (characterId: string, text: string, requestId?: string) => Promise<void>; ttsConfig: TtsConfig; ttsBusy: boolean; onSendPlayerTransfer: (characterId: string, currencyId: string, amount: number) => void; onResolveIncomingTransfer: (requestId: string, action: TransferAction) => void; onCreateTerminalAppointment: (characterId: string, input: TerminalAppointmentInput) => void; onSimulateIncomingAppointment: (characterId: string, input: TerminalAppointmentInput) => void; onResolveTerminalAppointment: (requestId: string, action: TerminalAppointmentAction) => void; onSimulateAppointmentAcceptance: (requestId: string) => void; onConfirmTerminalAppointment: (requestId: string) => void; terminalBusy: boolean }) {
-  const candidates = listContactCandidates(props.save.world, props.save.world.clock.day, props.save.world.clock.slotId, props.save.config.calendar.daysPerWeek).filter((candidate) => candidate.request?.status === 'accepted');
+function TerminalMessagesView(props: {
+  save: SaveFile;
+  onOpenContacts: () => void;
+  onSendText: (characterId: string, text: string, quoteMessageId?: string) => void;
+  onSendStickerUrl: (characterId: string, url: string, quoteMessageId?: string) => void;
+  onSendStickerFile: (characterId: string, file?: File, quoteMessageId?: string) => Promise<void>;
+  onGenerateReply: (characterId: string) => Promise<void>;
+  onSendPlayerTransfer: (characterId: string, currencyId: string, amount: number) => void;
+  onResolveIncomingTransfer: (requestId: string, action: TransferAction) => void;
+  onCreateTerminalAppointment: (characterId: string, input: TerminalAppointmentInput) => void;
+  onSimulateIncomingAppointment: (characterId: string, input: TerminalAppointmentInput) => void;
+  onResolveTerminalAppointment: (requestId: string, action: TerminalAppointmentAction) => void;
+  onSimulateAppointmentAcceptance: (requestId: string) => void;
+  onConfirmTerminalAppointment: (requestId: string) => void;
+  terminalBusy: boolean;
+}) {
+  const candidates = listContactCandidates(props.save.world, props.save.world.clock.day, props.save.world.clock.slotId, props.save.config.calendar.daysPerWeek)
+    .filter((candidate) => candidate.request?.status === 'accepted');
+  const candidateIds = new Set(candidates.map((candidate) => candidate.id));
+  const recentThreads = listTerminalMessageThreads(props.save.world, props.save.config.calendar.slots.map((slot) => slot.id))
+    .filter((summary) => candidateIds.has(summary.characterId));
   const currencies = Object.values(props.save.world.economy.currencies);
-  const [selectedId, setSelectedId] = useState('');
-  const [draft, setDraft] = useState('');
+  const [selectedId, setSelectedId] = useState(readTerminalSelectedContact);
+  const [draft, setDraft] = useState(() => readTerminalDraft(readTerminalSelectedContact()));
   const [stickerUrl, setStickerUrl] = useState('');
   const [quoteId, setQuoteId] = useState<string>();
+  const [activePanel, setActivePanel] = useState<'stickers' | 'more' | null>(null);
   const [currencyId, setCurrencyId] = useState(props.save.world.economy.defaultCurrencyId);
   const [transferAmount, setTransferAmount] = useState('');
   const [appointmentDay, setAppointmentDay] = useState(String(props.save.world.clock.day + 1));
   const [appointmentSlotId, setAppointmentSlotId] = useState(props.save.config.calendar.slots[0]?.id ?? '');
   const [appointmentNodeId, setAppointmentNodeId] = useState(props.save.world.player.nodeId);
   const [appointmentNote, setAppointmentNote] = useState('');
-  useEffect(() => { if (!candidates.some((candidate) => candidate.id === selectedId)) setSelectedId(candidates[0]?.id ?? ''); }, [candidates, selectedId]);
+  useEffect(() => {
+    if (selectedId && !candidateIds.has(selectedId)) {
+      setSelectedId('');
+      setDraft('');
+      writeTerminalSelectedContact('');
+    }
+  }, [selectedId, candidates.map((candidate) => candidate.id).join('\u0001')]);
   useEffect(() => { if (!currencies.some((currency) => currency.id === currencyId)) setCurrencyId(currencies[0]?.id ?? ''); }, [currencies, currencyId]);
   useEffect(() => { if (!props.save.config.calendar.slots.some((slot) => slot.id === appointmentSlotId)) setAppointmentSlotId(props.save.config.calendar.slots[0]?.id ?? ''); }, [appointmentSlotId, props.save.config.calendar.slots]);
   useEffect(() => { if (!props.save.world.map.nodes[appointmentNodeId]) setAppointmentNodeId(props.save.world.player.nodeId); }, [appointmentNodeId, props.save.world.map.nodes, props.save.world.player.nodeId]);
+
+  const openThread = (characterId: string) => {
+    setSelectedId(characterId);
+    setDraft(readTerminalDraft(characterId));
+    writeTerminalSelectedContact(characterId);
+    setQuoteId(undefined);
+    setActivePanel(null);
+  };
+  const closeThread = () => {
+    setSelectedId('');
+    setDraft('');
+    writeTerminalSelectedContact('');
+    setQuoteId(undefined);
+    setActivePanel(null);
+  };
   const selected = candidates.find((candidate) => candidate.id === selectedId);
   const messages = selected ? listTerminalMessages(props.save.world, selected.id) : [];
-  const pendingVoice = selected && props.ttsConfig.pendingRequest?.characterId === selected.id ? props.ttsConfig.pendingRequest : undefined;
   const transfers = selected ? listTerminalTransfers(props.save.world, selected.id) : [];
   const pendingIncoming = transfers.filter((request) => request.direction === 'incoming' && request.status === 'pending');
   const transferHistory = transfers.filter((request) => request.direction === 'outgoing' || request.status !== 'pending').slice().reverse();
@@ -3709,10 +3784,26 @@ function TerminalMessagesView(props: { save: SaveFile; onOpenContacts: () => voi
   const appointmentInput = (): TerminalAppointmentInput => ({ day: Number(appointmentDay), slotId: appointmentSlotId, nodeId: appointmentNodeId, ...(appointmentNote.trim() ? { note: appointmentNote.trim() } : {}) });
   const currency = props.save.world.economy.currencies[currencyId];
   const balance = currency ? props.save.world.player.stats[currency.statKey] ?? 0 : 0;
-  const sendText = () => { if (!selected) return; props.onSendText(selected.id, draft, quoteId); setDraft(''); setQuoteId(undefined); };
-  const sendUrl = () => { if (!selected || !stickerUrl.trim()) return; props.onSendStickerUrl(selected.id, stickerUrl, quoteId); setStickerUrl(''); setQuoteId(undefined); };
-  if (!candidates.length) return <div className="terminal-messages-empty" data-testid="terminal-messages-empty"><EmptyState>先在联系人中成为好友，才能开始终端聊天。</EmptyState><button type="button" onClick={props.onOpenContacts}>前往联系人</button></div>;
-  const selectedRequest = selected?.request;
+  const sendText = () => {
+    if (!selected || !draft.trim()) return;
+    props.onSendText(selected.id, draft, quoteId);
+    setDraft('');
+    writeTerminalDraft(selected.id, '');
+    setQuoteId(undefined);
+  };
+  const sendUrl = () => {
+    if (!selected || !stickerUrl.trim()) return;
+    props.onSendStickerUrl(selected.id, stickerUrl, quoteId);
+    setStickerUrl('');
+    setQuoteId(undefined);
+  };
+  const messagePreview = (message: (typeof recentThreads)[number]['lastMessage']) => {
+    if (message.text?.trim()) return message.text.trim();
+    if (message.type === 'sticker') return '[表情]';
+    if (message.type === 'voice') return '[语音]';
+    if (message.type === 'transfer') return '[转账]';
+    return '[系统消息]';
+  };
   const transferLabel = (request: (typeof transfers)[number]) => {
     const requestCurrency = props.save.world.economy.currencies[request.currencyId];
     const amount = requestCurrency ? formatCurrency(request.amount, requestCurrency) : `${request.amount} ${request.currencyId}`;
@@ -3720,35 +3811,85 @@ function TerminalMessagesView(props: { save: SaveFile; onOpenContacts: () => voi
     const status = request.status === 'pending' ? '待收款' : request.status === 'accepted' ? '已完成' : '已拒绝';
     return `${direction} · ${amount} · ${status}`;
   };
-  return <div className="terminal-messages-view" data-testid="terminal-messages">
-    <div className="terminal-contact-picker"><label>好友<select value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setQuoteId(undefined); }}>{candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>{selected && <div className="terminal-friend-context">{selectedRequest?.direction === 'outgoing' ? '你发出的申请' : 'TA发来的申请'} · 第 {selectedRequest?.createdDay ?? '-'} 天成为好友</div>}</div>
-    <div className="terminal-thread" aria-live="polite">{messages.length === 0 ? <p className="empty">还没有消息，发出第一句吧。</p> : messages.map((message) => <article className={`terminal-message ${message.senderId === 'player' ? 'mine' : 'theirs'}`} key={message.id}><div className="terminal-message-meta">{message.senderId === 'player' ? '我' : selected!.name}<span>第 {message.createdDay} 天 · {message.createdSlotId}</span></div>{message.quoteMessageId && <button type="button" className="terminal-quote" onClick={() => setQuoteId(message.quoteMessageId)}>引用：{message.quotePreview}</button>}{message.type === 'sticker' ? <TerminalAssetImage asset={message.asset} /> : message.type === 'voice' ? <><TerminalVoiceAudio asset={message.asset} durationMs={message.durationMs} /><p className="terminal-voice-transcript">{message.text}</p></> : <p>{message.text}</p>}{message.senderId !== 'player' && <button type="button" className="terminal-message-quote" onClick={() => setQuoteId(message.id)}>引用</button>}</article>)}</div>
-    {quoteId && <div className="terminal-quote-draft">引用：{messages.find((message) => message.id === quoteId)?.text ?? messages.find((message) => message.id === quoteId)?.quotePreview ?? '贴图'}<button type="button" className="secondary" onClick={() => setQuoteId(undefined)}>取消引用</button></div>}
-    <div className="terminal-composer"><textarea aria-label="终端消息" placeholder="输入消息" value={draft} onChange={(event) => setDraft(event.target.value)} /><div className="button-row"><button type="button" onClick={sendText} disabled={!draft.trim()}>发送</button><button type="button" className="secondary" onClick={() => void props.onGenerateReply(selected!.id)} disabled={props.terminalBusy || messages.every((message) => message.senderId !== 'player')}>生成回复</button><button type="button" className="secondary" onClick={() => void props.onSendVoice(selected!.id, pendingVoice?.text ?? draft, pendingVoice?.requestId)} disabled={props.ttsBusy || !(pendingVoice?.text ?? draft).trim()}>{pendingVoice ? '重试语音' : '合成并发送语音'}</button><label className="file-button">发贴图<input type="file" accept="image/*" onChange={(event) => { void props.onSendStickerFile(selected!.id, event.target.files?.[0], quoteId); setQuoteId(undefined); event.currentTarget.value = ''; }} /></label></div><div className="terminal-sticker-url"><input aria-label="贴图外链" placeholder="贴图外链 URL" value={stickerUrl} onChange={(event) => setStickerUrl(event.target.value)} /><button type="button" className="secondary" onClick={sendUrl} disabled={!stickerUrl.trim()}>发送外链贴图</button></div>{pendingVoice && props.ttsConfig.lastStatus === 'error' && <p className="io-scope" role="alert">上次语音请求未完成，已保留文本，可手动重试。</p>}</div>
-    <section className="terminal-transfer-panel" aria-label="转账">
-      <div className="section-heading"><h3>转账</h3>{currency && <span>余额 {formatCurrency(balance, currency)}</span>}</div>
-      <div className="terminal-transfer-form">
-        <select aria-label="转账货币" value={currencyId} onChange={(event) => setCurrencyId(event.target.value)}>{currencies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <input aria-label="转账金额" inputMode="decimal" placeholder="金额" value={transferAmount} onChange={(event) => setTransferAmount(event.target.value)} />
-        <button type="button" onClick={() => { const amount = Number(transferAmount); if (window.confirm(`确认转给${selected!.name} ${currency ? formatCurrency(amount, currency) : transferAmount}？`)) props.onSendPlayerTransfer(selected!.id, currencyId, amount); }} disabled={!currency || !transferAmount.trim()}>转账</button>
-      </div>
-      {pendingIncoming.length > 0 && <div className="terminal-transfer-list"><h4>待收款</h4>{pendingIncoming.map((request) => <div className="terminal-transfer-row" key={request.id}><span>{transferLabel(request)}</span><div className="button-row"><button type="button" onClick={() => props.onResolveIncomingTransfer(request.id, 'accept')}>接受</button><button type="button" className="secondary" onClick={() => props.onResolveIncomingTransfer(request.id, 'reject')}>拒绝</button></div></div>)}</div>}
-      {transferHistory.length > 0 && <div className="terminal-transfer-list"><h4>转账记录</h4>{transferHistory.map((request) => <div className="terminal-transfer-row" key={request.id}><span>{transferLabel(request)}</span><small>第 {request.updatedDay} 天</small></div>)}</div>}
-    </section>
-    <section className="terminal-appointment-panel" aria-label="远程约定">
-      <div className="section-heading"><h3>远程约定</h3><span>先确认，再写入日历</span></div>
-      <div className="terminal-appointment-form">
-        <label>日期<input type="number" min={props.save.world.clock.day + 1} value={appointmentDay} onChange={(event) => setAppointmentDay(event.target.value)} /></label>
-        <label>时段<select value={appointmentSlotId} onChange={(event) => setAppointmentSlotId(event.target.value)}>{props.save.config.calendar.slots.map((slot) => <option key={slot.id} value={slot.id}>{slot.name}</option>)}</select></label>
-        <label>地点<select value={appointmentNodeId} onChange={(event) => setAppointmentNodeId(event.target.value)}>{Object.values(props.save.world.map.nodes).map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label>
-        <label>备注<input value={appointmentNote} maxLength={200} onChange={(event) => setAppointmentNote(event.target.value)} placeholder="可选" /></label>
-        <div className="button-row"><button type="button" onClick={() => { props.onCreateTerminalAppointment(selected!.id, appointmentInput()); setAppointmentNote(''); }}>发起约定</button><button type="button" className="secondary" onClick={() => props.onSimulateIncomingAppointment(selected!.id, appointmentInput())}>模拟TA提议</button></div>
-      </div>
-      {appointmentRequests.length > 0 && <div className="terminal-appointment-list">{appointmentRequests.map((request) => { const appointmentId = `terminal-appointment-${request.id}`; const inCalendar = props.save.world.appointments.some((appointment) => appointment.id === appointmentId); const status = inCalendar ? '已加入日历' : request.status === 'pending' ? '待确认' : request.status === 'accepted' ? '已同意' : request.status === 'rejected' ? '已拒绝' : '已撤回'; return <div className="terminal-appointment-row" key={request.id}><span><strong>{request.direction === 'outgoing' ? '我发起' : 'TA发起'} · 第 {request.day} 天 · {props.save.config.calendar.slots.find((slot) => slot.id === request.slotId)?.name ?? request.slotId}</strong><small>{props.save.world.map.nodes[request.nodeId]?.name ?? request.nodeId}{request.note ? ` · ${request.note}` : ''} · {status}</small></span><div className="button-row">{request.status === 'pending' && request.direction === 'outgoing' && <><button type="button" onClick={() => props.onSimulateAppointmentAcceptance(request.id)}>模拟TA同意</button><button type="button" className="secondary" onClick={() => props.onResolveTerminalAppointment(request.id, 'revoke')}>撤回</button></>}{request.status === 'pending' && request.direction === 'incoming' && <><button type="button" onClick={() => props.onResolveTerminalAppointment(request.id, 'accept')}>接受</button><button type="button" className="secondary" onClick={() => props.onResolveTerminalAppointment(request.id, 'reject')}>拒绝</button></>}{request.status === 'accepted' && !inCalendar && <button type="button" onClick={() => props.onConfirmTerminalAppointment(request.id)}>加入日历</button>}</div></div>; })}</div>}
-    </section>
+
+  if (!selected) {
+    return <div className="terminal-conversation-list" data-testid="terminal-message-list">
+      {recentThreads.length ? recentThreads.map((summary) => {
+        const candidate = candidates.find((item) => item.id === summary.characterId);
+        if (!candidate) return null;
+        return <button type="button" className="terminal-conversation-row" key={summary.characterId} onClick={() => openThread(summary.characterId)}>
+          <ContactAvatar name={candidate.name} avatar={candidate.avatar} />
+          <span className="terminal-conversation-copy"><strong>{candidate.name}</strong><small>{messagePreview(summary.lastMessage)}</small></span>
+          <time>第 {summary.lastMessage.createdDay} 天</time>
+        </button>;
+      }) : <div className="terminal-messages-empty"><EmptyState>还没有最近聊天。可以先从联系人中选择好友并发送第一条消息。</EmptyState><button type="button" onClick={props.onOpenContacts}>前往联系人</button></div>}
+    </div>;
+  }
+
+  const selectedRequest = selected.request;
+  return <div className="terminal-messages-view terminal-thread-view" data-testid="terminal-messages">
+    <header className="terminal-thread-header">
+      <button type="button" className="terminal-small-icon-button secondary" aria-label="返回最近聊天" title="返回" onClick={closeThread}><ArrowLeft aria-hidden="true" /></button>
+      <div><strong>{selected.name}</strong><small>{selectedRequest?.direction === 'outgoing' ? '你主动添加了对方' : '对方主动添加了你'} · 第 {selectedRequest?.createdDay ?? '-'} 天</small></div>
+      <button type="button" className="terminal-small-icon-button secondary" aria-label="打开更多功能" title="更多" aria-expanded={activePanel === 'more'} onClick={() => setActivePanel((current) => current === 'more' ? null : 'more')}><Plus aria-hidden="true" /></button>
+    </header>
+    <div className="terminal-thread" aria-live="polite">
+      {messages.length === 0 ? <p className="empty">还没有消息，发出第一句吧。</p> : messages.map((message) => {
+        const mine = message.senderId === TERMINAL_PLAYER_ID;
+        const body = message.type === 'sticker'
+          ? <TerminalAssetImage asset={message.asset} />
+          : message.type === 'voice'
+            ? <><TerminalVoiceAudio asset={message.asset} durationMs={message.durationMs} />{message.text && <p className="terminal-voice-transcript">{message.text}</p>}</>
+            : <p>{message.text ?? (message.type === 'transfer' ? '[转账]' : '[系统消息]')}</p>;
+        return <div className={`terminal-message-row ${mine ? 'mine' : 'theirs'}`} key={message.id}>
+          {!mine && <ContactAvatar name={selected.name} avatar={selected.avatar} />}
+          <article className="terminal-message">
+            <div className="terminal-message-meta"><span>第 {message.createdDay} 天 · {message.createdSlotId}</span></div>
+            {message.quoteMessageId && <button type="button" className="terminal-quote" onClick={() => setQuoteId(message.quoteMessageId)}>引用：{message.quotePreview}</button>}
+            {body}
+            {!mine && <button type="button" className="terminal-message-quote terminal-small-icon-button secondary" aria-label="引用这条消息" title="引用" onClick={() => setQuoteId(message.id)}><Reply aria-hidden="true" /></button>}
+          </article>
+          {mine && <ContactAvatar name={props.save.world.player.name} />}
+        </div>;
+      })}
+    </div>
+    {quoteId && <div className="terminal-quote-draft">引用：{messages.find((message) => message.id === quoteId)?.text ?? messages.find((message) => message.id === quoteId)?.quotePreview ?? '表情'}<button type="button" className="secondary" onClick={() => setQuoteId(undefined)}>取消引用</button></div>}
+    {activePanel === 'stickers' && <section className="terminal-inline-panel" aria-label="表情与贴图">
+      <label className="file-button">导入图片<input type="file" accept="image/*" onChange={(event) => { void props.onSendStickerFile(selected.id, event.target.files?.[0], quoteId); setQuoteId(undefined); event.currentTarget.value = ''; }} /></label>
+      <div className="terminal-sticker-url"><input aria-label="贴图外链" placeholder="图片外链 URL" value={stickerUrl} onChange={(event) => setStickerUrl(event.target.value)} /><button type="button" className="secondary" onClick={sendUrl} disabled={!stickerUrl.trim()}>发送</button></div>
+    </section>}
+    {activePanel === 'more' && <section className="terminal-more-panel" aria-label="更多功能">
+      <section className="terminal-transfer-panel" aria-label="转账">
+        <div className="section-heading"><h3>转账</h3>{currency && <span>余额 {formatCurrency(balance, currency)}</span>}</div>
+        <div className="terminal-transfer-form">
+          <select aria-label="转账货币" value={currencyId} onChange={(event) => setCurrencyId(event.target.value)}>{currencies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+          <input aria-label="转账金额" inputMode="decimal" placeholder="金额" value={transferAmount} onChange={(event) => setTransferAmount(event.target.value)} />
+          <button type="button" onClick={() => { const amount = Number(transferAmount); if (window.confirm(`确认转给${selected.name} ${currency ? formatCurrency(amount, currency) : transferAmount}？`)) props.onSendPlayerTransfer(selected.id, currencyId, amount); }} disabled={!currency || !transferAmount.trim()}>转账</button>
+        </div>
+        {pendingIncoming.length > 0 && <div className="terminal-transfer-list"><h4>待收款</h4>{pendingIncoming.map((request) => <div className="terminal-transfer-row" key={request.id}><span>{transferLabel(request)}</span><div className="button-row"><button type="button" onClick={() => props.onResolveIncomingTransfer(request.id, 'accept')}>接受</button><button type="button" className="secondary" onClick={() => props.onResolveIncomingTransfer(request.id, 'reject')}>拒绝</button></div></div>)}</div>}
+        {transferHistory.length > 0 && <div className="terminal-transfer-list"><h4>转账记录</h4>{transferHistory.map((request) => <div className="terminal-transfer-row" key={request.id}><span>{transferLabel(request)}</span><small>第 {request.updatedDay} 天</small></div>)}</div>}
+      </section>
+      <section className="terminal-appointment-panel" aria-label="远程约定">
+        <div className="section-heading"><h3>远程约定</h3><span>先确认，再写入日历</span></div>
+        <div className="terminal-appointment-form">
+          <label>日期<input type="number" min={props.save.world.clock.day + 1} value={appointmentDay} onChange={(event) => setAppointmentDay(event.target.value)} /></label>
+          <label>时段<select value={appointmentSlotId} onChange={(event) => setAppointmentSlotId(event.target.value)}>{props.save.config.calendar.slots.map((slot) => <option key={slot.id} value={slot.id}>{slot.name}</option>)}</select></label>
+          <label>地点<select value={appointmentNodeId} onChange={(event) => setAppointmentNodeId(event.target.value)}>{Object.values(props.save.world.map.nodes).map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label>
+          <label>备注<input value={appointmentNote} maxLength={200} onChange={(event) => setAppointmentNote(event.target.value)} placeholder="可选" /></label>
+          <div className="button-row"><button type="button" onClick={() => { props.onCreateTerminalAppointment(selected.id, appointmentInput()); setAppointmentNote(''); }}>发起约定</button><button type="button" className="secondary" onClick={() => props.onSimulateIncomingAppointment(selected.id, appointmentInput())}>模拟TA提议</button></div>
+        </div>
+        {appointmentRequests.length > 0 && <div className="terminal-appointment-list">{appointmentRequests.map((request) => { const appointmentId = `terminal-appointment-${request.id}`; const inCalendar = props.save.world.appointments.some((appointment) => appointment.id === appointmentId); const status = inCalendar ? '已加入日历' : request.status === 'pending' ? '待确认' : request.status === 'accepted' ? '已同意' : request.status === 'rejected' ? '已拒绝' : '已撤回'; return <div className="terminal-appointment-row" key={request.id}><span><strong>{request.direction === 'outgoing' ? '我发起' : 'TA发起'} · 第 {request.day} 天 · {props.save.config.calendar.slots.find((slot) => slot.id === request.slotId)?.name ?? request.slotId}</strong><small>{props.save.world.map.nodes[request.nodeId]?.name ?? request.nodeId}{request.note ? ` · ${request.note}` : ''} · {status}</small></span><div className="button-row">{request.status === 'pending' && request.direction === 'outgoing' && <><button type="button" onClick={() => props.onSimulateAppointmentAcceptance(request.id)}>模拟TA同意</button><button type="button" className="secondary" onClick={() => props.onResolveTerminalAppointment(request.id, 'revoke')}>撤回</button></>}{request.status === 'pending' && request.direction === 'incoming' && <><button type="button" onClick={() => props.onResolveTerminalAppointment(request.id, 'accept')}>接受</button><button type="button" className="secondary" onClick={() => props.onResolveTerminalAppointment(request.id, 'reject')}>拒绝</button></>}{request.status === 'accepted' && !inCalendar && <button type="button" onClick={() => props.onConfirmTerminalAppointment(request.id)}>加入日历</button>}</div></div>; })}</div>}
+      </section>
+    </section>}
+    <div className="terminal-composer">
+      <button type="button" className="terminal-small-icon-button secondary" aria-label="打开表情包" title="表情" aria-expanded={activePanel === 'stickers'} onClick={() => setActivePanel((current) => current === 'stickers' ? null : 'stickers')}><Smile aria-hidden="true" /></button>
+      <textarea aria-label="终端消息" placeholder="输入消息" rows={1} value={draft} onChange={(event) => { setDraft(event.target.value); writeTerminalDraft(selected.id, event.target.value); }} onKeyDown={(event) => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendText(); } }} />
+      <button type="button" className="terminal-small-icon-button" aria-label="发送消息" title="发送" onClick={sendText} disabled={!draft.trim()}><Send aria-hidden="true" /></button>
+      <button type="button" className="terminal-small-icon-button secondary" aria-label="生成回复" title="生成回复" onClick={() => void props.onGenerateReply(selected.id)} disabled={props.terminalBusy || messages.every((message) => message.senderId !== TERMINAL_PLAYER_ID)}><Sparkles aria-hidden="true" /></button>
+      <button type="button" className="terminal-small-icon-button secondary" aria-label="打开更多功能" title="更多" aria-expanded={activePanel === 'more'} onClick={() => setActivePanel((current) => current === 'more' ? null : 'more')}><Plus aria-hidden="true" /></button>
+    </div>
   </div>;
 }
-
 function TerminalCallsView(props: { save: SaveFile; activeCall: TerminalCallSession | null; onStartCall: (characterId: string) => void; onSimulateIncomingCall: (characterId: string) => void; onAnswerCall: () => void; onSimulateCallAnswer: () => void; onEndCall: () => void }) {
   const candidates = listContactCandidates(props.save.world, props.save.world.clock.day, props.save.world.clock.slotId, props.save.config.calendar.daysPerWeek).filter((candidate) => candidate.request?.status === 'accepted');
   const records = listTerminalCalls(props.save.world).slice().reverse();
@@ -3766,8 +3907,8 @@ function LibraryView(props: { appName: string; characters: CharacterCard[]; worl
   const entries: readonly DesktopEntry[] = LIBRARY_PAGE_DEFINITIONS;
   const pageTitle = LIBRARY_PAGE_DEFINITIONS.find((entry) => entry.id === navigation.activePage)?.pageTitle ?? '终端';
   if (!navigation.activePage) return <DesktopLauncher launcherId="terminal" title="终端" appName={props.appName} entries={entries} onOpen={(id) => navigation.onOpenPage(id as LibraryPage)} />;
-  if (navigation.activePage === 'contacts') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><ContactsView save={props.save} onRequestFriend={props.onRequestFriend} onResolveFriend={props.onResolveFriend} /></SubpageShell>;
-  if (navigation.activePage === 'messages') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><TerminalMessagesView save={props.save} onOpenContacts={() => navigation.onOpenPage('contacts')} onSendText={props.onSendTerminalText} onSendStickerUrl={props.onSendTerminalStickerUrl} onSendStickerFile={props.onSendTerminalStickerFile} onGenerateReply={props.onGenerateTerminalReply} onSendVoice={props.onSendVoice} ttsConfig={props.ttsConfig} ttsBusy={props.ttsBusy} onSendPlayerTransfer={props.onSendPlayerTransfer} onResolveIncomingTransfer={props.onResolveIncomingTransfer} onCreateTerminalAppointment={props.onCreateTerminalAppointment} onSimulateIncomingAppointment={props.onSimulateIncomingAppointment} onResolveTerminalAppointment={props.onResolveTerminalAppointment} onSimulateAppointmentAcceptance={props.onSimulateAppointmentAcceptance} onConfirmTerminalAppointment={props.onConfirmTerminalAppointment} terminalBusy={props.terminalBusy} /></SubpageShell>;
+  if (navigation.activePage === 'contacts') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><ContactsView save={props.save} onRequestFriend={props.onRequestFriend} onResolveFriend={props.onResolveFriend} onOpenMessage={(characterId) => { writeTerminalSelectedContact(characterId); navigation.onOpenPage('messages'); }} /></SubpageShell>;
+  if (navigation.activePage === 'messages') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><TerminalMessagesView save={props.save} onOpenContacts={() => navigation.onOpenPage('contacts')} onSendText={props.onSendTerminalText} onSendStickerUrl={props.onSendTerminalStickerUrl} onSendStickerFile={props.onSendTerminalStickerFile} onGenerateReply={props.onGenerateTerminalReply} onSendPlayerTransfer={props.onSendPlayerTransfer} onResolveIncomingTransfer={props.onResolveIncomingTransfer} onCreateTerminalAppointment={props.onCreateTerminalAppointment} onSimulateIncomingAppointment={props.onSimulateIncomingAppointment} onResolveTerminalAppointment={props.onResolveTerminalAppointment} onSimulateAppointmentAcceptance={props.onSimulateAppointmentAcceptance} onConfirmTerminalAppointment={props.onConfirmTerminalAppointment} terminalBusy={props.terminalBusy} /></SubpageShell>;
   if (navigation.activePage === 'calls') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><TerminalCallsView save={props.save} activeCall={props.terminalCall} onStartCall={props.onStartCall} onSimulateIncomingCall={props.onSimulateIncomingCall} onAnswerCall={props.onAnswerCall} onSimulateCallAnswer={props.onSimulateCallAnswer} onEndCall={props.onEndCall} /></SubpageShell>;
   if (navigation.activePage === 'music') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><MusicApp player={props.musicPlayer} /></SubpageShell>;
   const worldCharacters = Object.values(props.save.world.characters);

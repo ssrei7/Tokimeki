@@ -330,22 +330,47 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .contact-card-actions button { min-height: 34px; padding: 0 9px; font-size: 11px; }
 .contact-status { align-self: center; color: var(--gray-500); font-size: 11px; white-space: nowrap; }
 @media (max-width: 500px) { .contact-card { grid-template-columns: 38px minmax(0, 1fr); } .contact-avatar { width: 38px; height: 38px; } .contact-card-actions { grid-column: 1 / -1; justify-content: flex-start; } }
-.terminal-messages-view { display: grid; gap: 12px; min-height: 0; }
+.terminal-conversation-list { display: grid; align-content: start; margin: -18px -16px 0; background: var(--gray-0); }
+.terminal-conversation-row { min-width: 0; min-height: 74px; display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--gray-100); border-radius: 0; background: var(--gray-0); color: var(--gray-800); text-align: left; }
+.terminal-conversation-row:hover, .terminal-conversation-row:focus-visible { background: var(--gray-50); }
+.terminal-conversation-row .contact-avatar { width: 48px; height: 48px; border-radius: 11px; }
+.terminal-conversation-copy { min-width: 0; display: grid; gap: 5px; }
+.terminal-conversation-copy strong, .terminal-conversation-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-conversation-copy strong { font-size: 15px; }
+.terminal-conversation-copy small, .terminal-conversation-row time { color: var(--gray-400); font-size: 12px; }
+.terminal-conversation-row time { align-self: start; padding-top: 5px; white-space: nowrap; }
+.terminal-messages-view { display: grid; gap: 10px; min-height: 0; }
+.terminal-thread-view { height: calc(100dvh - 190px - var(--safe-area-top) - var(--safe-area-bottom)); min-height: 360px; max-height: 720px; grid-template-rows: auto minmax(120px, 1fr) auto auto; overflow: hidden; }
 .terminal-messages-empty { display: grid; justify-items: center; gap: 10px; padding: 30px 12px; }
-.terminal-contact-picker { display: grid; gap: 6px; }
-.terminal-contact-picker label { display: grid; gap: 5px; color: var(--gray-600); font-size: 12px; }
-.terminal-friend-context { color: var(--gray-500); font-size: 11px; }
-.terminal-thread { display: grid; gap: 9px; min-height: 220px; max-height: min(52vh, 560px); overflow-y: auto; padding: 4px 0; }
-.terminal-message { position: relative; display: grid; gap: 5px; max-width: 88%; padding: 10px 12px; border: 1px solid var(--gray-100); border-radius: 10px; background: var(--gray-0); box-shadow: var(--surface-shadow); }
-.terminal-message.mine { justify-self: end; background: var(--gray-100); }
-.terminal-message-meta { display: flex; justify-content: space-between; gap: 10px; color: var(--gray-600); font-size: 11px; font-weight: 600; }
-.terminal-message-meta span { color: var(--gray-400); font-weight: 400; }
+.terminal-thread-header { position: sticky; z-index: 5; top: calc(48px + var(--safe-area-top)); display: grid; grid-template-columns: 38px minmax(0, 1fr) 38px; align-items: center; gap: 8px; margin: -18px -16px 0; padding: 8px 16px; border-bottom: 1px solid var(--gray-100); background: rgb(250 250 250 / 0.96); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.terminal-thread-header > div { min-width: 0; display: grid; justify-items: center; gap: 2px; }
+.terminal-thread-header strong, .terminal-thread-header small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-thread-header strong { font-size: 15px; }
+.terminal-thread-header small { color: var(--gray-500); font-size: 10px; }
+.terminal-small-icon-button { width: 38px; min-width: 38px; min-height: 38px; display: inline-grid; place-items: center; padding: 0; border-radius: 50%; }
+.terminal-small-icon-button svg { width: 19px; height: 19px; }
+.terminal-thread { display: grid; align-content: start; gap: 14px; min-height: 220px; overflow-y: auto; overscroll-behavior: contain; padding: 12px 1px; background: var(--gray-50); }
+.terminal-message-row { display: grid; grid-template-columns: 38px minmax(0, 1fr) 38px; align-items: start; gap: 8px; padding: 0 8px; }
+.terminal-message-row.theirs .terminal-message { grid-column: 2; justify-self: start; }
+.terminal-message-row.mine .terminal-message { grid-column: 2; justify-self: end; background: var(--gray-700); color: var(--gray-0); }
+.terminal-message-row.mine > .contact-avatar { grid-column: 3; grid-row: 1; }
+.terminal-message-row .contact-avatar { width: 38px; height: 38px; border-radius: 9px; }
+.terminal-message { position: relative; min-width: 54px; max-width: min(100%, 520px); display: grid; gap: 6px; padding: 9px 11px; border: 1px solid var(--gray-100); border-radius: 9px; background: var(--gray-0); box-shadow: 0 1px 2px rgb(23 23 23 / 0.07); }
+.terminal-message-row.theirs .terminal-message::before, .terminal-message-row.mine .terminal-message::after { content: ''; position: absolute; top: 11px; width: 8px; height: 8px; transform: rotate(45deg); }
+.terminal-message-row.theirs .terminal-message::before { left: -5px; border-left: 1px solid var(--gray-100); border-bottom: 1px solid var(--gray-100); background: var(--gray-0); }
+.terminal-message-row.mine .terminal-message::after { right: -5px; background: var(--gray-700); }
+.terminal-message-meta { display: flex; justify-content: flex-end; color: var(--gray-400); font-size: 10px; }
+.terminal-message-row.mine .terminal-message-meta { color: var(--gray-200); }
 .terminal-message p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
-.terminal-message-quote, .terminal-quote { min-height: 28px; padding: 0 8px; border: 1px solid var(--gray-200); background: transparent; color: var(--gray-600); font-size: 11px; text-align: left; }
+.terminal-message-quote { justify-self: end; width: 30px; min-width: 30px; min-height: 28px; }
+.terminal-quote { min-height: 30px; padding: 5px 8px; border: 0; border-left: 2px solid var(--gray-300); border-radius: 4px; background: var(--gray-50); color: var(--gray-600); font-size: 11px; text-align: left; }
+.terminal-message-row.mine .terminal-quote { background: rgb(255 255 255 / 0.12); color: var(--gray-100); }
 .terminal-quote-draft { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-left: 3px solid var(--gray-500); background: var(--gray-50); color: var(--gray-600); font-size: 12px; }
 .terminal-quote-draft button { flex: 0 0 auto; min-height: 30px; }
-.terminal-composer { display: grid; gap: 7px; }
-.terminal-composer textarea { min-height: 70px; resize: vertical; }
+.terminal-composer { position: sticky; z-index: 4; bottom: 0; display: grid; grid-template-columns: 38px minmax(70px, 1fr) 38px 38px 38px; align-items: end; gap: 6px; margin: 0 -16px -16px; padding: 8px 12px calc(8px + var(--safe-area-bottom)); border-top: 1px solid var(--gray-100); background: rgb(250 250 250 / 0.98); }
+.terminal-composer textarea { min-height: 38px; max-height: 116px; padding: 8px 10px; resize: none; }
+.terminal-inline-panel, .terminal-more-panel { display: grid; gap: 10px; padding: 10px; border: 1px solid var(--gray-100); border-radius: 10px; background: var(--gray-0); box-shadow: var(--surface-shadow); }
+.terminal-more-panel { max-height: min(52dvh, 520px); overflow-y: auto; }
 .terminal-sticker-url { display: flex; gap: 7px; }
 .terminal-sticker-url input { min-width: 0; flex: 1; }
 .terminal-sticker-url button { flex: 0 0 auto; }
@@ -355,6 +380,7 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .terminal-voice audio { width: min(240px, 100%); height: 36px; }
 .terminal-voice small, .terminal-voice-transcript { color: var(--gray-500); font-size: 11px; }
 .terminal-voice-transcript { white-space: pre-wrap; }
+@media (max-width: 500px) { .terminal-conversation-list { margin-inline: -16px; } .terminal-conversation-row { grid-template-columns: 46px minmax(0, 1fr) auto; padding-inline: 12px; } .terminal-conversation-row .contact-avatar { width: 46px; height: 46px; } .terminal-message-row { grid-template-columns: 34px minmax(0, 1fr) 34px; gap: 6px; padding-inline: 3px; } .terminal-message-row .contact-avatar { width: 34px; height: 34px; } .terminal-composer { grid-template-columns: 36px minmax(58px, 1fr) repeat(3, 36px); gap: 4px; padding-inline: 8px; } .terminal-small-icon-button { width: 36px; min-width: 36px; min-height: 36px; } }
 .terminal-transfer-panel { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--gray-200); }
 .terminal-transfer-panel .section-heading { margin: 0; }
 .terminal-transfer-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, 120px); gap: 7px; }

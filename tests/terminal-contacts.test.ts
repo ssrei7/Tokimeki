@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTerminalReplyPrompt, createFriendRequest, createIncomingTransferProposal, createTerminalOpRegistry, listContactCandidates, listTerminalMessages, listTerminalTransfers, resolveFriendRequest, resolveIncomingTransfer, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, simulateFriendAcceptance } from '../src/core/terminal';
+import { buildTerminalReplyPrompt, createFriendRequest, createIncomingTransferProposal, createTerminalOpRegistry, listContactCandidates, listTerminalMessages, listTerminalMessageThreads, listTerminalTransfers, resolveFriendRequest, resolveIncomingTransfer, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, simulateFriendAcceptance } from '../src/core/terminal';
 import { migrateSave } from '../src/data/migrations';
 import { exportSaveZip, importSaveZip } from '../src/data/io/zip';
 import { CURRENT_SCHEMA_VERSION } from '../src/data/schema/save';
@@ -88,6 +88,19 @@ describe('terminal contacts', () => {
     const prompt = buildTerminalReplyPrompt(save.world, 'semi');
     expect(prompt[0]?.content).toContain('对方主动添加了玩家');
     expect(prompt.at(-1)).toEqual({ role: 'user', content: '在吗' });
+  });
+
+  it('lists only existing terminal threads in deterministic most-recent order', () => {
+    const save = makeSave();
+    createFriendRequest(save.world, 'formal', 'outgoing');
+    createFriendRequest(save.world, 'semi', 'incoming');
+    createFriendRequest(save.world, 'npc', 'outgoing');
+    sendTerminalTextMessage(save.world, 'formal', '较早', 2, 'morning');
+    sendTerminalTextMessage(save.world, 'semi', '同日较晚', 2, 'night');
+    expect(listTerminalMessageThreads(save.world, ['morning', 'afternoon', 'night']).map((thread) => thread.characterId)).toEqual(['semi', 'formal']);
+    sendTerminalTextMessage(save.world, 'formal', '最新', 3, 'morning');
+    expect(listTerminalMessageThreads(save.world, ['morning', 'afternoon', 'night']).map((thread) => thread.characterId)).toEqual(['formal', 'semi']);
+    expect(listTerminalMessageThreads(save.world, ['morning', 'afternoon', 'night']).some((thread) => thread.characterId === 'npc')).toBe(false);
   });
 
   it('treats legacy outgoing pending requests as accepted without changing legacy incoming intent', () => {

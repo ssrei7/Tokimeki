@@ -172,6 +172,25 @@ describe('library desktop', () => {
     expect(source).toContain('createTerminalOpRegistry');
   });
 
+  it('uses a recent-conversation list and icon-based terminal thread composer', () => {
+    const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    const css = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
+    expect(source).toContain('data-testid="terminal-message-list"');
+    expect(source).toContain('listTerminalMessageThreads');
+    expect(source).toContain('TERMINAL_SELECTED_CONTACT_KEY');
+    expect(source).toContain('TERMINAL_DRAFTS_KEY');
+    expect(source).toContain('返回最近聊天');
+    expect(source).toContain("event.key === 'Enter' && !event.shiftKey");
+    expect(source).toContain('aria-label="发送消息"');
+    expect(source).toContain('aria-label="生成回复"');
+    expect(source).toContain('aria-label="打开表情包"');
+    expect(source).toContain('aria-label="打开更多功能"');
+    expect(source).not.toContain('合成并发送语音');
+    expect(css).toContain('.terminal-conversation-row');
+    expect(css).toContain('.terminal-message-row.mine');
+    expect(css).toContain('.terminal-thread-header { position: sticky');
+  });
+
   it('exposes the local call shell without API wiring', () => {
     const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     expect(source).toContain('data-testid="terminal-calls"');
