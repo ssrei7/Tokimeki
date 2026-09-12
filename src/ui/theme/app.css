@@ -11,6 +11,11 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .topbar > div { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .topbar h1, h2, h3, p { margin: 0; }
 .topbar h1 { font-size: 14px; line-height: 1.15; }
+.app-name-trigger { min-height: 0; padding: 0; background: transparent; color: var(--gray-900); text-align: left; }
+.app-name-trigger h1 { font-size: 14px; line-height: 1.15; }
+.app-name-editor { display: flex; align-items: center; gap: 4px; }
+.app-name-editor input { width: min(180px, 46vw); min-height: 32px; padding: 4px 7px; border: 1px solid var(--gray-300); border-radius: 6px; background: var(--gray-0); color: var(--gray-900); font-size: 14px; }
+.app-name-editor button { min-height: 32px; padding: 0 8px; font-size: 11px; }
 .topbar-context { color: var(--gray-500); font-size: 12px; font-weight: 500; }
 .topbar small, .eyebrow { color: var(--gray-500); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
 .screen { flex: 1; min-height: 0; padding: 16px 16px var(--app-bottom-nav-space); overflow: auto; }
@@ -23,6 +28,10 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .subpage-shell > .page-header { position: sticky; z-index: 6; top: -16px; margin: -16px -16px 18px; padding: calc(16px + var(--safe-area-top)) 16px 10px; border-bottom: 1px solid var(--gray-100); background: rgb(250 250 250 / 0.96); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .page-header h2 { margin-top: 3px; font-size: 20px; line-height: 1.2; }
 .desktop-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--desktop-grid-row-gap) var(--desktop-grid-column-gap); align-items: start; }
+.desktop-pagination { display: flex; justify-content: center; align-items: center; gap: 7px; margin: 18px 0 4px; }
+.desktop-pagination button { width: 26px; min-width: 26px; height: 28px; min-height: 28px; display: grid; place-items: center; padding: 0; border: 0; background: transparent; }
+.desktop-pagination button span { width: 18px; height: 4px; display: block; border-radius: 999px; background: var(--gray-300); transition: width 140ms ease, background-color 140ms ease; }
+.desktop-pagination button.active span { width: 28px; background: var(--gray-700); }
 .desktop-app-icon { position: relative; min-width: 0; min-height: calc(var(--desktop-icon-size) + 38px); display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 0 2px; border: 0; border-radius: var(--desktop-icon-radius); background: transparent; color: var(--gray-700); box-shadow: none; }
 .desktop-app-icon:hover { background: transparent; }
 .desktop-app-icon:focus-visible { background: transparent; }

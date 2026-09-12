@@ -12,8 +12,15 @@ export type DesktopEntry = {
   tone?: 'blue' | 'green' | 'amber' | 'rose' | 'violet' | 'gray';
 };
 
-export function DesktopLauncher({ title, entries, onOpen, wallpaperUrl }: { title: string; entries: readonly DesktopEntry[]; onOpen: (id: string) => void; wallpaperUrl?: string }) {
+const DESKTOP_PAGE_ROWS = 3;
+
+export function DesktopLauncher({ title, entries, onOpen, wallpaperUrl, appName = 'Tokimeki' }: { title: string; entries: readonly DesktopEntry[]; onOpen: (id: string) => void; wallpaperUrl?: string; appName?: string }) {
   const [contrast, setContrast] = useState<DesktopIconContrast | null>(null);
+  const [columns, setColumns] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 700px)').matches ? 6 : 4);
+  const [page, setPage] = useState(0);
+  const pageSize = columns * DESKTOP_PAGE_ROWS;
+  const pageCount = Math.max(1, Math.ceil(entries.length / pageSize));
+  const visibleEntries = entries.slice(page * pageSize, (page + 1) * pageSize);
   useEffect(() => {
     let cancelled = false;
     if (!wallpaperUrl) { setContrast(null); return () => { cancelled = true; }; }
@@ -22,6 +29,15 @@ export function DesktopLauncher({ title, entries, onOpen, wallpaperUrl }: { titl
     });
     return () => { cancelled = true; };
   }, [wallpaperUrl]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const media = window.matchMedia('(min-width: 700px)');
+    const updateColumns = () => setColumns(media.matches ? 6 : 4);
+    updateColumns();
+    media.addEventListener?.('change', updateColumns);
+    return () => media.removeEventListener?.('change', updateColumns);
+  }, []);
+  useEffect(() => { setPage((current) => Math.min(current, pageCount - 1)); }, [pageCount]);
   const style = contrast ? {
     '--desktop-icon-ink': contrast.ink,
     '--desktop-icon-label': contrast.label,
@@ -29,10 +45,11 @@ export function DesktopLauncher({ title, entries, onOpen, wallpaperUrl }: { titl
     '--desktop-icon-shadow': contrast.shadow,
   } as CSSProperties : undefined;
   return <section className="desktop-launcher" aria-label={title} style={style}>
-    <PageHeader eyebrow="Tokimeki" title={title} />
+    <PageHeader eyebrow={appName} title={title} />
     <div className="desktop-grid">
-      {entries.map((entry) => <DesktopAppIcon key={entry.id} entry={entry} onOpen={onOpen} />)}
+      {visibleEntries.map((entry) => <DesktopAppIcon key={entry.id} entry={entry} onOpen={onOpen} />)}
     </div>
+    {pageCount > 1 && <nav className="desktop-pagination" aria-label="桌面页码">{Array.from({ length: pageCount }, (_, index) => <button key={index} type="button" className={index === page ? 'active' : ''} aria-label={`第 ${index + 1} 页`} aria-current={index === page ? 'page' : undefined} onClick={() => setPage(index)}><span aria-hidden="true" /></button>)}</nav>}
   </section>;
 }
 
