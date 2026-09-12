@@ -185,10 +185,14 @@ describe('library desktop', () => {
     expect(source).toContain('aria-label="生成回复"');
     expect(source).toContain('aria-label="打开表情包"');
     expect(source).toContain('aria-label="打开更多功能"');
+    expect(source).toContain('aria-label="转账"');
+    expect(source).toContain('aria-label="远程约定"');
+    expect(source).not.toContain('第 {message.createdDay} 天 · {message.createdSlotId}');
+    expect(source).not.toContain('你主动添加了对方');
     expect(source).not.toContain('合成并发送语音');
     expect(css).toContain('.terminal-conversation-row');
     expect(css).toContain('.terminal-message-row.mine');
-    expect(css).toContain('.terminal-thread-header { position: sticky');
+    expect(css).toContain('.terminal-thread-header { position: relative');
   });
 
   it('exposes the local call shell without API wiring', () => {

@@ -2629,7 +2629,7 @@ export function App() {
   return <div className="app-shell">
     <audio ref={musicPlayer.audioRef} preload="metadata" aria-hidden="true" />
     {tab !== 'map' && <header className={`topbar ${tab === 'chat' ? 'chat-topbar' : ''}`}><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small>{editingAppName ? <form className="app-name-editor" onSubmit={(event) => { event.preventDefault(); saveAppName(); }}><input aria-label="应用名称" value={appNameDraft} maxLength={32} autoFocus onChange={(event) => setAppNameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setAppNameDraft(appName); setEditingAppName(false); } }} /><button type="submit" className="app-name-save">保存</button><button type="button" className="app-name-cancel" onClick={() => { setAppNameDraft(appName); setEditingAppName(false); }}>取消</button></form> : <button type="button" className="app-name-trigger" aria-label="编辑应用名称" title="编辑应用名称" onClick={() => { setAppNameDraft(appName); setEditingAppName(true); }}><h1>{appName}{tab === 'chat' && <span className="topbar-context"> · 面对面</span>}</h1></button>}</div></header>}
-    <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''} ${tab === 'map' ? 'map-screen-host' : ''}`}>
+    <main className={`screen ${tab === 'chat' ? 'chat-screen-host' : ''} ${tab === 'map' ? 'map-screen-host' : ''} ${tab === 'library' && libraryPage === 'messages' ? 'terminal-message-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView {...dayViewProps} activePage={dayPage} onOpenPage={setDayPage} onBack={() => setDayPage(null)} />}
@@ -3744,6 +3744,7 @@ function TerminalMessagesView(props: {
   const [stickerUrl, setStickerUrl] = useState('');
   const [quoteId, setQuoteId] = useState<string>();
   const [activePanel, setActivePanel] = useState<'stickers' | 'more' | null>(null);
+  const [moreTool, setMoreTool] = useState<'transfer' | 'appointment'>('transfer');
   const [currencyId, setCurrencyId] = useState(props.save.world.economy.defaultCurrencyId);
   const [transferAmount, setTransferAmount] = useState('');
   const [appointmentDay, setAppointmentDay] = useState(String(props.save.world.clock.day + 1));
@@ -3826,11 +3827,10 @@ function TerminalMessagesView(props: {
     </div>;
   }
 
-  const selectedRequest = selected.request;
   return <div className="terminal-messages-view terminal-thread-view" data-testid="terminal-messages">
     <header className="terminal-thread-header">
       <button type="button" className="terminal-small-icon-button secondary" aria-label="返回最近聊天" title="返回" onClick={closeThread}><ArrowLeft aria-hidden="true" /></button>
-      <div><strong>{selected.name}</strong><small>{selectedRequest?.direction === 'outgoing' ? '你主动添加了对方' : '对方主动添加了你'} · 第 {selectedRequest?.createdDay ?? '-'} 天</small></div>
+      <div><strong>{selected.name}</strong></div>
       <button type="button" className="terminal-small-icon-button secondary" aria-label="打开更多功能" title="更多" aria-expanded={activePanel === 'more'} onClick={() => setActivePanel((current) => current === 'more' ? null : 'more')}><Plus aria-hidden="true" /></button>
     </header>
     <div className="terminal-thread" aria-live="polite">
@@ -3844,7 +3844,6 @@ function TerminalMessagesView(props: {
         return <div className={`terminal-message-row ${mine ? 'mine' : 'theirs'}`} key={message.id}>
           {!mine && <ContactAvatar name={selected.name} avatar={selected.avatar} />}
           <article className="terminal-message">
-            <div className="terminal-message-meta"><span>第 {message.createdDay} 天 · {message.createdSlotId}</span></div>
             {message.quoteMessageId && <button type="button" className="terminal-quote" onClick={() => setQuoteId(message.quoteMessageId)}>引用：{message.quotePreview}</button>}
             {body}
             {!mine && <button type="button" className="terminal-message-quote terminal-small-icon-button secondary" aria-label="引用这条消息" title="引用" onClick={() => setQuoteId(message.id)}><Reply aria-hidden="true" /></button>}
@@ -3859,6 +3858,11 @@ function TerminalMessagesView(props: {
       <div className="terminal-sticker-url"><input aria-label="贴图外链" placeholder="图片外链 URL" value={stickerUrl} onChange={(event) => setStickerUrl(event.target.value)} /><button type="button" className="secondary" onClick={sendUrl} disabled={!stickerUrl.trim()}>发送</button></div>
     </section>}
     {activePanel === 'more' && <section className="terminal-more-panel" aria-label="更多功能">
+      <div className="terminal-more-actions" role="toolbar" aria-label="终端辅助功能">
+        <button type="button" className={`terminal-small-icon-button ${moreTool === 'transfer' ? '' : 'secondary'}`} aria-label="转账" title="转账" aria-pressed={moreTool === 'transfer'} onClick={() => setMoreTool('transfer')}><ReceiptText aria-hidden="true" /></button>
+        <button type="button" className={`terminal-small-icon-button ${moreTool === 'appointment' ? '' : 'secondary'}`} aria-label="远程约定" title="远程约定" aria-pressed={moreTool === 'appointment'} onClick={() => setMoreTool('appointment')}><CalendarDays aria-hidden="true" /></button>
+      </div>
+      {moreTool === 'transfer' && <>
       <section className="terminal-transfer-panel" aria-label="转账">
         <div className="section-heading"><h3>转账</h3>{currency && <span>余额 {formatCurrency(balance, currency)}</span>}</div>
         <div className="terminal-transfer-form">
@@ -3869,6 +3873,8 @@ function TerminalMessagesView(props: {
         {pendingIncoming.length > 0 && <div className="terminal-transfer-list"><h4>待收款</h4>{pendingIncoming.map((request) => <div className="terminal-transfer-row" key={request.id}><span>{transferLabel(request)}</span><div className="button-row"><button type="button" onClick={() => props.onResolveIncomingTransfer(request.id, 'accept')}>接受</button><button type="button" className="secondary" onClick={() => props.onResolveIncomingTransfer(request.id, 'reject')}>拒绝</button></div></div>)}</div>}
         {transferHistory.length > 0 && <div className="terminal-transfer-list"><h4>转账记录</h4>{transferHistory.map((request) => <div className="terminal-transfer-row" key={request.id}><span>{transferLabel(request)}</span><small>第 {request.updatedDay} 天</small></div>)}</div>}
       </section>
+      </>}
+      {moreTool === 'appointment' && <>
       <section className="terminal-appointment-panel" aria-label="远程约定">
         <div className="section-heading"><h3>远程约定</h3><span>先确认，再写入日历</span></div>
         <div className="terminal-appointment-form">
@@ -3880,6 +3886,7 @@ function TerminalMessagesView(props: {
         </div>
         {appointmentRequests.length > 0 && <div className="terminal-appointment-list">{appointmentRequests.map((request) => { const appointmentId = `terminal-appointment-${request.id}`; const inCalendar = props.save.world.appointments.some((appointment) => appointment.id === appointmentId); const status = inCalendar ? '已加入日历' : request.status === 'pending' ? '待确认' : request.status === 'accepted' ? '已同意' : request.status === 'rejected' ? '已拒绝' : '已撤回'; return <div className="terminal-appointment-row" key={request.id}><span><strong>{request.direction === 'outgoing' ? '我发起' : 'TA发起'} · 第 {request.day} 天 · {props.save.config.calendar.slots.find((slot) => slot.id === request.slotId)?.name ?? request.slotId}</strong><small>{props.save.world.map.nodes[request.nodeId]?.name ?? request.nodeId}{request.note ? ` · ${request.note}` : ''} · {status}</small></span><div className="button-row">{request.status === 'pending' && request.direction === 'outgoing' && <><button type="button" onClick={() => props.onSimulateAppointmentAcceptance(request.id)}>模拟TA同意</button><button type="button" className="secondary" onClick={() => props.onResolveTerminalAppointment(request.id, 'revoke')}>撤回</button></>}{request.status === 'pending' && request.direction === 'incoming' && <><button type="button" onClick={() => props.onResolveTerminalAppointment(request.id, 'accept')}>接受</button><button type="button" className="secondary" onClick={() => props.onResolveTerminalAppointment(request.id, 'reject')}>拒绝</button></>}{request.status === 'accepted' && !inCalendar && <button type="button" onClick={() => props.onConfirmTerminalAppointment(request.id)}>加入日历</button>}</div></div>; })}</div>}
       </section>
+      </>}
     </section>}
     <div className="terminal-composer">
       <button type="button" className="terminal-small-icon-button secondary" aria-label="打开表情包" title="表情" aria-expanded={activePanel === 'stickers'} onClick={() => setActivePanel((current) => current === 'stickers' ? null : 'stickers')}><Smile aria-hidden="true" /></button>

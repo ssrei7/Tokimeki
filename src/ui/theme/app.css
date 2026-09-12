@@ -21,6 +21,9 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .screen { flex: 1; min-height: 0; padding: 16px 16px var(--app-bottom-nav-space); overflow: auto; }
 .screen.chat-screen-host { display: flex; flex-direction: column; overflow: hidden; padding: 4px 8px var(--chat-bottom-nav-space); }
 .screen.map-screen-host { display: flex; flex-direction: column; overflow: hidden; padding: calc(8px + var(--safe-area-top)) 12px calc(70px + var(--safe-area-bottom)); }
+.screen.terminal-message-screen-host { display: flex; flex-direction: column; overflow: hidden; padding: 16px 16px calc(var(--bottom-nav-height) + var(--safe-area-bottom) + 2px); }
+.terminal-message-screen-host .subpage-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.terminal-message-screen-host .subpage-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
 .section-heading h2 { margin-top: 4px; }
 .desktop-launcher { min-height: 100%; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
@@ -330,7 +333,7 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .contact-card-actions button { min-height: 34px; padding: 0 9px; font-size: 11px; }
 .contact-status { align-self: center; color: var(--gray-500); font-size: 11px; white-space: nowrap; }
 @media (max-width: 500px) { .contact-card { grid-template-columns: 38px minmax(0, 1fr); } .contact-avatar { width: 38px; height: 38px; } .contact-card-actions { grid-column: 1 / -1; justify-content: flex-start; } }
-.terminal-conversation-list { display: grid; align-content: start; margin: -18px -16px 0; background: var(--gray-0); }
+.terminal-conversation-list { flex: 1; min-height: 0; display: grid; align-content: start; overflow-y: auto; margin: -18px -16px 0; background: var(--gray-0); }
 .terminal-conversation-row { min-width: 0; min-height: 74px; display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--gray-100); border-radius: 0; background: var(--gray-0); color: var(--gray-800); text-align: left; }
 .terminal-conversation-row:hover, .terminal-conversation-row:focus-visible { background: var(--gray-50); }
 .terminal-conversation-row .contact-avatar { width: 48px; height: 48px; border-radius: 11px; }
@@ -340,13 +343,12 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .terminal-conversation-copy small, .terminal-conversation-row time { color: var(--gray-400); font-size: 12px; }
 .terminal-conversation-row time { align-self: start; padding-top: 5px; white-space: nowrap; }
 .terminal-messages-view { display: grid; gap: 10px; min-height: 0; }
-.terminal-thread-view { height: calc(100dvh - 190px - var(--safe-area-top) - var(--safe-area-bottom)); min-height: 360px; max-height: 720px; grid-template-rows: auto minmax(120px, 1fr) auto auto; overflow: hidden; }
+.terminal-thread-view { flex: 1; height: auto; min-height: 0; max-height: none; grid-template-rows: auto minmax(120px, 1fr) auto auto; overflow: hidden; }
 .terminal-messages-empty { display: grid; justify-items: center; gap: 10px; padding: 30px 12px; }
-.terminal-thread-header { position: sticky; z-index: 5; top: calc(48px + var(--safe-area-top)); display: grid; grid-template-columns: 38px minmax(0, 1fr) 38px; align-items: center; gap: 8px; margin: -18px -16px 0; padding: 8px 16px; border-bottom: 1px solid var(--gray-100); background: rgb(250 250 250 / 0.96); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.terminal-thread-header { position: relative; z-index: 5; display: grid; grid-template-columns: 38px minmax(0, 1fr) 38px; align-items: center; gap: 8px; margin: -18px -16px 0; padding: 8px 16px; border-bottom: 1px solid var(--gray-100); background: rgb(250 250 250 / 0.96); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .terminal-thread-header > div { min-width: 0; display: grid; justify-items: center; gap: 2px; }
-.terminal-thread-header strong, .terminal-thread-header small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-thread-header strong { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .terminal-thread-header strong { font-size: 15px; }
-.terminal-thread-header small { color: var(--gray-500); font-size: 10px; }
 .terminal-small-icon-button { width: 38px; min-width: 38px; min-height: 38px; display: inline-grid; place-items: center; padding: 0; border-radius: 50%; }
 .terminal-small-icon-button svg { width: 19px; height: 19px; }
 .terminal-thread { display: grid; align-content: start; gap: 14px; min-height: 220px; overflow-y: auto; overscroll-behavior: contain; padding: 12px 1px; background: var(--gray-50); }
@@ -359,18 +361,17 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .terminal-message-row.theirs .terminal-message::before, .terminal-message-row.mine .terminal-message::after { content: ''; position: absolute; top: 11px; width: 8px; height: 8px; transform: rotate(45deg); }
 .terminal-message-row.theirs .terminal-message::before { left: -5px; border-left: 1px solid var(--gray-100); border-bottom: 1px solid var(--gray-100); background: var(--gray-0); }
 .terminal-message-row.mine .terminal-message::after { right: -5px; background: var(--gray-700); }
-.terminal-message-meta { display: flex; justify-content: flex-end; color: var(--gray-400); font-size: 10px; }
-.terminal-message-row.mine .terminal-message-meta { color: var(--gray-200); }
 .terminal-message p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
 .terminal-message-quote { justify-self: end; width: 30px; min-width: 30px; min-height: 28px; }
 .terminal-quote { min-height: 30px; padding: 5px 8px; border: 0; border-left: 2px solid var(--gray-300); border-radius: 4px; background: var(--gray-50); color: var(--gray-600); font-size: 11px; text-align: left; }
 .terminal-message-row.mine .terminal-quote { background: rgb(255 255 255 / 0.12); color: var(--gray-100); }
 .terminal-quote-draft { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-left: 3px solid var(--gray-500); background: var(--gray-50); color: var(--gray-600); font-size: 12px; }
 .terminal-quote-draft button { flex: 0 0 auto; min-height: 30px; }
-.terminal-composer { position: sticky; z-index: 4; bottom: 0; display: grid; grid-template-columns: 38px minmax(70px, 1fr) 38px 38px 38px; align-items: end; gap: 6px; margin: 0 -16px -16px; padding: 8px 12px calc(8px + var(--safe-area-bottom)); border-top: 1px solid var(--gray-100); background: rgb(250 250 250 / 0.98); }
+.terminal-composer { position: relative; z-index: 4; display: grid; grid-template-columns: 38px minmax(70px, 1fr) 38px 38px 38px; align-items: end; gap: 6px; margin: 0 -16px; padding: 6px 12px; border-top: 1px solid var(--gray-100); background: rgb(250 250 250 / 0.98); }
 .terminal-composer textarea { min-height: 38px; max-height: 116px; padding: 8px 10px; resize: none; }
 .terminal-inline-panel, .terminal-more-panel { display: grid; gap: 10px; padding: 10px; border: 1px solid var(--gray-100); border-radius: 10px; background: var(--gray-0); box-shadow: var(--surface-shadow); }
 .terminal-more-panel { max-height: min(52dvh, 520px); overflow-y: auto; }
+.terminal-more-actions { display: flex; gap: 7px; padding-bottom: 2px; border-bottom: 1px solid var(--gray-100); }
 .terminal-sticker-url { display: flex; gap: 7px; }
 .terminal-sticker-url input { min-width: 0; flex: 1; }
 .terminal-sticker-url button { flex: 0 0 auto; }
