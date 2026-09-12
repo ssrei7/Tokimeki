@@ -3878,8 +3878,8 @@ function TerminalMessagesView(props: {
             {message.quoteMessageId && <button type="button" className="terminal-quote" onClick={() => setQuoteId(message.quoteMessageId)}>引用：{message.quotePreview}</button>}
             {body}
             <div className="terminal-message-actions" onPointerDown={(event) => event.stopPropagation()}>
-              <button type="button" className="terminal-message-quote terminal-small-icon-button secondary" aria-label="引用这条消息" title="引用" onClick={() => setQuoteId(message.id)}><Reply aria-hidden="true" /></button>
               {messageMenuId === message.id && !editingMessageId && <div className="terminal-message-menu" role="menu">
+                <button type="button" aria-label="引用这条消息" onClick={() => { setQuoteId(message.id); cancelMessageMenu(); }}><Reply aria-hidden="true" /><span>引用</span></button>
                 <button type="button" onClick={() => startMessageEdit(message)}>编辑</button>
                 <button type="button" className="danger" onClick={() => { if (window.confirm('删除这条消息？')) { props.onDeleteMessage(selected.id, message.id); cancelMessageMenu(); } }}>删除</button>
                 <button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button>
