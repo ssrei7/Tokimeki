@@ -340,9 +340,12 @@ export function App() {
           setChatEncounterEntryId(session.entryId ?? '');
           setChatParticipantIds(session.participantIds);
           setSelectedCharacterId(session.characterId);
-          setTopicMode(session.mode);
           setLastResponseSource(session.lastResponseSource ?? null);
-          setTopicTree(parsedSave.world.topicTrees[topicTreeKey(session.characterId, session.nodeId)] ?? null);
+          const restoredTopicTree = parsedSave.world.topicTrees[topicTreeKey(session.characterId, session.nodeId)] ?? null;
+          const restoredMode = session.mode === 'topics' && !restoredTopicTree ? 'manual' : session.mode;
+          setTopicMode(restoredMode);
+          setTopicTree(restoredTopicTree);
+          if (restoredMode !== session.mode) writeEncounterChatSession({ ...session, mode: restoredMode });
         } else if (session) writeEncounterChatSession(null);
       } else {
         void saveCurrentSave(defaultSave);
