@@ -74,6 +74,15 @@ describe('settings desktop', () => {
     }
   });
 
+  it('keeps face-to-face nameplates in the grayscale theme and pins subpage headers', () => {
+    const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    const appCss = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
+    expect(source).toContain("const accentColor = 'var(--gray-600)';");
+    expect(source).not.toContain("'--vn-line-accent': lineAccentColor");
+    expect(appCss).toMatch(/\.subpage-shell\s*>\s*\.page-header\s*\{[^}]*position:\s*sticky/);
+    expect(appCss).toContain('backdrop-filter: blur(12px)');
+  });
+
   it('uses a shared grayscale glass treatment for desktop icons', () => {
     const themeCss = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
     const appCss = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
