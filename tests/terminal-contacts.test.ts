@@ -42,6 +42,8 @@ describe('terminal contacts', () => {
     expect(candidates.find((candidate) => candidate.id === 'formal')?.avatar).toEqual({ kind: 'url', url: 'https://example.com/formal.png' });
     expect(candidates.find((candidate) => candidate.id === 'npc')?.fallbackInitial).toBe('路');
     expect(candidates.find((candidate) => candidate.id === 'npc')?.location).toBeUndefined();
+    expect(candidates.find((candidate) => candidate.id === 'formal')?.summary).toBe('正式');
+    expect(candidates.find((candidate) => candidate.id === 'npc')?.summary).toBe('半正式角色 / NPC');
   });
 
   it('accepts new outgoing and incoming requests locally and keeps legacy incoming decisions idempotent', () => {

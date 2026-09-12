@@ -10,6 +10,7 @@ export interface ContactCandidate {
   tier: 'formal' | 'semi';
   avatar?: AssetRef;
   fallbackInitial: string;
+  summary: string;
   location?: {
     nodeId: string;
     nodeName: string;
@@ -52,8 +53,8 @@ export function listContactCandidates(
 ): ContactCandidate[] {
   const locations = new Map(whoIsWhere(world, day, slotId, daysPerWeek).map((person) => [person.id, person]));
   const candidates = [
-    ...Object.values(world.characters).map((character) => ({ id: character.id, name: character.name, tier: character.tier as 'formal' | 'semi', avatar: character.visuals.avatar })),
-    ...Object.values(world.npcs).map((npc) => ({ id: npc.id, name: npc.name, tier: npc.tier as 'formal' | 'semi', avatar: npc.visuals?.avatar })),
+    ...Object.values(world.characters).map((character) => ({ id: character.id, name: character.name, tier: character.tier as 'formal' | 'semi', avatar: character.visuals.avatar, summary: character.card.description })),
+    ...Object.values(world.npcs).map((npc) => ({ id: npc.id, name: npc.name, tier: npc.tier as 'formal' | 'semi', avatar: npc.visuals?.avatar, summary: npc.facts[0] ?? '' })),
   ];
   return candidates
     .map((candidate) => {
@@ -61,6 +62,7 @@ export function listContactCandidates(
       return {
         ...candidate,
         fallbackInitial: Array.from(candidate.name.trim())[0] ?? '?',
+        summary: candidate.summary.trim() || (candidate.tier === 'formal' ? '正式角色' : '半正式角色 / NPC'),
         location: presence ? {
           nodeId: presence.nodeId,
           nodeName: world.map.nodes[presence.nodeId]?.name ?? presence.nodeId,

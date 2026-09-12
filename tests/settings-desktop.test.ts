@@ -7,8 +7,25 @@ import { BOTTOM_NAV_ITEMS, DAY_PAGE_DEFINITIONS, LIBRARY_PAGE_DEFINITIONS, SETTI
 import { DesktopLauncher, SubpageShell } from '../src/components/desktop-shell';
 import { clearDesktopOrder, clearDesktopPages, moveIdBefore, moveIdToPageEnd, readDesktopOrder, readDesktopPages, reconcileDesktopOrder, writeDesktopOrder, writeDesktopPage } from '../src/components/desktop-order';
 import { desktopIconContrastForLuminance } from '../src/ui/desktop-icon-contrast';
+import { readContactGroupCollapsed, readContactGroupPreferences, writeContactGroupCollapsed, writeContactGroupPreferences } from '../src/ui/contact-groups';
 
 describe('settings desktop', () => {
+  it('persists and validates contact group preferences locally', () => {
+    const originalWindow = globalThis.window;
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: { localStorage: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) } } });
+    try {
+      writeContactGroupPreferences({ groups: [{ id: 'custom-close', name: '亲友' }], assignments: { alice: 'custom-close', ghost: 'missing' } });
+      expect(readContactGroupPreferences()).toEqual({ groups: [{ id: 'custom-close', name: '亲友' }], assignments: { alice: 'custom-close' } });
+      writeContactGroupCollapsed({ friends: true, 'custom-close': false });
+      expect(readContactGroupCollapsed()).toEqual({ friends: true, 'custom-close': false });
+      values.set('tokimeki.contactGroups.v1', '{broken');
+      expect(readContactGroupPreferences()).toEqual({ groups: [], assignments: {} });
+    } finally {
+      if (originalWindow === undefined) delete (globalThis as { window?: Window }).window;
+      else Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+    }
+  });
   it('exposes ten unique reachable entries including vector memory and voice', () => {
     const ids = SETTINGS_PAGE_DEFINITIONS.map((entry) => entry.id);
     expect(ids).toHaveLength(10);
@@ -159,6 +176,20 @@ describe('library desktop', () => {
     expect(source).not.toContain('此入口将在音乐 App 切片中接入。');
     expect(musicSource).toContain('className="surface-card music-list-card"');
     expect(musicSource).toContain('const [playlistOpen, setPlaylistOpen] = useState(false);');
+  });
+
+  it('exposes collapsible contact groups and compact profile rows', () => {
+    const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    const groupSource = readFileSync(new URL('../src/ui/contact-groups.ts', import.meta.url), 'utf8');
+    const css = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
+    expect(groupSource).toContain('tokimeki.contactGroups.v1');
+    expect(groupSource).toContain('tokimeki.contactGroupCollapsed.v1');
+    expect(source).toContain('新朋友');
+    expect(source).toContain('新建联系人分组');
+    expect(source).toContain('移动${candidate.name}到分组');
+    expect(css).toContain('.contact-group-heading');
+    expect(css).toContain('.contact-name-line');
+    expect(css).toContain('min-height: 56px');
   });
 
   it('keeps player transfers and pending receipts while hiding counterpart simulation controls', () => {
