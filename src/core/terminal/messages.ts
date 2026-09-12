@@ -20,6 +20,8 @@ export interface TerminalThreadSummary {
   lastMessage: TerminalMessage;
 }
 
+export type TerminalMessageEditAction = 'edit' | 'delete';
+
 export function terminalThreadId(characterId: string): string {
   return `terminal-thread-${characterId}`;
 }
@@ -129,4 +131,25 @@ export function sendTerminalReplyMessage(world: WorldState, characterId: string,
     createdDay: Math.max(1, Math.floor(day)),
     createdSlotId: slotId,
   });
+}
+
+export function editTerminalMessage(world: WorldState, characterId: string, messageId: string, text: string): TerminalMessageResult {
+  if (!isAcceptedFriend(world, characterId)) return { ok: false, changed: false, warning: '只有已接受的好友可以编辑终端消息。' };
+  const message = listTerminalMessages(world, characterId).find((item) => item.id === messageId);
+  if (!message) return { ok: false, changed: false, warning: '消息不存在。' };
+  const nextText = text.trim();
+  if (!nextText) return { ok: false, changed: false, warning: '消息内容不能为空。' };
+  if (message.text === nextText) return { ok: true, changed: false, message };
+  message.text = nextText;
+  return { ok: true, changed: true, message };
+}
+
+export function deleteTerminalMessage(world: WorldState, characterId: string, messageId: string): TerminalMessageResult {
+  if (!isAcceptedFriend(world, characterId)) return { ok: false, changed: false, warning: '只有已接受的好友可以删除终端消息。' };
+  const messages = listTerminalMessages(world, characterId);
+  const index = messages.findIndex((item) => item.id === messageId);
+  if (index < 0) return { ok: false, changed: false, warning: '消息不存在。' };
+  const [message] = messages.splice(index, 1);
+  world.terminal.messageThreads[terminalThreadId(characterId)] = messages;
+  return { ok: true, changed: true, message };
 }

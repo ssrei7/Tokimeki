@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTerminalReplyPrompt, createFriendRequest, createIncomingTransferProposal, createTerminalOpRegistry, listContactCandidates, listTerminalMessages, listTerminalMessageThreads, listTerminalTransfers, resolveFriendRequest, resolveIncomingTransfer, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, simulateFriendAcceptance } from '../src/core/terminal';
+import { buildTerminalReplyPrompt, createFriendRequest, createIncomingTransferProposal, createTerminalOpRegistry, deleteTerminalMessage, editTerminalMessage, listContactCandidates, listTerminalMessages, listTerminalMessageThreads, listTerminalTransfers, resolveFriendRequest, resolveIncomingTransfer, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, simulateFriendAcceptance } from '../src/core/terminal';
 import { migrateSave } from '../src/data/migrations';
 import { exportSaveZip, importSaveZip } from '../src/data/io/zip';
 import { CURRENT_SCHEMA_VERSION } from '../src/data/schema/save';
@@ -88,6 +88,23 @@ describe('terminal contacts', () => {
     const prompt = buildTerminalReplyPrompt(save.world, 'semi');
     expect(prompt[0]?.content).toContain('对方主动添加了玩家');
     expect(prompt.at(-1)).toEqual({ role: 'user', content: '在吗' });
+  });
+
+  it('edits and deletes either side of a terminal thread without changing world facts', () => {
+    const save = makeSave();
+    createFriendRequest(save.world, 'formal', 'outgoing');
+    const playerMessage = sendTerminalTextMessage(save.world, 'formal', '原始玩家消息').message!;
+    const reply = sendTerminalReplyMessage(save.world, 'formal', '原始对方消息').message!;
+    const factsBefore = JSON.stringify({ relations: save.world.relations, clock: save.world.clock, events: save.world.eventHistory });
+
+    expect(editTerminalMessage(save.world, 'formal', playerMessage.id, '修改后的玩家消息')).toMatchObject({ ok: true, changed: true });
+    expect(editTerminalMessage(save.world, 'formal', reply.id, '修改后的对方消息')).toMatchObject({ ok: true, changed: true });
+    expect(listTerminalMessages(save.world, 'formal').map((message) => message.text)).toEqual(['修改后的玩家消息', '修改后的对方消息']);
+    expect(editTerminalMessage(save.world, 'formal', reply.id, '   ')).toMatchObject({ ok: false, changed: false });
+    expect(deleteTerminalMessage(save.world, 'formal', playerMessage.id)).toMatchObject({ ok: true, changed: true });
+    expect(deleteTerminalMessage(save.world, 'formal', playerMessage.id)).toMatchObject({ ok: false, changed: false });
+    expect(listTerminalMessages(save.world, 'formal').map((message) => message.id)).toEqual([reply.id]);
+    expect(JSON.stringify({ relations: save.world.relations, clock: save.world.clock, events: save.world.eventHistory })).toBe(factsBefore);
   });
 
   it('lists only existing terminal threads in deterministic most-recent order', () => {

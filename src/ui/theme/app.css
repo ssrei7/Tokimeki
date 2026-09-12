@@ -352,7 +352,7 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .terminal-small-icon-button { width: 38px; min-width: 38px; min-height: 38px; display: inline-grid; place-items: center; padding: 0; border-radius: 50%; }
 .terminal-small-icon-button svg { width: 19px; height: 19px; }
 .terminal-thread { display: grid; align-content: start; gap: 14px; min-height: 220px; overflow-y: auto; overscroll-behavior: contain; padding: 12px 1px; background: var(--gray-50); }
-.terminal-message-row { display: grid; grid-template-columns: 38px minmax(0, 1fr) 38px; align-items: start; gap: 8px; padding: 0 8px; }
+.terminal-message-row { position: relative; width: 100%; display: grid; grid-template-columns: 38px minmax(0, 1fr) 38px; align-items: start; gap: 8px; padding: 0 8px; }
 .terminal-message-row.theirs .terminal-message { grid-column: 2; justify-self: start; }
 .terminal-message-row.mine .terminal-message { grid-column: 2; justify-self: end; background: var(--gray-700); color: var(--gray-0); }
 .terminal-message-row.mine > .contact-avatar { grid-column: 3; grid-row: 1; }
@@ -362,6 +362,11 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .terminal-message-row.theirs .terminal-message::before { left: -5px; border-left: 1px solid var(--gray-100); border-bottom: 1px solid var(--gray-100); background: var(--gray-0); }
 .terminal-message-row.mine .terminal-message::after { right: -5px; background: var(--gray-700); }
 .terminal-message p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.terminal-message-actions { display: grid; justify-items: end; gap: 5px; }
+.terminal-message-menu { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.terminal-message-menu button { min-height: 28px; padding: 0 7px; font-size: 11px; }
+.terminal-message-edit { display: grid; gap: 6px; min-width: min(240px, 72vw); }
+.terminal-message-edit textarea { min-height: 64px; resize: vertical; }
 .terminal-message-quote { justify-self: end; width: 30px; min-width: 30px; min-height: 28px; }
 .terminal-quote { min-height: 30px; padding: 5px 8px; border: 0; border-left: 2px solid var(--gray-300); border-radius: 4px; background: var(--gray-50); color: var(--gray-600); font-size: 11px; text-align: left; }
 .terminal-message-row.mine .terminal-quote { background: rgb(255 255 255 / 0.12); color: var(--gray-100); }
