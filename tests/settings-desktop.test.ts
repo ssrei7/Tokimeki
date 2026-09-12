@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BOTTOM_NAV_ITEMS, DAY_PAGE_DEFINITIONS, LIBRARY_PAGE_DEFINITIONS, SETTINGS_PAGE_DEFINITIONS } from '../src/App';
 import { DesktopLauncher, SubpageShell } from '../src/components/desktop-shell';
-import { clearDesktopOrder, moveIdBefore, moveIdToPageEnd, readDesktopOrder, reconcileDesktopOrder, writeDesktopOrder } from '../src/components/desktop-order';
+import { clearDesktopOrder, clearDesktopPages, moveIdBefore, moveIdToPageEnd, readDesktopOrder, readDesktopPages, reconcileDesktopOrder, writeDesktopOrder, writeDesktopPage } from '../src/components/desktop-order';
 import { desktopIconContrastForLuminance } from '../src/ui/desktop-icon-contrast';
 
 describe('settings desktop', () => {
@@ -259,6 +259,24 @@ describe('desktop order preferences', () => {
       clearDesktopOrder('terminal');
       expect(readDesktopOrder('terminal', ['a', 'b', 'c'])).toEqual(['a', 'b', 'c']);
       expect(readDesktopOrder('settings', ['x', 'y'])).toEqual(['y', 'x']);
+    } finally {
+      if (originalWindow === undefined) delete (globalThis as { window?: Window }).window;
+      else Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+    }
+  });
+
+  it('persists explicit terminal/settings page assignments independently', () => {
+    const originalWindow = globalThis.window;
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: { localStorage: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) } } });
+    try {
+      writeDesktopPage('terminal', 'music', 1);
+      writeDesktopPage('settings', 'provider', 1);
+      expect(readDesktopPages('terminal', ['music', 'contacts'])).toEqual({ music: 1 });
+      expect(readDesktopPages('settings', ['provider'])).toEqual({ provider: 1 });
+      clearDesktopPages('terminal');
+      expect(readDesktopPages('terminal', ['music'])).toEqual({});
+      expect(readDesktopPages('settings', ['provider'])).toEqual({ provider: 1 });
     } finally {
       if (originalWindow === undefined) delete (globalThis as { window?: Window }).window;
       else Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });

@@ -1,6 +1,8 @@
 export const DESKTOP_ORDER_STORAGE_KEY = 'tokimeki.desktopOrder.v1';
+export const DESKTOP_PAGE_STORAGE_KEY = 'tokimeki.desktopPages.v1';
 
 export type DesktopOrderState = Record<string, string[]>;
+export type DesktopPageState = Record<string, Record<string, number>>;
 
 export function reconcileDesktopOrder(saved: unknown, entryIds: readonly string[]): string[] {
   const allowed = new Set(entryIds);
@@ -23,6 +25,30 @@ function readState(): DesktopOrderState {
   } catch {
     return {};
   }
+}
+
+function readPageState(): DesktopPageState {
+  if (typeof window === 'undefined') return {};
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(DESKTOP_PAGE_STORAGE_KEY) ?? '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).map(([launcher, value]) => [launcher, value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).filter(([, page]) => typeof page === 'number' && Number.isInteger(page) && page >= 0)) as Record<string, number> : {}])) as DesktopPageState;
+  } catch { return {}; }
+}
+
+export function readDesktopPages(launcherId: string, entryIds: readonly string[]): Record<string, number> {
+  const allowed = new Set(entryIds);
+  return Object.fromEntries(Object.entries(readPageState()[launcherId] ?? {}).filter(([id]) => allowed.has(id)));
+}
+
+export function writeDesktopPage(launcherId: string, entryId: string, page: number): void {
+  if (typeof window === 'undefined') return;
+  try { const state = readPageState(); state[launcherId] = { ...(state[launcherId] ?? {}), [entryId]: Math.max(0, Math.floor(page)) }; window.localStorage.setItem(DESKTOP_PAGE_STORAGE_KEY, JSON.stringify(state)); } catch { /* local preference unavailable */ }
+}
+
+export function clearDesktopPages(launcherId: string): void {
+  if (typeof window === 'undefined') return;
+  try { const state = readPageState(); delete state[launcherId]; window.localStorage.setItem(DESKTOP_PAGE_STORAGE_KEY, JSON.stringify(state)); } catch { /* local preference unavailable */ }
 }
 
 export function readDesktopOrder(launcherId: string, entryIds: readonly string[]): string[] {
