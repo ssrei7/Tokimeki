@@ -12,7 +12,7 @@ export type DesktopEntry = {
   tone?: 'blue' | 'green' | 'amber' | 'rose' | 'violet' | 'gray';
 };
 
-const DESKTOP_PAGE_ROWS = 3;
+const DESKTOP_PAGE_ROWS = 6;
 
 export function DesktopLauncher({ title, entries, onOpen, wallpaperUrl, appName = 'Tokimeki' }: { title: string; entries: readonly DesktopEntry[]; onOpen: (id: string) => void; wallpaperUrl?: string; appName?: string }) {
   const [contrast, setContrast] = useState<DesktopIconContrast | null>(null);
