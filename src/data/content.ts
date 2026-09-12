@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { EventDefSchema } from './schema/save';
+import { AssetRefSchema, EventDefSchema } from './schema/save';
 
 const Id = z.string().min(1);
 
@@ -117,6 +117,14 @@ export const MusicStateSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 export type MusicState = z.infer<typeof MusicStateSchema>;
+
+export const TerminalStickerRecordSchema = z.object({
+  id: Id,
+  label: z.string().max(120).optional(),
+  asset: AssetRefSchema,
+  createdAt: z.string().datetime(),
+});
+export type TerminalStickerRecord = z.infer<typeof TerminalStickerRecordSchema>;
 
 export const EventPackageSchema = z.object({
   id: Id,

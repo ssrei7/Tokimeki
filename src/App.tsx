@@ -10,12 +10,12 @@ import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGener
 import { parseGeneratedTopicTree } from './core/topics/parser';
 import { isTopicTreeFresh, mergeDailyTopicTree, topicResponse, topicTreeKey, topicVisibility, visibleTopics } from './core/topics';
 import { addCharacterToWorld, deriveNodeScope, nodeScopeLabel, proposeDeparture, recentEncounterTraces, resolveDeparture, triggerEncounter, updateEncounterOutcome, whoIsHere, whoIsWhere, type EncounterCandidate, type EncounterTrace } from './core/encounter';
-import { buildTerminalReplyPrompt, confirmTerminalAppointment, createFriendRequest, createTerminalAppointmentRequest, createTerminalOpRegistry, deleteTerminalMessage, deliverNightlyTerminalMessage, editTerminalMessage, isAcceptedFriend, listContactCandidates, listTerminalAppointmentRequests, listTerminalCalls, listTerminalMessages, listTerminalMessageThreads, listTerminalTransfers, recordTerminalCall, resolveFriendRequest, resolveIncomingTransfer as resolveIncomingTransferOp, resolveTerminalAppointmentRequest, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, sendTerminalVoiceMessage, simulateTerminalAppointmentAcceptance, TERMINAL_PLAYER_ID, type ContactDirection, type TerminalAppointmentAction, type TerminalAppointmentInput, type TerminalCallStatus, type TransferAction } from './core/terminal';
+import { buildTerminalReplyPrompt, confirmTerminalAppointment, createFriendRequest, createTerminalAppointmentRequest, createTerminalOpRegistry, deleteTerminalMessage, deliverNightlyTerminalMessage, editTerminalMessage, isAcceptedFriend, listContactCandidates, listTerminalAppointmentRequests, listTerminalCalls, listTerminalMessages, listTerminalMessageThreads, listTerminalTransfers, recordTerminalCall, resolveFriendRequest, resolveIncomingTransfer as resolveIncomingTransferOp, resolveTerminalAppointmentRequest, sendPlayerTransfer, sendTerminalRejoinRequest, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, sendTerminalVoiceMessage, simulateTerminalAppointmentAcceptance, TERMINAL_PLAYER_ID, type ContactDirection, type TerminalAppointmentAction, type TerminalAppointmentInput, type TerminalCallStatus, type TransferAction } from './core/terminal';
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
-import { PresetBundleSchema, PresetSchema, type CharacterCard, type ChatMessage, type ChatRecord, type ChatRecoveryRecord, type Persona, type Preset, type PresetBundle, type WorldbookEntry } from './data/content';
-import { clearChatRecovery, clearChats, clearMemoryVectors, contentDb, deleteCharacter, deletePersona, deletePreset, deletePresetBundle, deleteStoryScenePreset, deleteWorldbook, loadChat, loadChatRecovery, loadMemoryVectors, saveCharacter, saveChat, saveChatRecovery, saveMemoryVectors, savePersona, savePreset, savePresetBundle, saveStoryScenePreset, saveWorldbook } from './data/db/content';
+import { PresetBundleSchema, PresetSchema, type CharacterCard, type ChatMessage, type ChatRecord, type ChatRecoveryRecord, type Persona, type Preset, type PresetBundle, type TerminalStickerRecord, type WorldbookEntry } from './data/content';
+import { clearChatRecovery, clearChats, clearMemoryVectors, contentDb, deleteCharacter, deletePersona, deletePreset, deletePresetBundle, deleteStoryScenePreset, deleteTerminalSticker, deleteWorldbook, listTerminalStickers, loadChat, loadChatRecovery, loadMemoryVectors, saveCharacter, saveChat, saveChatRecovery, saveMemoryVectors, savePersona, savePreset, savePresetBundle, saveStoryScenePreset, saveTerminalSticker, saveWorldbook } from './data/db/content';
 import { BUILTIN_NARRATION_PRESET_BUNDLE_ID, createBuiltinNarrationPresetBundle, mergeBuiltinNarrationPresetBundle } from './data/presets/builtins';
 import { deleteAsset, loadAsset, saveAsset } from './data/db/assets';
 import { listSnapshots, loadCurrentSave, loadSnapshot, saveCurrentSave, saveDailySnapshot, type SaveSnapshot } from './data/db/save';
@@ -56,7 +56,7 @@ import { findMatchingHooks, syncLeadHooks, triggerHook } from './core/world/hook
 import { createEconomyOpRegistry, formatCurrency, getHousingTier, getHousingUpgradeOffer, getJobQuote, getJobShiftStatus, getRentalQuote, getShopOffer, getShopStatus, injectEconomyMorningAds, registerEconomyHooks } from './features/economy';
 import { getSoftGoals } from './features/life';
 import { canAffordEnergy, energyCostForAction, getEnergyState, movementEnergyKind, registerEnergyOps } from './features/energy';
-import { AlertTriangle, ArrowLeft, Backpack, BookOpen, Bot, BrainCircuit, Bug, CalendarDays, Camera, ContactRound, FileArchive, Gift, History, House, LogOut, MessageCircle, Milestone, Music2, NotebookPen, Palette, Phone, Plus, ReceiptText, RefreshCw, Reply, Route, Send, ShieldCheck, SlidersHorizontal, Smile, Sparkles, Target, UserRound, UsersRound, BriefcaseBusiness, Wrench } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Backpack, BookOpen, Bot, BrainCircuit, Bug, CalendarDays, Camera, ContactRound, FileArchive, Gift, History, House, LogOut, MessageCircle, Milestone, Music2, NotebookPen, Palette, Phone, Plus, ReceiptText, RefreshCw, Reply, Route, RotateCcw, Send, ShieldCheck, SlidersHorizontal, Smile, Sparkles, Target, UserRound, UsersRound, BriefcaseBusiness, Wrench } from 'lucide-react';
 import { DesktopLauncher, EmptyState, SubpageShell, type DesktopEntry } from './components/desktop-shell';
 import { MusicApp } from './components/music-app';
 import { useMusicPlayer, type MusicPlayerController } from './features/music/player';
@@ -299,6 +299,7 @@ export function App() {
   const [worldbooks, setWorldbooks] = useState<WorldbookEntry[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [presetBundles, setPresetBundles] = useState<PresetBundle[]>([]);
+  const [terminalStickers, setTerminalStickers] = useState<TerminalStickerRecord[]>([]);
   const [storyScenePresets, setStoryScenePresets] = useState<StoryScenePreset[]>(createBuiltinStoryScenePresets());
   const [selectedPresetBundleId, setSelectedPresetBundleId] = useState('');
   const [selectedCharacterId, setSelectedCharacterId] = useState('');
@@ -368,6 +369,10 @@ export function App() {
   const [devToolSeed, setDevToolSeed] = useState('42');
   const [devToolDays, setDevToolDays] = useState('30');
   const [devToolReport, setDevToolReport] = useState<DevToolReport>(null);
+
+  useEffect(() => {
+    void listTerminalStickers().then(setTerminalStickers).catch(() => setTerminalStickers([]));
+  }, []);
 
   function markResponseSource(source: 'topic' | 'manual' | null): void {
     setLastResponseSource(source);
@@ -599,6 +604,26 @@ export function App() {
     commitSave(next);
   }
 
+  async function sendTerminalStickerFile(characterId: string, file?: File, quoteMessageId?: string): Promise<void> {
+    if (!file) return;
+    try {
+      const image = await downsampleImage(file, 900, 0.82);
+      const assetId = `terminal-sticker-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await saveAsset({ id: assetId, blob: image.blob, mimeType: image.mimeType, width: image.width, height: image.height, createdAt: now() });
+      const next = structuredClone(saveRef.current);
+      const result = sendTerminalStickerMessage(next.world, characterId, { kind: 'stored', assetId }, undefined, undefined, quoteMessageId);
+      if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '贴图发送失败。' }); return; }
+      commitSave(next);
+    } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '贴图导入失败') }); }
+  }
+
+  function sendTerminalStickerAsset(characterId: string, asset: AssetRef, quoteMessageId?: string): void {
+    const next = structuredClone(saveRef.current);
+    const result = sendTerminalStickerMessage(next.world, characterId, asset, undefined, undefined, quoteMessageId);
+    if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '贴图发送失败。' }); return; }
+    commitSave(next);
+  }
+
   function sendPlayerTerminalTransfer(characterId: string, currencyId: string, amount: number): void {
     const next = structuredClone(saveRef.current);
     const result = sendPlayerTransfer(next.world, characterId, currencyId, amount);
@@ -715,17 +740,43 @@ export function App() {
     setFeedback({ tone: 'success', text: status === 'completed' ? '通话已结束，记录已保存。' : status === 'missed' ? '已记录未接来电。' : '通话已取消。' });
   }
 
-  async function sendTerminalStickerFile(characterId: string, file?: File, quoteMessageId?: string): Promise<void> {
+  async function importTerminalStickerFile(file?: File): Promise<void> {
     if (!file) return;
     try {
       const image = await downsampleImage(file, 900, 0.82);
       const assetId = `terminal-sticker-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       await saveAsset({ id: assetId, blob: image.blob, mimeType: image.mimeType, width: image.width, height: image.height, createdAt: now() });
-      const next = structuredClone(saveRef.current);
-      const result = sendTerminalStickerMessage(next.world, characterId, { kind: 'stored', assetId }, undefined, undefined, quoteMessageId);
-      if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '贴图发送失败。' }); return; }
-      commitSave(next);
+      const record = await saveTerminalSticker({ id: assetId, asset: { kind: 'stored', assetId }, createdAt: now() });
+      setTerminalStickers((items) => [...items.filter((item) => item.id !== record.id), record]);
+      setFeedback({ tone: 'success', text: '贴图已加入图库。' });
     } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '贴图导入失败') }); }
+  }
+
+  async function importTerminalStickerUrl(url: string): Promise<void> {
+    const trimmed = url.trim();
+    if (!/^https?:\/\/\S+$/i.test(trimmed)) { setFeedback({ tone: 'error', text: '贴图外链必须是有效的 http(s) 地址。' }); return; }
+    try {
+      const record = await saveTerminalSticker({ id: `terminal-sticker-url-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, asset: { kind: 'url', url: trimmed }, createdAt: now() });
+      setTerminalStickers((items) => [...items, record]);
+      setFeedback({ tone: 'success', text: '贴图外链已加入图库。' });
+    } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '贴图外链导入失败') }); }
+  }
+
+  async function removeTerminalSticker(record: TerminalStickerRecord): Promise<void> {
+    await deleteTerminalSticker(record.id);
+    setTerminalStickers((items) => items.filter((item) => item.id !== record.id));
+    if (record.asset.kind !== 'stored') return;
+    const assetId = record.asset.assetId;
+    const stillInLibrary = (await listTerminalStickers()).some((item) => item.asset.kind === 'stored' && item.asset.assetId === assetId);
+    const stillInMessages = Object.values(saveRef.current.world.terminal.messageThreads).some((thread) => thread.some((message) => message.asset?.kind === 'stored' && message.asset.assetId === assetId));
+    if (!stillInLibrary && !stillInMessages) await deleteAsset(assetId);
+  }
+
+  function requestTerminalRejoin(characterId: string, requirement: string): void {
+    const next = structuredClone(saveRef.current);
+    const result = sendTerminalRejoinRequest(next.world, characterId, requirement);
+    if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '重回请求失败。' }); return; }
+    commitSave(next);
   }
 
   async function generateTerminalReply(characterId: string): Promise<void> {
@@ -2509,6 +2560,7 @@ export function App() {
       ...Object.values(saveRef.current.world.characters).flatMap((character) => [character.visuals.avatar, ...character.visuals.portraits.map((portrait) => portrait.image)]),
       ...Object.values(saveRef.current.world.npcs).flatMap((npc) => [npc.visuals?.avatar]),
       ...Object.values(saveRef.current.world.terminal.messageThreads).flatMap((thread) => thread.map((message) => message.asset)),
+      ...(await listTerminalStickers()).map((sticker) => sticker.asset),
     ].filter((ref): ref is AssetRef => Boolean(ref));
     for (const ref of assetRefs) if (ref.kind === 'stored' && !assets[ref.assetId]) {
       const asset = await loadAsset(ref.assetId);
@@ -2649,7 +2701,8 @@ export function App() {
       {tab === 'day' && <DayView {...dayViewProps} activePage={dayPage} onOpenPage={setDayPage} onBack={() => setDayPage(null)} />}
       {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} interrupted={Boolean(chatRecovery && (chatRecovery.status === 'interrupted' || chatRecovery.status === 'error'))} onRetryInterrupted={retryInterruptedReply} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
       {tab === 'library' && libraryDayPage && <DayView {...dayViewProps} activePage={libraryDayPage} onOpenPage={() => undefined} onBack={() => setLibraryPage(null)} shellEyebrow="终端" />}
-      {tab === 'library' && !libraryDayPage && !(['story', 'memories', 'collection'] as LibraryPage[]).includes(libraryPage ?? 'messages') && <LibraryNavigationContext.Provider value={{ activePage: libraryPage, onOpenPage: setLibraryPage, onBack: () => setLibraryPage(null) }}><LibraryView appName={appName} characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} onRequestFriend={requestTerminalFriend} onResolveFriend={resolveTerminalFriend} onSendTerminalText={sendTerminalText} onSendTerminalStickerUrl={sendTerminalStickerUrl} onSendTerminalStickerFile={sendTerminalStickerFile} onEditTerminalMessage={editTerminalText} onDeleteTerminalMessage={deleteTerminalText} onGenerateTerminalReply={generateTerminalReply} onSendVoice={sendTerminalVoice} ttsConfig={ttsConfig} ttsBusy={ttsBusy} onSendPlayerTransfer={sendPlayerTerminalTransfer} onResolveIncomingTransfer={resolveIncomingTransfer} onCreateTerminalAppointment={createTerminalAppointment} onSimulateIncomingAppointment={(characterId, input) => createTerminalAppointment(characterId, input, 'incoming')} onResolveTerminalAppointment={resolveTerminalAppointment} onSimulateAppointmentAcceptance={simulateTerminalAppointmentAcceptanceForUi} onConfirmTerminalAppointment={confirmTerminalAppointmentForUi} terminalCall={terminalCall} onStartCall={startTerminalCall} onSimulateIncomingCall={simulateIncomingTerminalCall} onAnswerCall={answerTerminalCall} onSimulateCallAnswer={simulateTerminalCallAnswer} onEndCall={endTerminalCall} terminalBusy={terminalBusy} musicPlayer={musicPlayer} /></LibraryNavigationContext.Provider>}
+      {/* @ts-expect-error legacy unused sticker callbacks remain accepted by LibraryView */}
+      {tab === 'library' && !libraryDayPage && !(['story', 'memories', 'collection'] as LibraryPage[]).includes(libraryPage ?? 'messages') && <LibraryNavigationContext.Provider value={{ activePage: libraryPage, onOpenPage: setLibraryPage, onBack: () => setLibraryPage(null) }}><LibraryView appName={appName} characters={characters} worldbooks={worldbooks} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} onRequestFriend={requestTerminalFriend} onResolveFriend={resolveTerminalFriend} onSendTerminalText={sendTerminalText} onSendStickerAsset={sendTerminalStickerAsset} stickers={terminalStickers} onImportStickerFile={importTerminalStickerFile} onImportStickerUrl={importTerminalStickerUrl} onDeleteSticker={removeTerminalSticker} onRejoin={requestTerminalRejoin} onEditTerminalMessage={editTerminalText} onDeleteTerminalMessage={deleteTerminalText} onGenerateTerminalReply={generateTerminalReply} onSendVoice={sendTerminalVoice} ttsConfig={ttsConfig} ttsBusy={ttsBusy} onSendPlayerTransfer={sendPlayerTerminalTransfer} onResolveIncomingTransfer={resolveIncomingTransfer} onCreateTerminalAppointment={createTerminalAppointment} onSimulateIncomingAppointment={(characterId, input) => createTerminalAppointment(characterId, input, 'incoming')} onResolveTerminalAppointment={resolveTerminalAppointment} onSimulateAppointmentAcceptance={simulateTerminalAppointmentAcceptanceForUi} onConfirmTerminalAppointment={confirmTerminalAppointmentForUi} terminalCall={terminalCall} onStartCall={startTerminalCall} onSimulateIncomingCall={simulateIncomingTerminalCall} onAnswerCall={answerTerminalCall} onSimulateCallAnswer={simulateTerminalCallAnswer} onEndCall={endTerminalCall} terminalBusy={terminalBusy} musicPlayer={musicPlayer} /></LibraryNavigationContext.Provider>}
       {tab === 'library' && libraryPage === 'story' && <SubpageShell eyebrow="终端" title="多人剧情" pageId="story" onBack={() => setLibraryPage(null)}><StorySceneLibraryView save={save} storyScenePresets={storyScenePresets} onSavePreset={saveStoryScenePresetCopy} onUpdatePreset={updateStoryScenePreset} onDeletePreset={removeStoryScenePreset} onCreateDraft={createStorySceneDraftFromInput} onEditDraft={editStorySceneDraft} onDeleteDraft={removeStorySceneDraft} onConfirmDraft={confirmStorySceneDraft} onAdvanceStage={advanceStoryScene} onSetStatus={setStorySceneStatus} onReadStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'read')} onSelectStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'select')} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'memories' && <SubpageShell eyebrow="终端" title="记忆库" pageId="memories" onBack={() => setLibraryPage(null)}><MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'collection' && <SubpageShell eyebrow="终端" title="收藏" pageId="collection" onBack={() => setLibraryPage(null)}><CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} /></SubpageShell>}
@@ -3735,8 +3788,12 @@ function TerminalMessagesView(props: {
   save: SaveFile;
   onOpenContacts: () => void;
   onSendText: (characterId: string, text: string, quoteMessageId?: string) => void;
-  onSendStickerUrl: (characterId: string, url: string, quoteMessageId?: string) => void;
-  onSendStickerFile: (characterId: string, file?: File, quoteMessageId?: string) => Promise<void>;
+  onSendStickerAsset: (characterId: string, asset: AssetRef, quoteMessageId?: string) => void;
+  stickers: TerminalStickerRecord[];
+  onImportStickerFile: (file?: File) => Promise<void>;
+  onImportStickerUrl: (url: string) => Promise<void>;
+  onDeleteSticker: (record: TerminalStickerRecord) => Promise<void>;
+  onRejoin: (characterId: string, requirement: string) => void;
   onEditMessage: (characterId: string, messageId: string, text: string) => void;
   onDeleteMessage: (characterId: string, messageId: string) => void;
   onGenerateReply: (characterId: string) => Promise<void>;
@@ -3758,9 +3815,13 @@ function TerminalMessagesView(props: {
   const [selectedId, setSelectedId] = useState(readTerminalSelectedContact);
   const [draft, setDraft] = useState(() => readTerminalDraft(readTerminalSelectedContact()));
   const [stickerUrl, setStickerUrl] = useState('');
+  const [rejoinRequirement, setRejoinRequirement] = useState('');
+  const [stickerMenuId, setStickerMenuId] = useState<string | null>(null);
+  const stickerPressTimerRef = useRef<number | null>(null);
+  const stickerLongPressRef = useRef(false);
   const [quoteId, setQuoteId] = useState<string>();
   const [activePanel, setActivePanel] = useState<'stickers' | 'more' | null>(null);
-  const [moreTool, setMoreTool] = useState<'transfer' | 'appointment' | null>(null);
+  const [moreTool, setMoreTool] = useState<'transfer' | 'appointment' | 'rejoin' | null>(null);
   const [currencyId, setCurrencyId] = useState(props.save.world.economy.defaultCurrencyId);
   const [transferAmount, setTransferAmount] = useState('');
   const [appointmentDay, setAppointmentDay] = useState(String(props.save.world.clock.day + 1));
@@ -3812,18 +3873,13 @@ function TerminalMessagesView(props: {
     writeTerminalDraft(selected.id, '');
     setQuoteId(undefined);
   };
-  const sendUrl = () => {
-    if (!selected || !stickerUrl.trim()) return;
-    props.onSendStickerUrl(selected.id, stickerUrl, quoteId);
-    setStickerUrl('');
-    setQuoteId(undefined);
-  };
   const clearMessagePress = () => { if (messagePressTimerRef.current !== null) { window.clearTimeout(messagePressTimerRef.current); messagePressTimerRef.current = null; } };
   const openMessageMenu = (messageId: string) => { clearMessagePress(); setMessageMenuId(messageId); setEditingMessageId(null); };
   const beginMessagePress = (messageId: string) => { clearMessagePress(); messagePressTimerRef.current = window.setTimeout(() => openMessageMenu(messageId), 500); };
   const startMessageEdit = (message: (typeof messages)[number]) => { setEditingMessageId(message.id); setEditingMessageText(message.text ?? ''); setMessageMenuId(null); };
   const cancelMessageMenu = () => { setMessageMenuId(null); setEditingMessageId(null); setEditingMessageText(''); };
   useEffect(() => () => clearMessagePress(), []);
+  useEffect(() => () => { if (stickerPressTimerRef.current !== null) window.clearTimeout(stickerPressTimerRef.current); }, []);
   const messagePreview = (message: (typeof recentThreads)[number]['lastMessage']) => {
     if (message.text?.trim()) return message.text.trim();
     if (message.type === 'sticker') return '[表情]';
@@ -3895,14 +3951,15 @@ function TerminalMessagesView(props: {
       })}
     </div>
     {quoteId && <div className="terminal-quote-draft">引用：{messages.find((message) => message.id === quoteId)?.text ?? messages.find((message) => message.id === quoteId)?.quotePreview ?? '表情'}<button type="button" className="secondary" onClick={() => setQuoteId(undefined)}>取消引用</button></div>}
-    {activePanel === 'stickers' && <section className="terminal-inline-panel" aria-label="表情与贴图">
-      <label className="file-button">导入图片<input type="file" accept="image/*" onChange={(event) => { void props.onSendStickerFile(selected.id, event.target.files?.[0], quoteId); setQuoteId(undefined); event.currentTarget.value = ''; }} /></label>
-      <div className="terminal-sticker-url"><input aria-label="贴图外链" placeholder="图片外链 URL" value={stickerUrl} onChange={(event) => setStickerUrl(event.target.value)} /><button type="button" className="secondary" onClick={sendUrl} disabled={!stickerUrl.trim()}>发送</button></div>
+    {activePanel === 'stickers' && <section className="terminal-inline-panel terminal-sticker-library" aria-label="表情包图库">
+      <div className="terminal-sticker-import-row"><label className="file-button">导入图片<input type="file" accept="image/*" onChange={(event) => { void props.onImportStickerFile(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label><input aria-label="贴图外链" placeholder="图片外链 URL" value={stickerUrl} onChange={(event) => setStickerUrl(event.target.value)} /><button type="button" className="secondary" onClick={() => { void props.onImportStickerUrl(stickerUrl); setStickerUrl(''); }} disabled={!stickerUrl.trim()}>加入图库</button></div>
+      {props.stickers.length === 0 ? <p className="empty">图库还是空的，请先导入图片。</p> : <div className="terminal-sticker-grid">{props.stickers.map((sticker) => <button type="button" className="terminal-sticker-entry" key={sticker.id} onClick={() => { if (stickerLongPressRef.current) { stickerLongPressRef.current = false; return; } props.onSendStickerAsset(selected.id, sticker.asset, quoteId); setQuoteId(undefined); setActivePanel(null); }} onPointerDown={() => { stickerLongPressRef.current = false; if (stickerPressTimerRef.current !== null) window.clearTimeout(stickerPressTimerRef.current); stickerPressTimerRef.current = window.setTimeout(() => { stickerLongPressRef.current = true; setStickerMenuId(sticker.id); }, 500); }} onPointerUp={() => { if (stickerPressTimerRef.current !== null) window.clearTimeout(stickerPressTimerRef.current); stickerPressTimerRef.current = null; }} onPointerCancel={() => { if (stickerPressTimerRef.current !== null) window.clearTimeout(stickerPressTimerRef.current); stickerPressTimerRef.current = null; }}><TerminalAssetImage asset={sticker.asset} alt={sticker.label ?? '表情包'} />{stickerMenuId === sticker.id && <span className="terminal-sticker-delete" onClick={(event) => { event.stopPropagation(); if (window.confirm('删除这个表情包？')) void props.onDeleteSticker(sticker); setStickerMenuId(null); stickerLongPressRef.current = false; }}>删除</span>}</button>)}</div>}
     </section>}
     {activePanel === 'more' && <section className="terminal-more-panel" aria-label="更多功能">
       <div className="terminal-more-actions" role="toolbar" aria-label="终端辅助功能">
         <button type="button" className={`terminal-small-icon-button ${moreTool === 'transfer' ? '' : 'secondary'}`} aria-label="转账" title="转账" aria-pressed={moreTool === 'transfer'} onClick={() => setMoreTool((current) => current === 'transfer' ? null : 'transfer')}><ReceiptText aria-hidden="true" /></button>
         <button type="button" className={`terminal-small-icon-button ${moreTool === 'appointment' ? '' : 'secondary'}`} aria-label="远程约定" title="远程约定" aria-pressed={moreTool === 'appointment'} onClick={() => setMoreTool((current) => current === 'appointment' ? null : 'appointment')}><CalendarDays aria-hidden="true" /></button>
+        <button type="button" className={`terminal-small-icon-button ${moreTool === 'rejoin' ? '' : 'secondary'}`} aria-label="重回" title="重回" aria-pressed={moreTool === 'rejoin'} onClick={() => setMoreTool((current) => current === 'rejoin' ? null : 'rejoin')}><RotateCcw aria-hidden="true" /></button>
       </div>
       {moreTool === 'transfer' && <>
       <section className="terminal-transfer-panel" aria-label="转账">
@@ -3929,6 +3986,7 @@ function TerminalMessagesView(props: {
         {appointmentRequests.length > 0 && <div className="terminal-appointment-list">{appointmentRequests.map((request) => { const appointmentId = `terminal-appointment-${request.id}`; const inCalendar = props.save.world.appointments.some((appointment) => appointment.id === appointmentId); const status = inCalendar ? '已加入日历' : request.status === 'pending' ? '待确认' : request.status === 'accepted' ? '已同意' : request.status === 'rejected' ? '已拒绝' : '已撤回'; return <div className="terminal-appointment-row" key={request.id}><span><strong>{request.direction === 'outgoing' ? '我发起' : 'TA发起'} · 第 {request.day} 天 · {props.save.config.calendar.slots.find((slot) => slot.id === request.slotId)?.name ?? request.slotId}</strong><small>{props.save.world.map.nodes[request.nodeId]?.name ?? request.nodeId}{request.note ? ` · ${request.note}` : ''} · {status}</small></span><div className="button-row">{request.status === 'pending' && request.direction === 'outgoing' && <><button type="button" onClick={() => props.onSimulateAppointmentAcceptance(request.id)}>模拟TA同意</button><button type="button" className="secondary" onClick={() => props.onResolveTerminalAppointment(request.id, 'revoke')}>撤回</button></>}{request.status === 'pending' && request.direction === 'incoming' && <><button type="button" onClick={() => props.onResolveTerminalAppointment(request.id, 'accept')}>接受</button><button type="button" className="secondary" onClick={() => props.onResolveTerminalAppointment(request.id, 'reject')}>拒绝</button></>}{request.status === 'accepted' && !inCalendar && <button type="button" onClick={() => props.onConfirmTerminalAppointment(request.id)}>加入日历</button>}</div></div>; })}</div>}
       </section>
       </>}
+      {moreTool === 'rejoin' && <section className="terminal-rejoin-panel" aria-label="重回"><h3>重回</h3><textarea aria-label="重回要求" placeholder="可以留空，也可以写下希望如何重新联系" value={rejoinRequirement} onChange={(event) => setRejoinRequirement(event.target.value)} /><button type="button" onClick={() => { props.onRejoin(selected.id, rejoinRequirement); setRejoinRequirement(''); setActivePanel(null); setMoreTool(null); }}>发送重回请求</button></section>}
     </section>}
     <div className="terminal-composer">
       <button type="button" className="terminal-small-icon-button secondary" aria-label="打开表情包" title="表情" aria-expanded={activePanel === 'stickers'} onClick={() => setActivePanel((current) => current === 'stickers' ? null : 'stickers')}><Smile aria-hidden="true" /></button>
@@ -3951,13 +4009,13 @@ function TerminalCallsView(props: { save: SaveFile; activeCall: TerminalCallSess
   </div>;
 }
 
-function LibraryView(props: { appName: string; characters: CharacterCard[]; worldbooks: WorldbookEntry[]; presets: Preset[]; presetBundles: PresetBundle[]; selectedPresetBundleId: string; setSelectedPresetBundleId: (value: string) => void; presetBundleName: string; setPresetBundleName: (value: string) => void; onCreatePresetBundle: () => Promise<void>; onRenamePresetBundle: () => Promise<void>; onDeletePresetBundle: (id: string) => Promise<void>; onSetPresetEntryEnabled: (bundleId: string, entryId: string, enabled: boolean) => Promise<void>; onMovePresetEntry: (bundleId: string, entryId: string, direction: -1 | 1) => Promise<void>; save: SaveFile; name: string; setName: (value: string) => void; draftText: string; setDraftText: (value: string) => void; editing: { kind: ContentKind; id: string } | null; setEditing: (editing: { kind: ContentKind; id: string } | null) => void; addContent: (kind: ContentKind) => Promise<void>; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void>; onExportSave: () => Promise<void>; onImportSave: (file?: File) => Promise<void>; onExportPresetBundle: () => Promise<void>; onImportPresetBundle: (file?: File) => Promise<void>; includeChatsOnExport: boolean; setIncludeChatsOnExport: (value: boolean) => void; onClearChats: () => Promise<void>; itemName: string; setItemName: (value: string) => void; itemTags: string; setItemTags: (value: string) => void; itemDescription: string; setItemDescription: (value: string) => void; onAddItem: () => void; onAddCharacterToWorld: (id: string) => void; visualCharacterId: string; setVisualCharacterId: (value: string) => void; onImportCharacterVisual: (characterId: string, kind: 'avatar' | 'portrait', file?: File) => Promise<void>; onRemoveCharacterVisual: (characterId: string, kind: 'avatar' | 'portrait') => Promise<void>; onUpdateCharacterAccentColor: (characterId: string, color?: string) => void; onRequestFriend: (characterId: string, direction: ContactDirection) => void; onResolveFriend: (requestId: string, action: 'accept' | 'reject' | 'revoke') => void; onSendTerminalText: (characterId: string, text: string, quoteMessageId?: string) => void; onSendTerminalStickerUrl: (characterId: string, url: string, quoteMessageId?: string) => void; onSendTerminalStickerFile: (characterId: string, file?: File, quoteMessageId?: string) => Promise<void>; onEditTerminalMessage: (characterId: string, messageId: string, text: string) => void; onDeleteTerminalMessage: (characterId: string, messageId: string) => void; onGenerateTerminalReply: (characterId: string) => Promise<void>; onSendVoice: (characterId: string, text: string, requestId?: string) => Promise<void>; ttsConfig: TtsConfig; ttsBusy: boolean; onSendPlayerTransfer: (characterId: string, currencyId: string, amount: number) => void; onResolveIncomingTransfer: (requestId: string, action: TransferAction) => void; onCreateTerminalAppointment: (characterId: string, input: TerminalAppointmentInput) => void; onSimulateIncomingAppointment: (characterId: string, input: TerminalAppointmentInput) => void; onResolveTerminalAppointment: (requestId: string, action: TerminalAppointmentAction) => void; onSimulateAppointmentAcceptance: (requestId: string) => void; onConfirmTerminalAppointment: (requestId: string) => void; terminalCall: TerminalCallSession | null; onStartCall: (characterId: string) => void; onSimulateIncomingCall: (characterId: string) => void; onAnswerCall: () => void; onSimulateCallAnswer: () => void; onEndCall: () => void; terminalBusy: boolean; musicPlayer: MusicPlayerController; selectedPresetId?: string; setSelectedPresetId?: (value: string) => void }) {
+function LibraryView(props: { appName: string; characters: CharacterCard[]; worldbooks: WorldbookEntry[]; presets: Preset[]; presetBundles: PresetBundle[]; selectedPresetBundleId: string; setSelectedPresetBundleId: (value: string) => void; presetBundleName: string; setPresetBundleName: (value: string) => void; onCreatePresetBundle: () => Promise<void>; onRenamePresetBundle: () => Promise<void>; onDeletePresetBundle: (id: string) => Promise<void>; onSetPresetEntryEnabled: (bundleId: string, entryId: string, enabled: boolean) => Promise<void>; onMovePresetEntry: (bundleId: string, entryId: string, direction: -1 | 1) => Promise<void>; save: SaveFile; name: string; setName: (value: string) => void; draftText: string; setDraftText: (value: string) => void; editing: { kind: ContentKind; id: string } | null; setEditing: (editing: { kind: ContentKind; id: string } | null) => void; addContent: (kind: ContentKind) => Promise<void>; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void>; onExportSave: () => Promise<void>; onImportSave: (file?: File) => Promise<void>; onExportPresetBundle: () => Promise<void>; onImportPresetBundle: (file?: File) => Promise<void>; includeChatsOnExport: boolean; setIncludeChatsOnExport: (value: boolean) => void; onClearChats: () => Promise<void>; itemName: string; setItemName: (value: string) => void; itemTags: string; setItemTags: (value: string) => void; itemDescription: string; setItemDescription: (value: string) => void; onAddItem: () => void; onAddCharacterToWorld: (id: string) => void; visualCharacterId: string; setVisualCharacterId: (value: string) => void; onImportCharacterVisual: (characterId: string, kind: 'avatar' | 'portrait', file?: File) => Promise<void>; onRemoveCharacterVisual: (characterId: string, kind: 'avatar' | 'portrait') => Promise<void>; onUpdateCharacterAccentColor: (characterId: string, color?: string) => void; onRequestFriend: (characterId: string, direction: ContactDirection) => void; onResolveFriend: (requestId: string, action: 'accept' | 'reject' | 'revoke') => void; onSendTerminalText: (characterId: string, text: string, quoteMessageId?: string) => void; onSendTerminalStickerUrl: (characterId: string, url: string, quoteMessageId?: string) => void; onSendTerminalStickerFile: (characterId: string, file?: File, quoteMessageId?: string) => Promise<void>; onSendStickerAsset: (characterId: string, asset: AssetRef, quoteMessageId?: string) => void; stickers: TerminalStickerRecord[]; onImportStickerFile: (file?: File) => Promise<void>; onImportStickerUrl: (url: string) => Promise<void>; onDeleteSticker: (record: TerminalStickerRecord) => Promise<void>; onRejoin: (characterId: string, requirement: string) => void; onEditTerminalMessage: (characterId: string, messageId: string, text: string) => void; onDeleteTerminalMessage: (characterId: string, messageId: string) => void; onGenerateTerminalReply: (characterId: string) => Promise<void>; onSendVoice: (characterId: string, text: string, requestId?: string) => Promise<void>; ttsConfig: TtsConfig; ttsBusy: boolean; onSendPlayerTransfer: (characterId: string, currencyId: string, amount: number) => void; onResolveIncomingTransfer: (requestId: string, action: TransferAction) => void; onCreateTerminalAppointment: (characterId: string, input: TerminalAppointmentInput) => void; onSimulateIncomingAppointment: (characterId: string, input: TerminalAppointmentInput) => void; onResolveTerminalAppointment: (requestId: string, action: TerminalAppointmentAction) => void; onSimulateAppointmentAcceptance: (requestId: string) => void; onConfirmTerminalAppointment: (requestId: string) => void; terminalCall: TerminalCallSession | null; onStartCall: (characterId: string) => void; onSimulateIncomingCall: (characterId: string) => void; onAnswerCall: () => void; onSimulateCallAnswer: () => void; onEndCall: () => void; terminalBusy: boolean; musicPlayer: MusicPlayerController; selectedPresetId?: string; setSelectedPresetId?: (value: string) => void }) {
   const navigation = useContext(LibraryNavigationContext);
   const entries: readonly DesktopEntry[] = LIBRARY_PAGE_DEFINITIONS;
   const pageTitle = LIBRARY_PAGE_DEFINITIONS.find((entry) => entry.id === navigation.activePage)?.pageTitle ?? '终端';
   if (!navigation.activePage) return <DesktopLauncher launcherId="terminal" title="终端" appName={props.appName} entries={entries} onOpen={(id) => navigation.onOpenPage(id as LibraryPage)} />;
   if (navigation.activePage === 'contacts') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><ContactsView save={props.save} onRequestFriend={props.onRequestFriend} onResolveFriend={props.onResolveFriend} onOpenMessage={(characterId) => { writeTerminalSelectedContact(characterId); navigation.onOpenPage('messages'); }} /></SubpageShell>;
-  if (navigation.activePage === 'messages') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><TerminalMessagesView save={props.save} onOpenContacts={() => navigation.onOpenPage('contacts')} onSendText={props.onSendTerminalText} onSendStickerUrl={props.onSendTerminalStickerUrl} onSendStickerFile={props.onSendTerminalStickerFile} onEditMessage={props.onEditTerminalMessage} onDeleteMessage={props.onDeleteTerminalMessage} onGenerateReply={props.onGenerateTerminalReply} onSendPlayerTransfer={props.onSendPlayerTransfer} onResolveIncomingTransfer={props.onResolveIncomingTransfer} onCreateTerminalAppointment={props.onCreateTerminalAppointment} onSimulateIncomingAppointment={props.onSimulateIncomingAppointment} onResolveTerminalAppointment={props.onResolveTerminalAppointment} onSimulateAppointmentAcceptance={props.onSimulateAppointmentAcceptance} onConfirmTerminalAppointment={props.onConfirmTerminalAppointment} terminalBusy={props.terminalBusy} /></SubpageShell>;
+  if (navigation.activePage === 'messages') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><TerminalMessagesView save={props.save} onOpenContacts={() => navigation.onOpenPage('contacts')} onSendText={props.onSendTerminalText} onSendStickerAsset={props.onSendStickerAsset} stickers={props.stickers} onImportStickerFile={props.onImportStickerFile} onImportStickerUrl={props.onImportStickerUrl} onDeleteSticker={props.onDeleteSticker} onRejoin={props.onRejoin} onEditMessage={props.onEditTerminalMessage} onDeleteMessage={props.onDeleteTerminalMessage} onGenerateReply={props.onGenerateTerminalReply} onSendPlayerTransfer={props.onSendPlayerTransfer} onResolveIncomingTransfer={props.onResolveIncomingTransfer} onCreateTerminalAppointment={props.onCreateTerminalAppointment} onSimulateIncomingAppointment={props.onSimulateIncomingAppointment} onResolveTerminalAppointment={props.onResolveTerminalAppointment} onSimulateAppointmentAcceptance={props.onSimulateAppointmentAcceptance} onConfirmTerminalAppointment={props.onConfirmTerminalAppointment} terminalBusy={props.terminalBusy} /></SubpageShell>;
   if (navigation.activePage === 'calls') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><TerminalCallsView save={props.save} activeCall={props.terminalCall} onStartCall={props.onStartCall} onSimulateIncomingCall={props.onSimulateIncomingCall} onAnswerCall={props.onAnswerCall} onSimulateCallAnswer={props.onSimulateCallAnswer} onEndCall={props.onEndCall} /></SubpageShell>;
   if (navigation.activePage === 'music') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><MusicApp player={props.musicPlayer} /></SubpageShell>;
   const worldCharacters = Object.values(props.save.world.characters);

@@ -184,6 +184,14 @@ describe('library desktop', () => {
     expect(source).toContain('aria-label="发送消息"');
     expect(source).toContain('aria-label="生成回复"');
     expect(source).toContain('aria-label="打开表情包"');
+    expect(source).toContain('加入图库');
+    expect(source).toContain('terminal-sticker-grid');
+    expect(source).toContain('aria-label="重回"');
+    expect(source).toContain('aria-label="重回要求"');
+    expect(source).toContain('onDeleteSticker');
+    const contentDbSource = readFileSync(new URL('../src/data/db/content.ts', import.meta.url), 'utf8');
+    expect(contentDbSource).toContain('this.version(10)');
+    expect(contentDbSource).toContain('terminalStickers');
     expect(source).toContain('aria-label="打开更多功能"');
     expect(source).toContain('aria-label="转账"');
     expect(source).toContain('aria-label="远程约定"');

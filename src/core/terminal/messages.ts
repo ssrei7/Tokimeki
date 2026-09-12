@@ -56,12 +56,25 @@ export function buildTerminalReplyPrompt(world: WorldState, characterId: string)
     ? '玩家主动添加了对方，随后申请被接受。'
     : '对方主动添加了玩家，玩家接受了申请。';
   return [
-    { role: 'system', content: `这是终端远程聊天。${friendshipContext}好友关系已由确定性内核确认。生成自然的聊天回复，不得推进关系、预约、事件、地点、时间或剧情，也不要声称已经修改任何世界状态。仅当当前角色确实要向玩家转账时，允许在正文后附加一个 <ops> JSON 数组，且只能使用 terminal_transfer_proposal：{"op":"terminal_transfer_proposal","characterId":"${characterId}","currencyId":"当前世界已有货币 ID","amount":有限正数}。该 op 只创建待收款提议，玩家确认前不会入账；除此之外不要输出任何 op。` },
+    { role: 'system', content: `这是终端远程聊天。${friendshipContext}好友关系已由确定性内核确认。生成自然的聊天回复，不得推进关系、预约、事件、地点、时间或剧情，也不要声称已经修改任何世界状态。若最近消息包含“重回请求”，只回复对方是否愿意重新联系、暂缓或提出条件，不得自动恢复面对面场景。仅当当前角色确实要向玩家转账时，允许在正文后附加一个 <ops> JSON 数组，且只能使用 terminal_transfer_proposal：{"op":"terminal_transfer_proposal","characterId":"${characterId}","currencyId":"当前世界已有货币 ID","amount":有限正数}。该 op 只创建待收款提议，玩家确认前不会入账；除此之外不要输出任何 op。` },
     ...listTerminalMessages(world, characterId).slice(-30).map((message) => ({
       role: message.senderId === TERMINAL_PLAYER_ID ? 'user' as const : 'assistant' as const,
       content: message.text ?? `[${message.type}]`,
     })),
   ];
+}
+
+export function sendTerminalRejoinRequest(world: WorldState, characterId: string, requirement = '', day = world.clock.day, slotId = world.clock.slotId): TerminalMessageResult {
+  if (!isAcceptedFriend(world, characterId)) return { ok: false, changed: false, warning: '只有已接受的好友可以发起重回请求。' };
+  const trimmed = requirement.trim();
+  const text = trimmed ? `重回请求：${trimmed}` : '重回请求：玩家希望重新联系，但没有附加要求。';
+  return appendMessage(world, characterId, {
+    senderId: TERMINAL_PLAYER_ID,
+    type: 'system',
+    text,
+    createdDay: Math.max(1, Math.floor(day)),
+    createdSlotId: slotId,
+  });
 }
 
 function appendMessage(world: WorldState, characterId: string, message: Omit<TerminalMessage, 'id' | 'threadId'>): TerminalMessageResult {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTerminalReplyPrompt, createFriendRequest, createIncomingTransferProposal, createTerminalOpRegistry, deleteTerminalMessage, editTerminalMessage, listContactCandidates, listTerminalMessages, listTerminalMessageThreads, listTerminalTransfers, resolveFriendRequest, resolveIncomingTransfer, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, simulateFriendAcceptance } from '../src/core/terminal';
+import { buildTerminalReplyPrompt, createFriendRequest, createIncomingTransferProposal, createTerminalOpRegistry, deleteTerminalMessage, editTerminalMessage, listContactCandidates, listTerminalMessages, listTerminalMessageThreads, listTerminalTransfers, resolveFriendRequest, resolveIncomingTransfer, sendPlayerTransfer, sendTerminalRejoinRequest, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, simulateFriendAcceptance } from '../src/core/terminal';
 import { migrateSave } from '../src/data/migrations';
 import { exportSaveZip, importSaveZip } from '../src/data/io/zip';
 import { CURRENT_SCHEMA_VERSION } from '../src/data/schema/save';
@@ -88,6 +88,18 @@ describe('terminal contacts', () => {
     const prompt = buildTerminalReplyPrompt(save.world, 'semi');
     expect(prompt[0]?.content).toContain('对方主动添加了玩家');
     expect(prompt.at(-1)).toEqual({ role: 'user', content: '在吗' });
+  });
+
+  it('records rejoin requests with optional blank requirements without changing world facts', () => {
+    const save = makeSave();
+    createFriendRequest(save.world, 'formal', 'outgoing');
+    const before = JSON.stringify({ relations: save.world.relations, clock: save.world.clock, events: save.world.eventHistory, appointments: save.world.appointments });
+    const blank = sendTerminalRejoinRequest(save.world, 'formal', '   ');
+    expect(blank).toMatchObject({ ok: true, changed: true, message: { type: 'system', senderId: 'player', text: '重回请求：玩家希望重新联系，但没有附加要求。' } });
+    const withRequirement = sendTerminalRejoinRequest(save.world, 'formal', '下周再聊');
+    expect(withRequirement.message).toMatchObject({ type: 'system', text: '重回请求：下周再聊' });
+    expect(buildTerminalReplyPrompt(save.world, 'formal')[0]?.content).toContain('重回请求');
+    expect(JSON.stringify({ relations: save.world.relations, clock: save.world.clock, events: save.world.eventHistory, appointments: save.world.appointments })).toBe(before);
   });
 
   it('edits and deletes either side of a terminal thread without changing world facts', () => {
