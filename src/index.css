@@ -71,6 +71,7 @@
 @layer base {
   :root { color-scheme: light; }
   html, body, #root { min-height: 100%; width: 100%; overflow: hidden; background: var(--gray-25); }
-  body { min-height: 100dvh; color: var(--foreground); }
+  html { min-height: 100vh; min-height: 100svh; background: var(--gray-25); }
+  body { min-height: 100vh; min-height: 100svh; height: 100vh; height: 100dvh; color: var(--foreground); background: var(--gray-25); }
   :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 }

@@ -15,7 +15,8 @@ describe('PWA shell', () => {
     expect(manifest.orientation).toBe('portrait-primary');
     expect(manifest.background_color).toBe('#fafafa');
     expect(manifest.icons?.length).toBeGreaterThan(0);
-    expect(existsSync(resolve(process.cwd(), 'public', manifest.icons?.[0]?.src ?? ''))).toBe(true);
+    expect(manifest.icons?.map((icon) => icon.src)).toEqual(expect.arrayContaining(['icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-512-maskable.png', 'icons/app-icon.svg']));
+    expect(manifest.icons?.some((icon) => existsSync(resolve(process.cwd(), 'public', icon.src)))).toBe(true);
   });
 
   it('links the manifest and enables safe-area standalone metadata', () => {
@@ -26,6 +27,7 @@ describe('PWA shell', () => {
     expect(html).toContain('viewport-fit=cover');
     expect(html).toContain('apple-mobile-web-app-capable');
     expect(html).toContain('theme-color');
+    expect(html).toContain('apple-touch-icon-180.png');
   });
 
   it('keeps the app shell stable across standalone viewport heights', () => {
@@ -41,5 +43,7 @@ describe('PWA shell', () => {
     expect(themeCss).toContain('--safe-area-top: env(safe-area-inset-top, 0px);');
     expect(themeCss).toContain('--safe-area-bottom: env(safe-area-inset-bottom, 0px);');
     expect(themeCss).toContain('background: var(--gray-25);');
+    expect(themeCss).toContain('min-height: 100svh;');
+    expect(themeCss).toContain('height: 100dvh;');
   });
 });
