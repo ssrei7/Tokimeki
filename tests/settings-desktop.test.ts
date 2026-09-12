@@ -161,14 +161,15 @@ describe('library desktop', () => {
     expect(musicSource).toContain('const [playlistOpen, setPlaylistOpen] = useState(false);');
   });
 
-  it('exposes the local bidirectional transfer controls inside messages', () => {
+  it('keeps player transfers and pending receipts while hiding counterpart simulation controls', () => {
     const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     expect(source).toContain('onSendPlayerTransfer');
-    expect(source).toContain('onCreateIncomingTransfer');
     expect(source).toContain('onResolveIncomingTransfer');
-    expect(source).toContain('模拟TA转入');
+    expect(source).not.toContain('模拟TA转入');
+    expect(source).not.toContain('模拟TA接受');
     expect(source).toContain('待收款');
     expect(source).toContain('转账记录');
+    expect(source).toContain('createTerminalOpRegistry');
   });
 
   it('exposes the local call shell without API wiring', () => {

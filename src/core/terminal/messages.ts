@@ -24,13 +24,13 @@ export function listTerminalMessages(world: WorldState, characterId: string): Te
 }
 
 export function buildTerminalReplyPrompt(world: WorldState, characterId: string): TerminalPromptMessage[] {
-  const request = [...world.terminal.friendRequests].reverse().find((item) => item.characterId === characterId && item.status === 'accepted');
+  const request = [...world.terminal.friendRequests].reverse().find((item) => item.characterId === characterId && (item.status === 'accepted' || (item.direction === 'outgoing' && item.status === 'pending')));
   if (!request) return [];
   const friendshipContext = request.direction === 'outgoing'
     ? '玩家主动添加了对方，随后申请被接受。'
     : '对方主动添加了玩家，玩家接受了申请。';
   return [
-    { role: 'system', content: `这是终端远程聊天。${friendshipContext}好友关系已由确定性内核确认。只生成自然的聊天回复，不要输出 JSON、ops、金额、预约、地点变更或剧情推进，不要声称修改任何世界状态。` },
+    { role: 'system', content: `这是终端远程聊天。${friendshipContext}好友关系已由确定性内核确认。生成自然的聊天回复，不得推进关系、预约、事件、地点、时间或剧情，也不要声称已经修改任何世界状态。仅当当前角色确实要向玩家转账时，允许在正文后附加一个 <ops> JSON 数组，且只能使用 terminal_transfer_proposal：{"op":"terminal_transfer_proposal","characterId":"${characterId}","currencyId":"当前世界已有货币 ID","amount":有限正数}。该 op 只创建待收款提议，玩家确认前不会入账；除此之外不要输出任何 op。` },
     ...listTerminalMessages(world, characterId).slice(-30).map((message) => ({
       role: message.senderId === TERMINAL_PLAYER_ID ? 'user' as const : 'assistant' as const,
       content: message.text ?? `[${message.type}]`,

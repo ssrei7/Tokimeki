@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTerminalReplyPrompt, createFriendRequest, createIncomingTransferProposal, listContactCandidates, listTerminalMessages, listTerminalTransfers, resolveFriendRequest, resolveIncomingTransfer, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, simulateFriendAcceptance } from '../src/core/terminal';
+import { buildTerminalReplyPrompt, createFriendRequest, createIncomingTransferProposal, createTerminalOpRegistry, listContactCandidates, listTerminalMessages, listTerminalTransfers, resolveFriendRequest, resolveIncomingTransfer, sendPlayerTransfer, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, simulateFriendAcceptance } from '../src/core/terminal';
 import { migrateSave } from '../src/data/migrations';
 import { exportSaveZip, importSaveZip } from '../src/data/io/zip';
 import { CURRENT_SCHEMA_VERSION } from '../src/data/schema/save';
@@ -44,34 +44,34 @@ describe('terminal contacts', () => {
     expect(candidates.find((candidate) => candidate.id === 'npc')?.location).toBeUndefined();
   });
 
-  it('keeps outgoing and incoming request transitions local and idempotent', () => {
+  it('accepts new outgoing and incoming requests locally and keeps legacy incoming decisions idempotent', () => {
     const save = makeSave();
     const before = JSON.stringify({ relations: save.world.relations, clock: save.world.clock, events: save.world.eventHistory });
     const outgoing = createFriendRequest(save.world, 'formal', 'outgoing');
-    expect(outgoing).toMatchObject({ ok: true, changed: true, request: { status: 'pending', direction: 'outgoing' } });
+    expect(outgoing).toMatchObject({ ok: true, changed: true, request: { status: 'accepted', direction: 'outgoing' } });
     const duplicate = createFriendRequest(save.world, 'formal', 'outgoing');
     expect(duplicate.changed).toBe(false);
-    expect(resolveFriendRequest(save.world, outgoing.request!.id, 'accept').ok).toBe(false);
-    expect(resolveFriendRequest(save.world, outgoing.request!.id, 'revoke')).toMatchObject({ ok: true, changed: true, request: { status: 'revoked' } });
-    expect(resolveFriendRequest(save.world, outgoing.request!.id, 'revoke').changed).toBe(false);
 
     const incoming = createFriendRequest(save.world, 'semi', 'incoming');
-    expect(resolveFriendRequest(save.world, incoming.request!.id, 'accept')).toMatchObject({ ok: true, changed: true, request: { status: 'accepted' } });
+    expect(incoming).toMatchObject({ ok: true, changed: true, request: { status: 'accepted', direction: 'incoming' } });
     expect(resolveFriendRequest(save.world, incoming.request!.id, 'accept').changed).toBe(false);
+    save.world.terminal.friendRequests.push({ id: 'legacy-incoming', characterId: 'npc', direction: 'incoming', status: 'pending', createdDay: 1, updatedDay: 1 });
+    expect(resolveFriendRequest(save.world, 'legacy-incoming', 'reject')).toMatchObject({ ok: true, changed: true, request: { status: 'rejected' } });
+    expect(resolveFriendRequest(save.world, 'legacy-incoming', 'reject').changed).toBe(false);
     expect(JSON.stringify({ relations: save.world.relations, clock: save.world.clock, events: save.world.eventHistory })).toBe(before);
   });
 
-  it('supports simulated acceptance and gates terminal messages on accepted friendship', () => {
+  it('accepts new requests immediately and gates terminal messages on friendship', () => {
     const save = makeSave();
     const blocked = sendTerminalTextMessage(save.world, 'formal', '还没加上');
     expect(blocked).toMatchObject({ ok: false, changed: false });
     const request = createFriendRequest(save.world, 'formal', 'outgoing');
-    expect(simulateFriendAcceptance(save.world, request.request!.id)).toMatchObject({ ok: true, changed: true, request: { status: 'accepted' } });
+    expect(request).toMatchObject({ ok: true, changed: true, request: { status: 'accepted' } });
     expect(simulateFriendAcceptance(save.world, request.request!.id).changed).toBe(false);
     const first = sendTerminalTextMessage(save.world, 'formal', '你好');
     expect(first).toMatchObject({ ok: true, changed: true, message: { type: 'text', text: '你好', senderId: 'player' } });
     expect(buildTerminalReplyPrompt(save.world, 'formal')[0]?.content).toContain('玩家主动添加了对方');
-    expect(buildTerminalReplyPrompt(save.world, 'formal')[0]?.content).toContain('不要输出 JSON、ops');
+    expect(buildTerminalReplyPrompt(save.world, 'formal')[0]?.content).toContain('terminal_transfer_proposal');
     expect(sendTerminalReplyMessage(save.world, 'formal', '收到').message).toMatchObject({ senderId: 'formal', text: '收到' });
     const quoted = sendTerminalTextMessage(save.world, 'formal', '引用这句', 1, 'morning', first.message!.id);
     expect(quoted.message).toMatchObject({ quoteMessageId: first.message!.id, quotePreview: '你好' });
@@ -83,12 +83,23 @@ describe('terminal contacts', () => {
 
   it('describes an incoming request separately in the terminal reply prompt', () => {
     const save = makeSave();
-    const request = createFriendRequest(save.world, 'semi', 'incoming');
-    resolveFriendRequest(save.world, request.request!.id, 'accept');
+    createFriendRequest(save.world, 'semi', 'incoming');
     sendTerminalTextMessage(save.world, 'semi', '在吗');
     const prompt = buildTerminalReplyPrompt(save.world, 'semi');
     expect(prompt[0]?.content).toContain('对方主动添加了玩家');
     expect(prompt.at(-1)).toEqual({ role: 'user', content: '在吗' });
+  });
+
+  it('treats legacy outgoing pending requests as accepted without changing legacy incoming intent', () => {
+    const save = makeSave();
+    save.world.terminal.friendRequests.push(
+      { id: 'legacy-outgoing', characterId: 'formal', direction: 'outgoing', status: 'pending', createdDay: 1, updatedDay: 1 },
+      { id: 'legacy-incoming', characterId: 'semi', direction: 'incoming', status: 'pending', createdDay: 1, updatedDay: 1 },
+    );
+    expect(listContactCandidates(save.world).find((candidate) => candidate.id === 'formal')?.request?.status).toBe('accepted');
+    expect(listContactCandidates(save.world).find((candidate) => candidate.id === 'semi')?.request?.status).toBe('pending');
+    expect(buildTerminalReplyPrompt(save.world, 'formal')[0]?.content).toContain('玩家主动添加了对方');
+    expect(sendTerminalTextMessage(save.world, 'formal', '旧存档也能聊天')).toMatchObject({ ok: true, changed: true });
   });
 
   it('round-trips stored sticker references and assets without base64 save data', async () => {
@@ -122,6 +133,26 @@ describe('terminal contacts', () => {
     expect(save.world.player.stats.money).toBe(115);
     expect(resolveIncomingTransfer(save.world, incoming.request!.id, 'accept').changed).toBe(false);
     expect(JSON.stringify({ relations: save.world.relations, clock: save.world.clock, events: save.world.eventHistory })).toBe(before);
+  });
+
+  it('applies only a validated terminal transfer proposal without directly changing balance', () => {
+    const save = makeSave();
+    createFriendRequest(save.world, 'formal', 'outgoing');
+    save.world.player.stats.money = 100;
+    const registry = createTerminalOpRegistry();
+    const context = { world: save.world, actorId: 'formal', day: 1, slotId: 'morning', nodeId: 'start', log: () => undefined };
+    const accepted = registry.applyAll([{ op: 'terminal_transfer_proposal', characterId: 'formal', currencyId: 'default', amount: 12 }], context, 1);
+    expect(accepted).toMatchObject({ applied: 1, rejected: [], truncated: 0 });
+    expect(save.world.player.stats.money).toBe(100);
+    expect(listTerminalTransfers(save.world, 'formal').at(-1)).toMatchObject({ direction: 'incoming', status: 'pending', amount: 12 });
+
+    const before = save.world.terminal.transferRequests.length;
+    expect(registry.applyAll([{ op: 'terminal_transfer_proposal', characterId: 'semi', currencyId: 'default', amount: 5 }], context, 1).rejected).toHaveLength(1);
+    expect(registry.applyAll([{ op: 'terminal_transfer_proposal', characterId: 'formal', currencyId: 'missing', amount: 5 }], context, 1).rejected).toHaveLength(1);
+    expect(registry.applyAll([{ op: 'terminal_transfer_proposal', characterId: 'formal', currencyId: 'default', amount: 0.5 }], context, 1).rejected).toHaveLength(1);
+    expect(registry.applyAll([{ op: 'adjust_relation_axis', target: 'formal', key: 'trust', delta: 1 }], context, 1).warnings).toContain('Unregistered op discarded: adjust_relation_axis');
+    expect(save.world.terminal.transferRequests).toHaveLength(before);
+    expect(save.world.player.stats.money).toBe(100);
   });
 
   it('rejects invalid, unsafe, insufficient and non-friend transfers', () => {

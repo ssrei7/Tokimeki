@@ -27,9 +27,13 @@ export interface ContactOperationResult {
 }
 
 function latestRequest(world: WorldState, characterId: string, direction?: ContactDirection): TerminalFriendRequest | undefined {
-  return [...world.terminal.friendRequests]
+  const request = [...world.terminal.friendRequests]
     .reverse()
     .find((request) => request.characterId === characterId && (!direction || request.direction === direction));
+  if (request?.direction === 'outgoing' && request.status === 'pending') {
+    return { ...request, status: 'accepted' };
+  }
+  return request;
 }
 
 function characterRecord(world: WorldState, characterId: string) {
@@ -71,13 +75,21 @@ export function listContactCandidates(
 
 export function createFriendRequest(world: WorldState, characterId: string, direction: ContactDirection, day = world.clock.day): ContactOperationResult {
   if (!characterRecord(world, characterId)) return { ok: false, changed: false, warning: '联系人不存在。' };
-  const existing = latestRequest(world, characterId, direction);
-  if (existing && (existing.status === 'pending' || existing.status === 'accepted')) return { ok: true, changed: false, request: existing };
+  const existingRaw = world.terminal.friendRequests.find((item) => item.characterId === characterId && item.direction === direction && (item.status === 'pending' || item.status === 'accepted'));
+  if (existingRaw && direction === 'outgoing' && existingRaw.status === 'pending') {
+    existingRaw.status = 'accepted';
+    existingRaw.updatedDay = Math.max(1, Math.floor(day));
+    return { ok: true, changed: true, request: existingRaw };
+  }
+  if (existingRaw) return { ok: true, changed: false, request: existingRaw };
   const request: TerminalFriendRequest = {
     id: `friend-request-${characterId}-${direction}-${world.terminal.friendRequests.length + 1}`,
     characterId,
     direction,
-    status: 'pending',
+    // Friend requests are a local simulation: the counterpart confirms in
+    // the same deterministic operation. Incoming legacy pending requests are
+    // still supported by resolveFriendRequest below.
+    status: 'accepted',
     createdDay: Math.max(1, Math.floor(day)),
     updatedDay: Math.max(1, Math.floor(day)),
   };
@@ -99,7 +111,7 @@ export function resolveFriendRequest(world: WorldState, requestId: string, actio
   return { ok: true, changed: true, request };
 }
 
-/** Local test/sandbox action: simulate the contact accepting an outgoing request. */
+/** Backward-compatible helper for old callers. New requests are accepted on creation. */
 export function simulateFriendAcceptance(world: WorldState, requestId: string, day = world.clock.day): ContactOperationResult {
   const request = world.terminal.friendRequests.find((item) => item.id === requestId);
   if (!request) return { ok: false, changed: false, warning: '好友申请不存在。' };
@@ -112,5 +124,5 @@ export function simulateFriendAcceptance(world: WorldState, requestId: string, d
 }
 
 export function isAcceptedFriend(world: WorldState, characterId: string): boolean {
-  return world.terminal.friendRequests.some((request) => request.characterId === characterId && request.status === 'accepted');
+  return world.terminal.friendRequests.some((request) => request.characterId === characterId && (request.status === 'accepted' || (request.direction === 'outgoing' && request.status === 'pending')));
 }
