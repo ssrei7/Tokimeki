@@ -249,7 +249,7 @@ describe('library desktop', () => {
   it('exposes the local call shell without API wiring', () => {
     const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     expect(source).toContain('data-testid="terminal-calls"');
-    expect(source).toContain('模拟来电');
+    expect(source).toContain('让TA来电');
     expect(source).toContain('模拟TA接听');
     expect(source).toContain('通话记录');
     expect(source).toContain('recordTerminalCall');
@@ -271,7 +271,7 @@ describe('library desktop', () => {
     const css = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
     expect(source).toContain('candidate.summary');
     expect(source).toContain("callAction('呼叫'");
-    expect(source).toContain("callAction('模拟来电'");
+    expect(source).toContain("callAction('让TA来电'");
     expect(source).toContain('terminal-call-history-heading');
     expect(source).toContain('readCallHistoryCollapsed');
     expect(source).toContain('writeCallHistoryCollapsed');
