@@ -232,7 +232,7 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .vn-portrait-area { min-height: 150px; display: grid; flex: 1 1 auto; place-items: end center; overflow: hidden; padding: 6px 12px 0; }
 .vn-portrait { display: block; max-width: min(100%, 360px); max-height: 100%; object-fit: contain; object-position: center bottom; filter: drop-shadow(0 10px 14px rgb(63 63 63 / 0.15)); }
 .vn-portrait-empty { width: min(100%, 360px); height: 100%; min-height: 80px; }
-.vn-dialogue-box { display: flex; flex: 0 0 auto; min-height: 80px; max-height: min(60%, 360px); flex-direction: column; overflow: hidden; border-top: 1px solid var(--gray-200); background: rgb(255 255 255 / 0.95); }
+.vn-dialogue-box { display: flex; flex: 0 0 auto; min-height: 80px; flex-direction: column; overflow: hidden; border-top: 1px solid var(--gray-200); background: rgb(255 255 255 / 0.95); }
 .vn-dialogue-resize-handle { flex: 0 0 8px; cursor: ns-resize; touch-action: none; background: linear-gradient(180deg, transparent 0 3px, var(--gray-200) 3px 5px, transparent 5px); }
 .vn-dialogue-log { flex: 1 1 auto; gap: 6px; min-height: 0; padding: 8px; touch-action: pan-y; scrollbar-width: thin; }
 .vn-message-group { position: relative; display: flex; flex-direction: column; gap: 6px; }
@@ -287,7 +287,10 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .story-scene-draft-row small { color: var(--gray-500); }
 .composer { flex: 0 0 auto; display: grid; gap: 4px; padding-top: 4px; background: var(--gray-25); }
 .composer textarea { min-height: 52px; resize: vertical; }
-.composer-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.composer-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.chat-icon-button { width: 42px; min-width: 42px; min-height: 40px; display: inline-grid; place-items: center; padding: 0; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--gray-600); color: var(--gray-0); }
+.chat-icon-button.secondary { background: var(--gray-50); color: var(--gray-700); }
+.chat-icon-button svg { width: 19px; height: 19px; stroke-width: 2; }
 .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .button-row button { font-size: 13px; }
 .list-card { margin: 12px 0; }
@@ -387,6 +390,7 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .relation-change small { display: block; margin-top: -4px; color: var(--muted); font-size: 12px; }
 .interaction-tools { position: relative; display: flex; gap: 6px; align-items: center; }
 .interaction-icon { width: 38px; min-height: 36px; padding: 0; font-size: 20px; line-height: 1; }
+.interaction-icon svg { width: 18px; height: 18px; stroke-width: 2; }
 .interaction-popover { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 12; width: min(420px, calc(100vw - 32px)); max-height: min(60vh, 420px); overflow: auto; box-shadow: 0 12px 32px rgb(23 23 23 / 0.17); }
 .list-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid var(--gray-100); }
 .list-row > span:first-child { min-width: 0; overflow-wrap: anywhere; }

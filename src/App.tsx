@@ -56,7 +56,7 @@ import { findMatchingHooks, syncLeadHooks, triggerHook } from './core/world/hook
 import { createEconomyOpRegistry, formatCurrency, getHousingTier, getHousingUpgradeOffer, getJobQuote, getJobShiftStatus, getRentalQuote, getShopOffer, getShopStatus, injectEconomyMorningAds, registerEconomyHooks } from './features/economy';
 import { getSoftGoals } from './features/life';
 import { canAffordEnergy, energyCostForAction, getEnergyState, movementEnergyKind, registerEnergyOps } from './features/energy';
-import { Backpack, BookOpen, Bot, BrainCircuit, Bug, CalendarDays, Camera, ContactRound, FileArchive, History, House, MessageCircle, Milestone, Music2, NotebookPen, Palette, Phone, ReceiptText, Route, ShieldCheck, SlidersHorizontal, Target, UserRound, UsersRound, BriefcaseBusiness, Wrench } from 'lucide-react';
+import { AlertTriangle, Backpack, BookOpen, Bot, BrainCircuit, Bug, CalendarDays, Camera, ContactRound, FileArchive, Gift, History, House, LogOut, MessageCircle, Milestone, Music2, NotebookPen, Palette, Phone, ReceiptText, RefreshCw, Route, Send, ShieldCheck, SlidersHorizontal, Sparkles, Target, UserRound, UsersRound, BriefcaseBusiness, Wrench } from 'lucide-react';
 import { DesktopLauncher, EmptyState, SubpageShell, type DesktopEntry } from './components/desktop-shell';
 import { MusicApp } from './components/music-app';
 import { useMusicPlayer, type MusicPlayerController } from './features/music/player';
@@ -142,6 +142,7 @@ type EncounterChatSession = { characterId: string; participantIds: string[]; nod
 type PendingMemoryCandidate = MemoryConsolidationCandidate & { sourceMessageIndices: number[] };
 type TerminalCallSession = { id: string; characterId: string; direction: 'outgoing' | 'incoming'; state: 'ringing' | 'active'; startedDay: number; startedSlotId: string };
 type DevToolReport = { title: string; body: string } | null;
+type ActiveChatPanel = 'gift' | 'collection' | 'regenerate' | 'recovery' | null;
 const ENCOUNTER_CHAT_SESSION_KEY = 'tokimeki.encounter-chat-session';
 
 function readEncounterChatSession(): EncounterChatSession | null {
@@ -3094,10 +3095,8 @@ function ChatView(props: {
   const followLatestRef = useRef(true);
   const previousCharacterIdRef = useRef(props.selectedCharacterId);
   const [showOlderMessages, setShowOlderMessages] = useState(false);
-  const [showRegeneratePanel, setShowRegeneratePanel] = useState(false);
+  const [activeChatPanel, setActiveChatPanel] = useState<ActiveChatPanel>(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState('');
-  const [showGiftPanel, setShowGiftPanel] = useState(false);
-  const [showCollectionPanel, setShowCollectionPanel] = useState(false);
   const [messageMenuIndex, setMessageMenuIndex] = useState<number | null>(null);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [editingMessageText, setEditingMessageText] = useState('');
@@ -3108,9 +3107,12 @@ function ChatView(props: {
     if (typeof window === 'undefined') return 150;
     try {
       const stored = Number(window.localStorage.getItem('tokimeki.dialogueBoxHeight'));
-      return Number.isFinite(stored) ? Math.min(360, Math.max(80, stored)) : 150;
+      return Number.isFinite(stored) ? Math.max(80, stored) : 150;
     } catch { return 150; }
   });
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [dialogueMaxHeight, setDialogueMaxHeight] = useState(360);
+  const recoveryVisibleRef = useRef(false);
   const resizeStartRef = useRef<{ y: number; height: number } | null>(null);
   const canGenerate = canGenerateReply(props.messages, props.input);
   const latestMessage = props.messages.at(-1)?.content;
@@ -3226,7 +3228,31 @@ function ChatView(props: {
     }
   }, [latestAssistantKey, latestRole, props.busy]);
 
-  useEffect(() => { setShowRegeneratePanel(false); }, [latestAssistantKey]);
+  useEffect(() => { setActiveChatPanel((panel) => panel === 'regenerate' ? null : panel); }, [latestAssistantKey]);
+
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const updateStageHeight = () => {
+      const maxHeight = Math.max(80, Math.round(stage.clientHeight));
+      setDialogueMaxHeight(maxHeight);
+      setDialogueBoxHeight((height) => Math.min(maxHeight, Math.max(80, height)));
+    };
+    updateStageHeight();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateStageHeight);
+      return () => window.removeEventListener('resize', updateStageHeight);
+    }
+    const observer = new ResizeObserver(updateStageHeight);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const recoveryVisible = Boolean(props.interrupted || props.pendingOps);
+    if (recoveryVisible && !recoveryVisibleRef.current) setActiveChatPanel('recovery');
+    recoveryVisibleRef.current = recoveryVisible;
+  }, [props.interrupted, props.pendingOps]);
 
   useEffect(() => {
     try { window.localStorage.setItem('tokimeki.dialogueBoxHeight', String(dialogueBoxHeight)); }
@@ -3241,9 +3267,12 @@ function ChatView(props: {
   const moveDialogueResize = (event: PointerEvent<HTMLDivElement>) => {
     const start = resizeStartRef.current;
     if (!start) return;
-    setDialogueBoxHeight(Math.min(360, Math.max(80, start.height + start.y - event.clientY)));
+    setDialogueBoxHeight(Math.min(dialogueMaxHeight, Math.max(80, start.height + start.y - event.clientY)));
   };
   const endDialogueResize = () => { resizeStartRef.current = null; };
+  const toggleChatPanel = (panel: Exclude<ActiveChatPanel, null>) => {
+    setActiveChatPanel((current) => current === panel ? null : panel);
+  };
   const clearMessagePress = () => {
     if (messagePressTimerRef.current !== null) {
       window.clearTimeout(messagePressTimerRef.current);
@@ -3271,12 +3300,12 @@ function ChatView(props: {
 
   return <section className="chat-screen vn-chat-screen">
     {props.topicMode === 'manual' && !props.participantsLocked && <div className="character-picker"><div className="participant-picker" aria-label="本次对话角色">{props.characters.length > 1 && <span className="participant-label">本次对话</span>}{props.characters.map((item) => <label key={item.id} className="participant-option"><input type="checkbox" checked={participantIds.includes(item.id)} onChange={() => toggleParticipant(item.id)} /><span>{item.name}</span></label>)}</div><select aria-label="主要聊天角色" value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">当前地点无人</option>{participantCharacters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
-    <div className={`vn-stage ${sceneBackgroundUrl ? 'has-background' : 'default-background'}`} style={{ '--vn-accent': accentColor, ...(sceneBackgroundUrl ? { backgroundImage: `linear-gradient(180deg, #0002, #0003), url("${sceneBackgroundUrl}")` } : {}) } as CSSProperties}>
+    <div ref={stageRef} className={`vn-stage ${sceneBackgroundUrl ? 'has-background' : 'default-background'}`} style={{ '--vn-accent': accentColor, ...(sceneBackgroundUrl ? { backgroundImage: `linear-gradient(180deg, #0002, #0003), url("${sceneBackgroundUrl}")` } : {}) } as CSSProperties}>
       <div className="vn-portrait-area" aria-label={`${activeSpeakerName}的立绘`}>
         {portraitUrl ? <img className="vn-portrait" style={activePortrait?.transform ? { transform: `translate(${activePortrait.transform.offsetX}px, ${activePortrait.transform.offsetY}px) scale(${activePortrait.transform.scale})` } : undefined} src={portraitUrl} alt={`${activeSpeakerName}的立绘`} /> : <div className="vn-portrait-empty" aria-label="暂无立绘" />}
       </div>
       <div className="vn-dialogue-box" style={{ height: `${dialogueBoxHeight}px` }}>
-        <div className="vn-dialogue-resize-handle" role="separator" tabIndex={0} aria-label="调整对话框高度" aria-orientation="horizontal" aria-valuemin={80} aria-valuemax={360} aria-valuenow={dialogueBoxHeight} onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); setDialogueBoxHeight((height) => Math.min(360, Math.max(80, height + (event.key === 'ArrowUp' ? 10 : -10)))); } }} onPointerDown={beginDialogueResize} onPointerMove={moveDialogueResize} onPointerUp={endDialogueResize} onPointerCancel={endDialogueResize} />
+        <div className="vn-dialogue-resize-handle" role="separator" tabIndex={0} aria-label="调整对话框高度" aria-orientation="horizontal" aria-valuemin={80} aria-valuemax={dialogueMaxHeight} aria-valuenow={dialogueBoxHeight} onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); setDialogueBoxHeight((height) => Math.min(dialogueMaxHeight, Math.max(80, height + (event.key === 'ArrowUp' ? 10 : -10)))); } }} onPointerDown={beginDialogueResize} onPointerMove={moveDialogueResize} onPointerUp={endDialogueResize} onPointerCancel={endDialogueResize} />
         <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.map((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, speakerLabelsById); const isLatestCollapsible = latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, effectiveRevealedLineCount)) : lines; const editable = isEditableChatMessage(message); const menuOpen = messageMenuIndex === messageIndex; const editing = editingMessageIndex === messageIndex; return <div className={`vn-message-group ${message.role}`} key={`${message.role}-${messageIndex}`} onPointerDown={(event) => beginMessagePress(event, messageIndex)} onPointerUp={clearMessagePress} onPointerCancel={clearMessagePress} onPointerLeave={clearMessagePress} onContextMenu={(event) => { event.preventDefault(); openMessageMenu(messageIndex); }}>{displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>)}{editable && menuOpen && !editing && <div className="message-action-menu" role="menu"><button type="button" onClick={() => startMessageEdit(messageIndex)}>编辑</button><button type="button" className="danger" onClick={() => { if (window.confirm('删除这条台词？只会删除聊天记录，不会回滚已执行的状态变化。')) { void props.onDeleteMessage(messageIndex); cancelMessageMenu(); } }}>删除</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div>}{editing && <div className="message-edit-panel"><textarea aria-label="编辑台词" value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} autoFocus /><div className="button-row"><button type="button" onClick={() => { void props.onEditMessage(messageIndex, editingMessageText); cancelMessageMenu(); }} disabled={!editingMessageText.trim()}>保存</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}</div>; })}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > effectiveRevealedLineCount ? <button className="vn-next-line" onClick={() => { followLatestRef.current = true; setRevealedAssistantKey(latestAssistantKey); setRevealedLineCount(Math.min(latestAssistantLines.length, effectiveRevealedLineCount + 1)); }}>下一段 · {effectiveRevealedLineCount}/{latestAssistantLines.length}</button> : replyProgress && <div className="vn-generation-progress" role="status" aria-live="polite"><span>{replyProgress === 'first-line' ? '正在生成第一段' : '后续内容生成中'}</span><span className="vn-generation-dots" aria-hidden="true"><i /><i /><i /></span></div>}</div>
       </div>
     </div>
@@ -3288,22 +3317,34 @@ function ChatView(props: {
     {props.topicMode === 'manual' && props.topicRetryAvailable && <div className="topic-retry-panel" aria-label="重试话题树"><span>话题树生成失败，但手动对话仍可继续。</span><button className="secondary" onClick={props.onRetryTopicTree} disabled={props.busy || props.topicLoading}>重试生成话题树</button></div>}
     {props.topicMode === 'ended' && <div className="topic-tree-panel"><p className="empty">本次面对面场景已经结束。</p></div>}
     {props.departure?.status === 'pending' && <div className="departure-panel" role="alert"><strong>{props.departure.kind === 'character_request' ? '对方似乎准备离开了。' : '你提出了告别。'}</strong>{props.departure.reason && <p>{props.departure.reason}</p>}<div className="button-row"><button onClick={() => props.onResolveDeparture('stayed')} disabled={props.busy}>挽留，继续聊聊</button><button className="secondary" onClick={() => props.onResolveDeparture('left')} disabled={props.busy}>就到这里吧</button></div></div>}
-    {props.canFarewell && props.topicMode === 'manual' && <div className="interaction-tools" aria-label="自由互动工具"><button type="button" className="interaction-icon" aria-label="打开送礼" title="送礼" onClick={() => setShowGiftPanel((value) => !value)}>🎁</button><button type="button" className="interaction-icon" aria-label="打开收藏" title="出示收藏" onClick={() => setShowCollectionPanel((value) => !value)}>🗂️</button>{showGiftPanel && <div className="interaction-popover gift-panel" aria-label="送礼"><div className="list-heading"><strong>带来的礼物</strong><button className="secondary" onClick={() => setShowGiftPanel(false)}>收起</button></div>{props.giftItems.length ? <div className="gift-row">{props.giftTargets.length > 1 && <select aria-label="送给谁" value={selectedGiftTargetId} onChange={(event) => setSelectedGiftTargetId(event.target.value)}>{props.giftTargets.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}</select>}<select aria-label="选择礼物" value={selectedGiftId} onChange={(event) => setSelectedGiftId(event.target.value)}>{props.giftItems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="secondary" onClick={() => { if (selectedGiftId && selectedGiftTargetId) { props.onOfferGift(selectedGiftId, selectedGiftTargetId); setShowGiftPanel(false); } }} disabled={props.busy || !selectedGiftId || !selectedGiftTargetId}>送出</button></div> : <p className="empty">暂无可赠送物品。</p>}{props.giftHistory.length > 0 && <div className="gift-history"><strong>最近反应</strong>{props.giftHistory.map((entry) => <span key={entry.id}>第 {entry.day} 天 · {props.world.characters[entry.charId]?.name ?? entry.charId} · {props.world.items[entry.itemId]?.name ?? entry.itemId}：{entry.status === 'pending' ? <><span>等待角色回应</span><button className="secondary" onClick={() => props.onRetryGift(entry.id)} disabled={props.busy}>重试回应</button></> : `${giftReactionLabel(entry.reaction)}${entry.accepted === false ? ' · 未接受' : ''}`}</span>)}</div>}</div>}{showCollectionPanel && <div className="interaction-popover collection-show-panel" aria-label="出示收藏"><div className="list-heading"><strong>出示收藏</strong><button className="secondary" onClick={() => setShowCollectionPanel(false)}>收起</button></div>{props.collectionEntries.length ? <div className="gift-row"><select aria-label="选择收藏" value={selectedCollectionId} onChange={(event) => setSelectedCollectionId(event.target.value)}><option value="">选择一条收藏</option>{props.collectionEntries.map((entry) => <option key={entry.id} value={entry.id}>{entry.title}</option>)}</select><button className="secondary" onClick={() => { if (selectedCollectionId) { props.onShowCollection(selectedCollectionId); setShowCollectionPanel(false); } }} disabled={props.busy || !selectedCollectionId}>出示</button></div> : <p className="empty">暂无可出示的收藏。</p>}</div>}</div>}
-    {props.topicMode === 'manual' && props.canRegenerate && latestRole === 'assistant' && !showRegeneratePanel && <button className="secondary regenerate-toggle" onClick={() => setShowRegeneratePanel(true)}>重新生成回复</button>}
-    {props.topicMode === 'manual' && props.canRegenerate && latestRole === 'assistant' && showRegeneratePanel && <div className="regenerate-panel" aria-label="重新生成回复">
-      <div className="list-heading"><strong>对这条回复不满意？</strong><button className="secondary" onClick={() => setShowRegeneratePanel(false)}>收起</button></div>
-      <span className="io-scope">只会替换叙述文字，不会重复应用状态变化</span>
-      <textarea value={props.regenerateInput} onChange={(event) => props.setRegenerateInput(event.target.value)} placeholder="告诉角色换一种说法……" aria-label="重新生成要求" />
-      <button className="secondary" onClick={() => void props.onRegenerate()} disabled={props.busy}>重新生成</button>
+    {props.topicMode === 'manual' && <div className="interaction-tools" aria-label="聊天操作工具">
+      {props.canFarewell && <>
+        <button type="button" className="interaction-icon chat-icon-button" aria-label="打开送礼" aria-pressed={activeChatPanel === 'gift'} title="送礼" onClick={() => toggleChatPanel('gift')}><Gift aria-hidden="true" /></button>
+        <button type="button" className="interaction-icon chat-icon-button" aria-label="打开收藏" aria-pressed={activeChatPanel === 'collection'} title="出示收藏" onClick={() => toggleChatPanel('collection')}><BookOpen aria-hidden="true" /></button>
+      </>}
+      {props.canRegenerate && latestRole === 'assistant' && <button type="button" className="interaction-icon chat-icon-button" aria-label="打开重新生成" aria-pressed={activeChatPanel === 'regenerate'} title="重新生成" onClick={() => toggleChatPanel('regenerate')}><RefreshCw aria-hidden="true" /></button>}
+      {(props.interrupted || props.pendingOps) && <button type="button" className="interaction-icon chat-icon-button" aria-label="打开恢复处理" aria-pressed={activeChatPanel === 'recovery'} title="恢复处理" onClick={() => toggleChatPanel('recovery')}><AlertTriangle aria-hidden="true" /></button>}
+      {activeChatPanel === 'gift' && <div className="interaction-popover gift-panel" aria-label="送礼">
+        <div className="list-heading"><strong>带来的礼物</strong><button className="secondary" onClick={() => setActiveChatPanel(null)}>收起</button></div>
+        {props.giftItems.length ? <div className="gift-row">{props.giftTargets.length > 1 && <select aria-label="送给谁" value={selectedGiftTargetId} onChange={(event) => setSelectedGiftTargetId(event.target.value)}>{props.giftTargets.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}</select>}<select aria-label="选择礼物" value={selectedGiftId} onChange={(event) => setSelectedGiftId(event.target.value)}>{props.giftItems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="secondary" onClick={() => { if (selectedGiftId && selectedGiftTargetId) { props.onOfferGift(selectedGiftId, selectedGiftTargetId); setActiveChatPanel(null); } }} disabled={props.busy || !selectedGiftId || !selectedGiftTargetId}>送出</button></div> : <p className="empty">暂无可赠送物品。</p>}
+        {props.giftHistory.length > 0 && <div className="gift-history"><strong>最近反应</strong>{props.giftHistory.map((entry) => <span key={entry.id}>第 {entry.day} 天 · {props.world.characters[entry.charId]?.name ?? entry.charId} · {props.world.items[entry.itemId]?.name ?? entry.itemId}：{entry.status === 'pending' ? <><span>等待角色回应</span><button className="secondary" onClick={() => props.onRetryGift(entry.id)} disabled={props.busy}>重试回应</button></> : <>{giftReactionLabel(entry.reaction)}{entry.accepted === false ? ' · 未接受' : ''}</>}</span>)}</div>}
+      </div>}
+      {activeChatPanel === 'collection' && <div className="interaction-popover collection-show-panel" aria-label="出示收藏">
+        <div className="list-heading"><strong>出示收藏</strong><button className="secondary" onClick={() => setActiveChatPanel(null)}>收起</button></div>
+        {props.collectionEntries.length ? <div className="gift-row"><select aria-label="选择收藏" value={selectedCollectionId} onChange={(event) => setSelectedCollectionId(event.target.value)}><option value="">选择一条收藏</option>{props.collectionEntries.map((entry) => <option key={entry.id} value={entry.id}>{entry.title}</option>)}</select><button className="secondary" onClick={() => { if (selectedCollectionId) { props.onShowCollection(selectedCollectionId); setActiveChatPanel(null); } }} disabled={props.busy || !selectedCollectionId}>出示</button></div> : <p className="empty">暂无可出示的收藏。</p>}
+      </div>}
+      {activeChatPanel === 'regenerate' && <div className="interaction-popover regenerate-panel" aria-label="重新生成回复">
+        <div className="list-heading"><strong>对这条回复不满意？</strong><button className="secondary" onClick={() => setActiveChatPanel(null)}>收起</button></div>
+        <span className="io-scope">只会替换叙述文字，不会重复应用状态变化</span>
+        <textarea value={props.regenerateInput} onChange={(event) => props.setRegenerateInput(event.target.value)} placeholder="告诉角色换一种说法……" aria-label="重新生成要求" />
+        <button className="secondary" onClick={() => void props.onRegenerate()} disabled={props.busy}>重新生成</button>
+      </div>}
+      {activeChatPanel === 'recovery' && <div className="interaction-popover ops-recovery" aria-label="恢复处理">
+        {props.interrupted && <div role="alert"><strong>上次回复已中断</strong><p>页面离开后台后请求无法确认完成，已保留草稿和已收到正文。不会自动重试或重复应用状态变化。</p><div className="button-row"><button onClick={() => { setActiveChatPanel(null); void props.onRetryInterrupted(); }} disabled={props.busy}>手动重试</button></div></div>}
+        {props.pendingOps && <div role="alert"><strong>本回合未产生状态变更</strong><p>{props.pendingOps.streamError ? '回复流中断，已保留收到的正文。你可以重试提取或手动补录。' : '正文已保留，但 ops 无法解析。你可以重试提取或手动补录。'}</p><textarea aria-label="手动补录 ops JSON" spellCheck={false} value={props.manualOps} onChange={(event) => props.setManualOps(event.target.value)} /><div className="button-row"><button className="secondary" disabled={props.busy} onClick={() => void props.onRetryOps()}>重试提取</button><button disabled={props.busy} onClick={() => void props.onApplyManualOps()}>应用手动 ops</button></div></div>}
+      </div>}
     </div>}
-    {props.interrupted && <div className="ops-recovery" role="alert"><strong>上次回复已中断</strong><p>页面离开后台后请求无法确认完成，已保留草稿和已收到正文。不会自动重试或重复应用状态变化。</p><div className="button-row"><button onClick={() => void props.onRetryInterrupted()} disabled={props.busy}>手动重试</button></div></div>}
-    {props.pendingOps && <div className="ops-recovery" role="alert">
-      <strong>本回合未产生状态变更</strong>
-      <p>{props.pendingOps.streamError ? '回复流中断，已保留收到的正文。你可以重试提取或手动补录。' : '正文已保留，但 ops 无法解析。你可以重试提取或手动补录。'}</p>
-      <textarea aria-label="手动补录 ops JSON" spellCheck={false} value={props.manualOps} onChange={(event) => props.setManualOps(event.target.value)} />
-      <div className="button-row"><button className="secondary" disabled={props.busy} onClick={() => void props.onRetryOps()}>重试提取</button><button disabled={props.busy} onClick={() => void props.onApplyManualOps()}>应用手动 ops</button></div>
-    </div>}
-    {props.topicMode === 'manual' && <div className="composer"><textarea value={props.input} onChange={(event) => props.setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void props.onAppend(); } }} placeholder="说点什么……" /><div className="composer-actions"><button className="secondary" onClick={() => void props.onAppend()} disabled={props.busy || !props.input.trim()}>发送消息</button><button onClick={() => void props.onGenerate()} disabled={props.busy || !canGenerate}>生成回复</button>{props.canFarewell && <button className="secondary" onClick={props.onPlayerFarewell} disabled={props.busy || props.departure?.status === 'pending' || props.departure?.status === 'left'}>告别</button>}</div></div>}
+    {props.topicMode === 'manual' && <div className="composer"><textarea value={props.input} onChange={(event) => props.setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void props.onAppend(); } }} placeholder="说点什么……" /><div className="composer-actions"><button type="button" className="chat-icon-button secondary" aria-label="发送消息" title="发送消息" onClick={() => void props.onAppend()} disabled={props.busy || !props.input.trim()}><Send aria-hidden="true" /></button><button type="button" className="chat-icon-button" aria-label="生成回复" title="生成回复" onClick={() => void props.onGenerate()} disabled={props.busy || !canGenerate}><Sparkles aria-hidden="true" /></button>{props.canFarewell && <button type="button" className="chat-icon-button secondary" aria-label="告别" title="告别" onClick={props.onPlayerFarewell} disabled={props.busy || props.departure?.status === 'pending' || props.departure?.status === 'left'}><LogOut aria-hidden="true" /></button>}</div></div>}
   </section>;
 }
 

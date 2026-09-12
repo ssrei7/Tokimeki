@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from '../src/ui/chat-state';
 import { latestDialogueSpeakerId, splitDialogueMessage } from '../src/ui/dialogue';
 
@@ -22,6 +23,20 @@ describe('chat actions', () => {
     expect(replyProgressIndicator(true, 'generating', true)).toBe('next-line');
     expect(replyProgressIndicator(true, 'success', true)).toBe('next-line');
     expect(replyProgressIndicator(true, 'error', true)).toBeNull();
+  });
+
+  it('uses icon actions with mutually exclusive panels and a stage-sized dialogue limit', () => {
+    const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    const css = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
+    expect(source).toContain("type ActiveChatPanel = 'gift' | 'collection' | 'regenerate' | 'recovery' | null;");
+    expect(source).toContain('aria-label="发送消息" title="发送消息"');
+    expect(source).toContain('aria-label="生成回复" title="生成回复"');
+    expect(source).toContain('aria-label="告别" title="告别"');
+    expect(source).not.toContain('🎁');
+    expect(source).not.toContain('🗂️');
+    expect(source).toContain('aria-valuemax={dialogueMaxHeight}');
+    expect(css).toContain('.vn-dialogue-box { display: flex; flex: 0 0 auto; min-height: 80px;');
+    expect(css).not.toMatch(/\.vn-dialogue-box\s*\{[^}]*max-height:/s);
   });
 });
 
