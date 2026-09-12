@@ -42,10 +42,12 @@ describe('chat actions', () => {
   it('keeps the chat host as a single non-scrolling viewport and unlocks manual chat after a stale topic restore', () => {
     const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     const css = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
+    const themeCss = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
     expect(source).toContain("const restoredMode = session.mode === 'topics' && !restoredTopicTree ? 'manual' : session.mode;");
     expect(source).toContain('if (restoredMode !== session.mode) writeEncounterChatSession({ ...session, mode: restoredMode });');
-    expect(css).toContain('.screen.chat-screen-host { display: flex; flex-direction: column; overflow: hidden; padding: 4px 8px var(--app-bottom-nav-space); }');
+    expect(css).toContain('.screen.chat-screen-host { display: flex; flex-direction: column; overflow: hidden; padding: 4px 8px var(--chat-bottom-nav-space); }');
     expect(css).toContain('.vn-chat-screen { gap: 4px; overflow: hidden; }');
+    expect(themeCss).toContain('--chat-bottom-nav-space: calc(var(--bottom-nav-height) + var(--safe-area-bottom));');
   });
 });
 

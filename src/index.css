@@ -42,6 +42,8 @@
   --chat-empty-mark: rgb(115 115 115 / 0.12);
   --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --bottom-nav-height: 59px;
+  --chat-bottom-nav-space: calc(var(--bottom-nav-height) + var(--safe-area-bottom));
   --app-bottom-nav-space: calc(92px + var(--safe-area-bottom));
   --radius: 0.5rem;
 }
