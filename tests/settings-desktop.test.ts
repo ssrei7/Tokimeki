@@ -73,6 +73,7 @@ describe('settings desktop', () => {
     const appCss = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
     expect(source).toContain('DesktopLauncher launcherId="settings" title="设置"');
     expect(appCss).toContain('.desktop-app-icon.reorderable');
+    expect(appCss).toContain('-webkit-user-select: none');
     expect(appCss).toContain('.desktop-reorder-actions');
   });
 

@@ -26,7 +26,8 @@ export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperU
   const entryIds = useMemo(() => entries.map((entry) => entry.id), [entries]);
   const entryIdsKey = entryIds.join('\u0001');
   const [orderedIds, setOrderedIds] = useState(() => readDesktopOrder(launcherId, entryIds));
-  const longPressRef = useRef<{ id: string; timer: number; moved: boolean } | null>(null);
+  const longPressRef = useRef<{ id: string; timer: number; x: number; y: number } | null>(null);
+  const dragPageRef = useRef<number | null>(null);
   const suppressClickRef = useRef(false);
   const pageSize = columns * DESKTOP_PAGE_ROWS;
   const orderedEntries = useMemo(() => { const byId = new Map(entries.map((entry) => [entry.id, entry])); return orderedIds.map((id) => byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry)); }, [entries, orderedIds]);
@@ -41,19 +42,19 @@ export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperU
       setAnnouncement(`${entries.find((entry) => entry.id === movedId)?.label ?? '图标'}已移动到第 ${Math.floor(index / pageSize) + 1} 页、第 ${index % pageSize + 1} 个位置`);
     }
   };
-  const enterReorderMode = (id: string) => { setReorderMode(true); setFocusedId(id); setDraggedId(id); suppressClickRef.current = true; navigator.vibrate?.(12); setAnnouncement('已进入排列模式'); };
+  const enterReorderMode = (id: string) => { setReorderMode(true); setFocusedId(id); setDraggedId(id); dragPageRef.current = null; suppressClickRef.current = true; navigator.vibrate?.(12); setAnnouncement('已进入排列模式'); };
   const stopLongPress = () => { if (longPressRef.current) { window.clearTimeout(longPressRef.current.timer); longPressRef.current = null; } };
   const handlePointerDown = (id: string, event: ReactPointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
     if (reorderMode) { setDraggedId(id); setFocusedId(id); suppressClickRef.current = true; return; }
     stopLongPress();
     const timer = window.setTimeout(() => enterReorderMode(id), 500);
-    longPressRef.current = { id, timer, moved: false };
+    longPressRef.current = { id, timer, x: event.clientX, y: event.clientY };
   };
   const handlePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const pending = longPressRef.current;
     if (!pending) return;
-    if (Math.abs(event.movementX) > 6 || Math.abs(event.movementY) > 6) { pending.moved = true; stopLongPress(); }
+    if (Math.abs(event.clientX - pending.x) > 8 || Math.abs(event.clientY - pending.y) > 8) stopLongPress();
   };
   const handlePointerUp = () => { stopLongPress(); window.setTimeout(() => { setDraggedId(null); suppressClickRef.current = false; }, 0); };
   const handleIconClick = (id: string) => { if (reorderMode || suppressClickRef.current) return; onOpen(id); };
@@ -73,6 +74,26 @@ export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperU
     commitOrder(moveIdToPageEnd(orderedIds, draggedId, targetPage, pageSize), draggedId);
     setPage(targetPage);
     setDraggedId(null);
+  };
+  const handleLauncherPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!reorderMode || !draggedId) return;
+    event.preventDefault();
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-desktop-entry-id], [data-desktop-page]');
+    const targetEntryId = target?.dataset.desktopEntryId;
+    if (targetEntryId && targetEntryId !== draggedId) {
+      dragPageRef.current = null;
+      commitOrder(moveIdBefore(orderedIds, draggedId, targetEntryId), draggedId);
+      return;
+    }
+    const targetPage = target?.dataset.desktopPage;
+    if (targetPage !== undefined) {
+      dragPageRef.current = Number(targetPage);
+      setPage(Number(targetPage));
+    }
+  };
+  const handleLauncherPointerUp = () => {
+    if (reorderMode && draggedId !== null && dragPageRef.current !== null) moveToPage(dragPageRef.current);
+    dragPageRef.current = null;
   };
   useEffect(() => {
     let cancelled = false;
@@ -105,20 +126,20 @@ export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperU
     '--desktop-icon-border': contrast.border,
     '--desktop-icon-shadow': contrast.shadow,
   } as CSSProperties : undefined;
-  return <section className={cn('desktop-launcher', reorderMode && 'reorder-mode')} aria-label={title} style={style} onPointerDown={(event) => { if (event.target === event.currentTarget && reorderMode) setReorderMode(false); }}>
+  return <section className={cn('desktop-launcher', reorderMode && 'reorder-mode')} aria-label={title} style={style} onPointerDown={(event) => { if (event.target === event.currentTarget && reorderMode) setReorderMode(false); }} onPointerMove={handleLauncherPointerMove} onPointerUp={handleLauncherPointerUp}>
     <PageHeader eyebrow={appName} title={title} action={reorderMode ? <div className="desktop-reorder-actions"><button type="button" className="secondary" onClick={() => { clearDesktopOrder(launcherId); setOrderedIds([...entryIds]); setAnnouncement('已恢复默认排列'); }}>恢复默认</button><button type="button" onClick={() => { setReorderMode(false); setDraggedId(null); setAnnouncement('已退出排列模式'); }}>完成</button></div> : undefined} />
     <div className="desktop-grid" onPointerDown={(event) => { if (event.target === event.currentTarget && reorderMode) setReorderMode(false); }}>
-      {visibleEntries.map((entry) => <DesktopAppIcon key={entry.id} entry={entry} reorderMode={reorderMode} dragged={draggedId === entry.id} focused={focusedId === entry.id} onOpen={handleIconClick} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerEnter={(id) => { if (reorderMode && draggedId && draggedId !== id) commitOrder(moveIdBefore(orderedIds, draggedId, id), draggedId); }} onDragStart={(id) => { setDraggedId(id); suppressClickRef.current = true; }} onDrop={(id) => { if (draggedId) commitOrder(moveIdBefore(orderedIds, draggedId, id), draggedId); setDraggedId(null); }} onKeyDown={(id, event) => { if (!reorderMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); enterReorderMode(id); return; } if (!reorderMode) return; const offset = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' ? -columns : event.key === 'ArrowDown' ? columns : 0; if (offset) { event.preventDefault(); moveByOffset(id, offset); } }} />)}
+      {visibleEntries.map((entry) => <DesktopAppIcon key={entry.id} entry={entry} reorderMode={reorderMode} dragged={draggedId === entry.id} focused={focusedId === entry.id} onOpen={handleIconClick} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onKeyDown={(id, event) => { if (!reorderMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); enterReorderMode(id); return; } if (!reorderMode) return; const offset = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' ? -columns : event.key === 'ArrowDown' ? columns : 0; if (offset) { event.preventDefault(); moveByOffset(id, offset); } }} />)}
     </div>
-    {pageCount > 1 && <nav className="desktop-pagination" aria-label="桌面页码">{Array.from({ length: pageCount }, (_, index) => <button key={index} type="button" className={cn(index === page && 'active', reorderMode && draggedId && 'drop-target')} aria-label={`第 ${index + 1} 页`} aria-current={index === page ? 'page' : undefined} onClick={() => setPage(index)} onPointerEnter={() => { if (reorderMode && draggedId) setPage(index); }} onPointerUp={() => { if (reorderMode && draggedId) moveToPage(index); }} onDragOver={(event) => { if (reorderMode && draggedId) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); moveToPage(index); }}><span aria-hidden="true" /></button>)}</nav>}
+    {pageCount > 1 && <nav className="desktop-pagination" aria-label="桌面页码">{Array.from({ length: pageCount }, (_, index) => <button key={index} type="button" data-desktop-page={index} className={cn(index === page && 'active', reorderMode && draggedId && 'drop-target')} aria-label={`第 ${index + 1} 页`} aria-current={index === page ? 'page' : undefined} onClick={() => setPage(index)}><span aria-hidden="true" /></button>)}</nav>}
     {reorderMode && <p className="desktop-reorder-hint">拖动图标或使用方向键重新排列；拖到页码可移动到其他页。</p>}
     <p className="sr-only" aria-live="polite">{announcement}</p>
   </section>;
 }
 
-export function DesktopAppIcon({ entry, reorderMode, dragged, focused, onOpen, onPointerDown, onPointerMove, onPointerUp, onPointerEnter, onDragStart, onDrop, onKeyDown }: { entry: DesktopEntry; reorderMode: boolean; dragged: boolean; focused: boolean; onOpen: (id: string) => void; onPointerDown: (id: string, event: ReactPointerEvent<HTMLButtonElement>) => void; onPointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => void; onPointerUp: () => void; onPointerEnter: (id: string) => void; onDragStart: (id: string) => void; onDrop: (id: string) => void; onKeyDown: (id: string, event: React.KeyboardEvent<HTMLButtonElement>) => void }) {
+export function DesktopAppIcon({ entry, reorderMode, dragged, focused, onOpen, onPointerDown, onPointerMove, onPointerUp, onKeyDown }: { entry: DesktopEntry; reorderMode: boolean; dragged: boolean; focused: boolean; onOpen: (id: string) => void; onPointerDown: (id: string, event: ReactPointerEvent<HTMLButtonElement>) => void; onPointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => void; onPointerUp: () => void; onKeyDown: (id: string, event: React.KeyboardEvent<HTMLButtonElement>) => void }) {
   const Icon = entry.icon;
-  return <button type="button" className={cn('desktop-app-icon', reorderMode && 'reorderable', dragged && 'dragged', focused && 'reorder-focused')} draggable={reorderMode} onClick={() => onOpen(entry.id)} onPointerDown={(event) => onPointerDown(entry.id, event)} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onPointerEnter={() => onPointerEnter(entry.id)} onDragStart={() => onDragStart(entry.id)} onDragOver={(event) => { if (reorderMode) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); onDrop(entry.id); }} onKeyDown={(event) => onKeyDown(entry.id, event)} onContextMenu={(event) => { if (reorderMode) event.preventDefault(); }} aria-label={reorderMode ? `排列${entry.label}` : `打开${entry.label}`} aria-grabbed={dragged}>
+  return <button type="button" data-desktop-entry-id={entry.id} className={cn('desktop-app-icon', reorderMode && 'reorderable', dragged && 'dragged', focused && 'reorder-focused')} draggable={false} onClick={() => onOpen(entry.id)} onPointerDown={(event) => onPointerDown(entry.id, event)} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onKeyDown={(event) => onKeyDown(entry.id, event)} onContextMenu={(event) => { if (reorderMode) event.preventDefault(); }} aria-label={reorderMode ? `排列${entry.label}` : `打开${entry.label}`} aria-grabbed={dragged}>
     <span className={cn('desktop-app-icon-glyph', `tone-${entry.tone ?? 'gray'}`)} aria-hidden="true"><Icon /></span>
     <span className="desktop-app-icon-label">{entry.label}</span>
   </button>;
