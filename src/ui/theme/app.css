@@ -344,6 +344,14 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .contact-card-actions select { max-width: 92px; min-height: 30px; padding: 3px 5px; font-size: 11px; }
 .contact-card-actions button { min-height: 34px; padding: 0 9px; font-size: 11px; }
 .contact-status { align-self: center; color: var(--gray-500); font-size: 11px; white-space: nowrap; }
+.npc-promotion-panel { display: grid; gap: 12px; margin-top: 12px; padding: 14px; border: 1px solid var(--gray-200); background: var(--gray-0); box-shadow: 0 8px 24px rgb(40 40 40 / 0.12); }
+.npc-promotion-panel .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.npc-promotion-panel .section-heading > div { display: grid; gap: 2px; }
+.npc-promotion-facts { display: grid; gap: 5px; padding: 10px; border: 1px solid var(--gray-100); background: var(--gray-25); color: var(--gray-600); font-size: 12px; line-height: 1.45; }
+.npc-promotion-facts p { overflow-wrap: anywhere; }
+.npc-promotion-fields { display: grid; gap: 9px; }
+.npc-promotion-fields label { display: grid; gap: 5px; color: var(--gray-600); font-size: 12px; }
+.npc-promotion-fields textarea { min-height: 58px; resize: vertical; }
 @media (max-width: 500px) { .contact-card { grid-template-columns: 36px minmax(0, 1fr) auto; } .contact-avatar { width: 36px; height: 36px; } .contact-card-actions { justify-content: flex-end; } .contact-card-actions > button:not(.terminal-small-icon-button) { padding-inline: 5px; font-size: 10px; } }
 .terminal-conversation-list { flex: 1; min-height: 0; display: grid; align-content: start; justify-items: stretch; overflow-y: auto; margin: -18px -16px 0; background: var(--gray-0); }
 .terminal-conversation-row { width: 100%; min-width: 0; min-height: 74px; justify-self: stretch; display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--gray-100); border-radius: 0; background: var(--gray-0); color: var(--gray-800); text-align: left; }
