@@ -82,6 +82,15 @@ export const TtsConfigSchema = z.object({
 });
 export type TtsConfig = z.infer<typeof TtsConfigSchema>;
 
+export const CharacterProviderBindingSchema = z.object({
+  id: z.string().min(1),
+  saveId: z.string().min(1),
+  characterId: z.string().min(1),
+  providerId: z.string().min(1).optional(),
+  ttsProviderId: z.string().min(1).optional(),
+}).refine((binding) => Boolean(binding.providerId || binding.ttsProviderId), { message: 'Character binding must select at least one provider.' });
+export type CharacterProviderBinding = z.infer<typeof CharacterProviderBindingSchema>;
+
 export interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string }
 export interface ChatRequest { messages: ChatMessage[]; stream?: boolean; taskId?: TaskId; outputMode?: ProviderOutputMode }
 export interface PreparedRequest { url: string; init: RequestInit }

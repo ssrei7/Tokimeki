@@ -5,11 +5,13 @@ import { openAiChatUrl, openAiModelsUrl } from '../src/providers/adapters/openai
 import { testProviderConnection } from '../src/providers/connection-test';
 import { ProviderManager } from '../src/providers/manager';
 import { listProviderModels } from '../src/providers/models';
-import { resolveProviderForTask, resolveProviderForTaskGroup } from '../src/providers/router';
+import { resolveProviderForCharacter, resolveProviderForTask, resolveProviderForTaskGroup, resolveTtsProviderForCharacter } from '../src/providers/router';
 import { streamChat } from '../src/providers/stream';
-import type { ProviderConfig } from '../src/providers/types';
+import { CharacterProviderBindingSchema } from '../src/providers/types';
+import type { ProviderConfig, TtsConfig } from '../src/providers/types';
 
 const base: ProviderConfig = { id: 'default', name: 'Default', kind: 'openai-compatible', endpoint: 'https://example.test/v1/chat/completions', model: 'demo', contextWindow: 4096, maxOutputTokens: 100, temperature: 0.2 };
+const ttsBase: TtsConfig = { id: 'tts-default', name: 'Default voice', enabled: true, endpoint: 'https://example.test/v1/audio/speech', model: 'tts-1', voice: 'alloy', format: 'mp3', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: '2026-01-01T00:00:00.000Z' };
 
 describe('provider adapters and routing', () => {
   it('formats OpenAI-compatible requests and extracts text', () => { const prepared = getAdapter('openai-compatible').prepare({ ...base, apiKey: 'secret' }, { messages: [{ role: 'user', content: 'hi' }] }); expect(prepared.url).toContain('/chat/completions'); expect(JSON.parse(String(prepared.init.body)).model).toBe('demo'); expect(getAdapter('openai-compatible').extractText(base, { choices: [{ message: { content: 'hello' } }] })).toBe('hello'); });
@@ -36,6 +38,26 @@ describe('provider adapters and routing', () => {
     const providers = [{ ...base, id: 'primary' }, { ...base, id: 'npc' }];
     expect(resolveProviderForTaskGroup(providers, [{ taskId: 'npc_batch', providerId: 'npc' }], ['world_morning', 'npc_batch'], 'primary')?.id).toBe('npc');
     expect(resolveProviderForTaskGroup(providers, [{ taskId: 'world_morning', providerId: 'missing' }, { taskId: 'npc_batch', providerId: 'npc' }], ['world_morning', 'npc_batch'], 'primary')?.id).toBe('npc');
+  });
+  it('allows character ordinary bindings only for narrate_main and keeps world tasks task-routed', () => {
+    const providers = [{ ...base, id: 'primary' }, { ...base, id: 'character' }, { ...base, id: 'world' }];
+    const taskBindings = [{ taskId: 'narrate_main' as const, providerId: 'world' }];
+    const characterBindings = [{ id: 'world-a:alice', saveId: 'world-a', characterId: 'alice', providerId: 'character' }];
+    expect(resolveProviderForCharacter(providers, taskBindings, characterBindings, 'world-a', 'alice', 'narrate_main', 'primary')?.id).toBe('character');
+    expect(resolveProviderForCharacter(providers, taskBindings, characterBindings, 'world-a', 'alice', 'world_morning', 'primary')?.id).toBe('primary');
+    expect(resolveProviderForCharacter(providers, taskBindings, characterBindings, 'world-b', 'alice', 'narrate_main', 'primary')?.id).toBe('world');
+    expect(resolveProviderForCharacter(providers, taskBindings, [{ id: 'world-a:alice', saveId: 'world-a', characterId: 'alice', providerId: 'missing' }], 'world-a', 'alice', 'narrate_main', 'primary')?.id).toBe('world');
+  });
+  it('resolves TTS bindings by world and character, with default fallback', () => {
+    const configs = [ttsBase, { ...ttsBase, id: 'tts-character', name: 'Character voice' }];
+    const bindings = [{ id: 'world-a:alice', saveId: 'world-a', characterId: 'alice', ttsProviderId: 'tts-character' }];
+    expect(resolveTtsProviderForCharacter(configs, bindings, 'world-a', 'alice', 'tts-default')?.id).toBe('tts-character');
+    expect(resolveTtsProviderForCharacter(configs, bindings, 'world-b', 'alice', 'tts-default')?.id).toBe('tts-default');
+    expect(resolveTtsProviderForCharacter(configs, [{ ...bindings[0], ttsProviderId: 'missing' }], 'world-a', 'alice', 'tts-default')?.id).toBe('tts-default');
+    expect(resolveTtsProviderForCharacter(configs, bindings, 'world-a', 'bob', 'missing')).toBeUndefined();
+  });
+  it('rejects an empty character binding', () => {
+    expect(() => CharacterProviderBindingSchema.parse({ id: 'world-a:alice', saveId: 'world-a', characterId: 'alice' })).toThrow();
   });
   it('applies generic templates, custom headers, response paths, and framing', () => {
     const config: ProviderConfig = { ...base, kind: 'generic', headers: { 'x-client': 'tokimeki' }, bodyTemplate: '{"model":{{model}},"messages":{{messages}}}', responsePath: '$.output.text', streamFraming: 'sse' };
