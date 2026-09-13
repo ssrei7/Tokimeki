@@ -15,6 +15,16 @@ export class ProviderDatabase extends Dexie {
     this.version(2).stores({ providers: 'id', bindings: 'taskId', settings: 'key' });
     this.version(3).stores({ providers: 'id', bindings: 'taskId', settings: 'key', embeddingConfigs: 'id' });
     this.version(4).stores({ providers: 'id', bindings: 'taskId', settings: 'key', embeddingConfigs: 'id', ttsConfigs: 'id' });
+    this.version(5).stores({ providers: 'id', bindings: 'taskId', settings: 'key', embeddingConfigs: 'id', ttsConfigs: 'id' }).upgrade(async (transaction) => {
+      const legacy = await transaction.table('ttsConfigs').get('tts') as Record<string, unknown> | undefined;
+      if (legacy && typeof legacy.name !== 'string') {
+        await transaction.table('ttsConfigs').put({ ...legacy, name: '默认语音' });
+      }
+      const current = await transaction.table('settings').get('defaultTtsProviderId') as { key?: string; value?: string } | undefined;
+      if (!current && legacy) {
+        await transaction.table('settings').put({ key: 'defaultTtsProviderId', value: 'tts' });
+      }
+    });
   }
 }
 

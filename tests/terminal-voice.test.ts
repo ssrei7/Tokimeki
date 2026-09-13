@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createFriendRequest, sendTerminalVoiceMessage, simulateFriendAcceptance } from '../src/core/terminal';
 import { migrateSave } from '../src/data/migrations';
 import { TtsConfigSchema, type TtsConfig } from '../src/providers/types';
-import { synthesizeSpeech } from '../src/providers/speech';
+import { buildSpeechRequest, synthesizeSpeech } from '../src/providers/speech';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 function makeSave() {
@@ -54,6 +54,21 @@ describe('terminal voice', () => {
     expect(await calls[0].json()).toEqual({ model: 'voice-model', input: '你好', voice: 'alloy', response_format: 'mp3' });
     expect(result.format).toBe('mp3');
     expect(result.blob.size).toBe(3);
+  });
+
+  it('supports named configs, custom headers, and keeps the API key out of the request body', () => {
+    const named = config({ id: 'azure-like', name: '工作室语音', apiKey: 'secret', headers: { 'x-client': 'tokimeki', Authorization: 'custom' } });
+    const request = buildSpeechRequest(named, '  你好  ');
+    expect(request.url).toBe('https://speech.test/v1/audio/speech');
+    expect(request.init.headers).toMatchObject({ 'x-client': 'tokimeki', Authorization: 'Bearer ' + 'secret' });
+    expect(String(request.init.body)).not.toContain('secret');
+    expect(JSON.parse(String(request.init.body))).toEqual({ model: 'voice-model', input: '你好', voice: 'alloy', response_format: 'mp3' });
+  });
+
+  it('accepts legacy singleton config data without a name and defaults it for migration', () => {
+    const legacy = TtsConfigSchema.parse({ id: 'tts', enabled: false, endpoint: '', model: '', voice: 'alloy', format: 'mp3', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: new Date().toISOString() });
+    expect(legacy.name).toBe('默认语音');
+    expect(legacy.id).toBe('tts');
   });
 
   it('keeps speech disabled by default and reports failed responses', async () => {

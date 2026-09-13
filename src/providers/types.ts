@@ -29,7 +29,7 @@ export const ProviderModelListConfigSchema = ProviderConfigSchema.extend({
 export const ProviderBindingSchema = z.object({ taskId: TaskIdSchema, providerId: z.string().min(1) });
 export type ProviderBinding = z.infer<typeof ProviderBindingSchema>;
 
-export const ProviderSettingSchema = z.object({ key: z.enum(['defaultProviderId', 'chatPlayerLabel']), value: z.string().min(1) });
+export const ProviderSettingSchema = z.object({ key: z.enum(['defaultProviderId', 'defaultTtsProviderId', 'chatPlayerLabel']), value: z.string().min(1) });
 export type ProviderSetting = z.infer<typeof ProviderSettingSchema>;
 
 export const EmbeddingConfigSchema = z.object({
@@ -57,13 +57,15 @@ export const TtsFormatSchema = z.enum(['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm
 export type TtsFormat = z.infer<typeof TtsFormatSchema>;
 
 export const TtsConfigSchema = z.object({
-  id: z.literal('tts').default('tts'),
+  id: z.string().min(1).default('tts'),
+  name: z.string().min(1).default('默认语音'),
   enabled: z.boolean().default(false),
   endpoint: z.string().default(''),
   apiKey: z.string().optional(),
   model: z.string().default(''),
   voice: z.string().default('alloy'),
   format: TtsFormatSchema.default('mp3'),
+  headers: z.record(z.string(), z.string()).optional(),
   requestCount: z.number().int().nonnegative().default(0),
   failureCount: z.number().int().nonnegative().default(0),
   lastStatus: z.enum(['idle', 'requesting', 'success', 'error']).default('idle'),

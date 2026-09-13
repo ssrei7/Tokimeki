@@ -214,7 +214,7 @@ const now = () => new Date().toISOString();
 const slug = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '') || `item-${Date.now()}`;
 const newProvider = (): ProviderConfig => ({ id: `provider-${Date.now()}`, name: '新 Provider', kind: 'openai-compatible', endpoint: '', model: '', contextWindow: 8192, maxOutputTokens: 1024, temperature: 0.7 });
 const newEmbeddingConfig = (): EmbeddingConfig => ({ id: 'embedding', enabled: false, endpoint: '', model: '', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
-const newTtsConfig = (): TtsConfig => ({ id: 'tts', enabled: false, endpoint: '', model: '', voice: 'alloy', format: 'mp3', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
+const newTtsConfig = (): TtsConfig => ({ id: `tts-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: '新语音配置', enabled: false, endpoint: '', model: '', voice: 'alloy', format: 'mp3', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 async function measureAudioDurationMs(blob: Blob): Promise<number> {
   if (typeof Audio === 'undefined' || typeof URL === 'undefined') return 0;
@@ -328,8 +328,11 @@ export function App() {
   const embeddingConfigRef = useRef<EmbeddingConfig>(newEmbeddingConfig());
   const [embeddingHeadersDraft, setEmbeddingHeadersDraft] = useState('{}');
   const [embeddingBusy, setEmbeddingBusy] = useState(false);
+  const [ttsConfigs, setTtsConfigs] = useState<TtsConfig[]>([]);
+  const [defaultTtsConfigId, setDefaultTtsConfigId] = useState('');
   const [ttsConfig, setTtsConfig] = useState<TtsConfig>(newTtsConfig);
   const ttsConfigRef = useRef<TtsConfig>(newTtsConfig());
+  const [ttsHeadersDraft, setTtsHeadersDraft] = useState('{}');
   const [ttsBusy, setTtsBusy] = useState(false);
   const [requestStatus, setRequestStatus] = useState<RequestStatus>('idle');
   const [busy, setBusy] = useState(false);
@@ -382,7 +385,7 @@ export function App() {
   }
 
   useEffect(() => {
-    void Promise.all([contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), contentDb.presetBundles.toArray(), contentDb.storyScenePresets.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.settings.get('defaultProviderId'), providerDb.embeddingConfigs.get('embedding'), providerDb.ttsConfigs.get('tts'), loadCurrentSave(), listSnapshots()]).then(([c, masks, w, p, bundles, scenePresets, ps, bs, setting, storedEmbedding, storedTts, persistedSave, savedSnapshots]) => {
+    void Promise.all([contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), contentDb.presetBundles.toArray(), contentDb.storyScenePresets.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.settings.get('defaultProviderId'), providerDb.settings.get('defaultTtsProviderId'), providerDb.embeddingConfigs.get('embedding'), providerDb.ttsConfigs.toArray(), loadCurrentSave(), listSnapshots()]).then(([c, masks, w, p, bundles, scenePresets, ps, bs, setting, ttsSetting, storedEmbedding, storedTtsConfigs, persistedSave, savedSnapshots]) => {
       if (persistedSave) {
         const parsedSave = SaveFileSchema.parse(persistedSave);
         saveRef.current = parsedSave;
@@ -426,14 +429,12 @@ export function App() {
       if (legacyBundle) void savePresetBundle(legacyBundle);
       setBindings(bs);
       if (storedEmbedding) { embeddingConfigRef.current = storedEmbedding; setEmbeddingConfig(storedEmbedding); setEmbeddingHeadersDraft(JSON.stringify(storedEmbedding.headers ?? {}, null, 2)); }
-      if (storedTts) {
-        const restoredTts = storedTts.lastStatus === 'requesting'
-          ? TtsConfigSchema.parse({ ...storedTts, lastStatus: 'error', lastError: '上次语音请求已中止，请手动重试。', updatedAt: now() })
-          : TtsConfigSchema.parse(storedTts);
-        ttsConfigRef.current = restoredTts;
-        setTtsConfig(restoredTts);
-        if (storedTts.lastStatus === 'requesting') void providerDb.ttsConfigs.put(restoredTts);
-      }
+      const restoredTtsConfigs = storedTtsConfigs.map((stored) => TtsConfigSchema.parse(stored.lastStatus === 'requesting' ? { ...stored, lastStatus: 'error', lastError: '上次语音请求已中止，请手动重试。', updatedAt: now() } : stored));
+      const resolvedTtsId = restoredTtsConfigs.some((item) => item.id === ttsSetting?.value) ? ttsSetting?.value ?? '' : restoredTtsConfigs[0]?.id ?? '';
+      const selectedTts = restoredTtsConfigs.find((item) => item.id === resolvedTtsId) ?? restoredTtsConfigs[0] ?? newTtsConfig();
+      setTtsConfigs(restoredTtsConfigs); setDefaultTtsConfigId(resolvedTtsId); ttsConfigRef.current = selectedTts; setTtsConfig(selectedTts); setTtsHeadersDraft(JSON.stringify(selectedTts.headers ?? {}, null, 2));
+      for (const stored of restoredTtsConfigs) if (storedTtsConfigs.find((item) => item.id === stored.id)?.lastStatus === 'requesting') void providerDb.ttsConfigs.put(stored);
+      if (resolvedTtsId && ttsSetting?.value !== resolvedTtsId) void providerDb.settings.put(ProviderSettingSchema.parse({ key: 'defaultTtsProviderId', value: resolvedTtsId }));
       if (c[0] && !readEncounterChatSession()) setSelectedCharacterId(c[0].id);
       if (ps[0]) setProvider(ps[0]);
       const resolvedDefaultProviderId = ps.some((item) => item.id === setting?.value) ? setting?.value ?? '' : ps[0]?.id ?? '';
@@ -445,6 +446,7 @@ export function App() {
   }, []);
 
   useEffect(() => { setHeadersDraft(JSON.stringify(provider.headers ?? {}, null, 2)); }, [provider.id]);
+  useEffect(() => { setTtsHeadersDraft(JSON.stringify(ttsConfig.headers ?? {}, null, 2)); }, [ttsConfig.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2245,7 +2247,7 @@ export function App() {
   }
 
   function parseEditedTtsConfig(): TtsConfig {
-    return TtsConfigSchema.parse({ ...ttsConfig, updatedAt: now() });
+    return TtsConfigSchema.parse({ ...ttsConfig, headers: parseHeadersDraft(ttsHeadersDraft), updatedAt: now() });
   }
 
   async function persistEmbeddingResult(config: EmbeddingConfig, ok: boolean, message?: string): Promise<EmbeddingConfig> {
@@ -2328,18 +2330,55 @@ export function App() {
     const updated = TtsConfigSchema.parse({ ...config, requestCount: status === 'requesting' ? config.requestCount : config.requestCount + 1, failureCount: status === 'error' ? config.failureCount + 1 : config.failureCount, lastStatus: status, lastError: status === 'error' ? message : undefined, lastCalledAt: status === 'requesting' ? config.lastCalledAt : now(), pendingRequest: pendingRequest === null ? undefined : pendingRequest, updatedAt: now() });
     await providerDb.ttsConfigs.put(updated);
     ttsConfigRef.current = updated;
-    setTtsConfig(updated);
+    setTtsConfig(updated); setTtsConfigs((items) => items.some((item) => item.id === updated.id) ? items.map((item) => item.id === updated.id ? updated : item) : [...items, updated]);
     return updated;
   }
 
   async function saveTtsSettings(): Promise<void> {
     try {
       const parsed = parseEditedTtsConfig();
-      await providerDb.ttsConfigs.put(parsed);
+      const nextDefault = defaultTtsConfigId || parsed.id;
+      await providerDb.transaction('rw', providerDb.ttsConfigs, providerDb.settings, async () => {
+        await providerDb.ttsConfigs.put(parsed);
+        if (!defaultTtsConfigId) await providerDb.settings.put(ProviderSettingSchema.parse({ key: 'defaultTtsProviderId', value: parsed.id }));
+      });
       ttsConfigRef.current = parsed;
-      setTtsConfig(parsed);
+      setTtsConfig(parsed); setTtsConfigs((items) => [...items.filter((item) => item.id !== parsed.id), parsed]);
+      if (!defaultTtsConfigId) setDefaultTtsConfigId(nextDefault);
       setFeedback({ tone: 'success', text: parsed.enabled ? '语音 API 已启用并保存。' : '语音设置已保存；当前保持关闭。' });
     } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '语音配置无效。') }); }
+  }
+
+  function selectTtsConfig(id: string): void {
+    const selected = ttsConfigs.find((item) => item.id === id);
+    if (!selected) return;
+    ttsConfigRef.current = selected;
+    setTtsConfig(selected);
+  }
+
+  function createTtsConfigDraft(): void {
+    const draft = newTtsConfig();
+    ttsConfigRef.current = draft;
+    setTtsConfig(draft);
+  }
+
+  async function deleteTtsConfig(): Promise<void> {
+    if (!ttsConfigs.some((item) => item.id === ttsConfig.id)) return;
+    if (ttsConfig.id === defaultTtsConfigId) { setFeedback({ tone: 'error', text: '默认语音配置正在使用，请先切换默认配置后再删除。' }); return; }
+    await providerDb.ttsConfigs.delete(ttsConfig.id);
+    const remaining = ttsConfigs.filter((item) => item.id !== ttsConfig.id);
+    setTtsConfigs(remaining);
+    const selected = remaining[0] ?? newTtsConfig();
+    ttsConfigRef.current = selected; setTtsConfig(selected);
+    setFeedback({ tone: 'success', text: '语音配置已删除。' });
+  }
+
+  async function updateDefaultTtsConfig(id: string): Promise<void> {
+    if (!ttsConfigs.some((item) => item.id === id)) return;
+    await providerDb.settings.put(ProviderSettingSchema.parse({ key: 'defaultTtsProviderId', value: id }));
+    setDefaultTtsConfigId(id);
+    selectTtsConfig(id);
+    setFeedback({ tone: 'success', text: '默认语音配置已更新。' });
   }
 
   async function testTtsConnection(): Promise<void> {
@@ -2707,7 +2746,7 @@ export function App() {
       {tab === 'library' && libraryPage === 'story' && <SubpageShell eyebrow="终端" title="多人剧情" pageId="story" onBack={() => setLibraryPage(null)}><StorySceneLibraryView save={save} storyScenePresets={storyScenePresets} onSavePreset={saveStoryScenePresetCopy} onUpdatePreset={updateStoryScenePreset} onDeletePreset={removeStoryScenePreset} onCreateDraft={createStorySceneDraftFromInput} onEditDraft={editStorySceneDraft} onDeleteDraft={removeStorySceneDraft} onConfirmDraft={confirmStorySceneDraft} onAdvanceStage={advanceStoryScene} onSetStatus={setStorySceneStatus} onReadStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'read')} onSelectStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'select')} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'memories' && <SubpageShell eyebrow="终端" title="记忆库" pageId="memories" onBack={() => setLibraryPage(null)}><MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'collection' && <SubpageShell eyebrow="终端" title="收藏" pageId="collection" onBack={() => setLibraryPage(null)}><CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} /></SubpageShell>}
-      {tab === 'settings' && <SettingsView appName={appName} activePage={settingsPage} onOpenPage={setSettingsPage} onBack={() => setSettingsPage(null)} provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} ttsConfig={ttsConfig} setTtsConfig={setTtsConfig} ttsBusy={ttsBusy} onSaveTts={saveTtsSettings} onTestTts={testTtsConnection} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
+      {tab === 'settings' && <SettingsView appName={appName} activePage={settingsPage} onOpenPage={setSettingsPage} onBack={() => setSettingsPage(null)} provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} ttsConfigs={ttsConfigs} defaultTtsConfigId={defaultTtsConfigId} ttsConfig={ttsConfig} setTtsConfig={(next) => { setTtsConfig(next); ttsConfigRef.current = next; setTtsConfigs((items) => items.some((item) => item.id === next.id) ? items.map((item) => item.id === next.id ? next : item) : items); }} ttsHeadersDraft={ttsHeadersDraft} setTtsHeadersDraft={setTtsHeadersDraft} onSelectTtsConfig={selectTtsConfig} onNewTtsConfig={createTtsConfigDraft} onDeleteTtsConfig={deleteTtsConfig} onDefaultTtsChange={updateDefaultTtsConfig} ttsBusy={ttsBusy} onSaveTts={saveTtsSettings} onTestTts={testTtsConnection} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
     </main>
     <nav className="bottom-nav" aria-label="主导航">{BOTTOM_NAV_ITEMS.map(([id, label, Icon]) => <button key={id} type="button" className={tab === id ? 'selected' : ''} aria-label={label} title={label} onClick={() => setTab(id)}><Icon size={25} weight="fill" aria-hidden="true" /><span className="bottom-nav-label">{label}</span></button>)}</nav>
   </div>;
@@ -3500,8 +3539,16 @@ function SettingsView(props: {
   onSaveEmbedding: () => Promise<void>;
   onTestEmbedding: () => Promise<void>;
   onRebuildEmbedding: () => Promise<void>;
+  ttsConfigs: TtsConfig[];
+  defaultTtsConfigId: string;
   ttsConfig: TtsConfig;
   setTtsConfig: (config: TtsConfig) => void;
+  ttsHeadersDraft: string;
+  setTtsHeadersDraft: (value: string) => void;
+  onSelectTtsConfig: (id: string) => void;
+  onNewTtsConfig: () => void;
+  onDeleteTtsConfig: () => Promise<void>;
+  onDefaultTtsChange: (id: string) => Promise<void>;
   ttsBusy: boolean;
   onSaveTts: () => Promise<void>;
   onTestTts: () => Promise<void>;
@@ -3589,6 +3636,8 @@ function SettingsView(props: {
     </div></div></details>
     <details className="fold-card" open><summary>语音生成 · {props.ttsConfig.enabled ? '已启用' : '已关闭'}</summary><div className="fold-body"><div className="provider-card">
       <div className="list-heading"><div><span className="eyebrow">可选外部语音</span><h3>语音 API</h3></div><span className={`request-status ${props.ttsConfig.lastStatus === 'error' ? 'error' : ''}`}>{props.ttsBusy ? '请求中…' : props.ttsConfig.lastStatus === 'success' ? '最近成功' : props.ttsConfig.lastStatus === 'error' ? '最近失败' : '尚未调用'}</span></div>
+      <div className="field-with-action"><select aria-label="语音 API 配置" value={props.ttsConfigs.some((item) => item.id === props.ttsConfig.id) ? props.ttsConfig.id : ''} onChange={(event) => props.onSelectTtsConfig(event.target.value)}><option value="">未保存的新配置</option>{props.ttsConfigs.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="secondary" onClick={props.onNewTtsConfig}>新建</button></div>
+      <label>配置名称<input value={props.ttsConfig.name} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, name: event.target.value })} /></label>
       <label className="checkbox-line"><input type="checkbox" checked={props.ttsConfig.enabled} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, enabled: event.target.checked })} />启用语音生成</label>
       <p className="io-scope">默认关闭。消息 App 的用户侧语音合成发送入口已移除，已有语音仍可播放；这里只在你显式执行连接测试时调用 API，配置和 API key 只保存在当前浏览器。</p>
       <label>Speech 请求端点<input placeholder="https://example.com/v1/audio/speech" value={props.ttsConfig.endpoint} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, endpoint: event.target.value })} /></label>
@@ -3596,9 +3645,11 @@ function SettingsView(props: {
       <label>语音模型<input placeholder="gpt-4o-mini-tts" value={props.ttsConfig.model} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, model: event.target.value })} /></label>
       <label>voice<input placeholder="alloy" value={props.ttsConfig.voice} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, voice: event.target.value })} /></label>
       <label>格式<select value={props.ttsConfig.format} onChange={(event) => props.setTtsConfig({ ...props.ttsConfig, format: event.target.value as TtsConfig['format'] })}><option value="mp3">mp3</option><option value="opus">opus</option><option value="aac">aac</option><option value="flac">flac</option><option value="wav">wav</option><option value="pcm">pcm</option></select></label>
+      <label>自定义 headers（JSON）<textarea spellCheck={false} value={props.ttsHeadersDraft} onChange={(event) => props.setTtsHeadersDraft(event.target.value)} /></label>
       <div className="stat-list"><span>调用 {props.ttsConfig.requestCount} 次</span><span>失败 {props.ttsConfig.failureCount} 次</span>{props.ttsConfig.pendingRequest && <span>保留待重试语音</span>}</div>
       {props.ttsConfig.lastError && <p className="io-scope" role="alert">最近错误：{props.ttsConfig.lastError}</p>}
-      <div className="button-row"><button onClick={() => void props.onSaveTts()} disabled={props.ttsBusy}>保存设置</button><button className="secondary" onClick={() => void props.onTestTts()} disabled={props.ttsBusy}>连接测试</button></div>
+      <label>全局默认语音配置<select aria-label="默认语音配置" value={props.defaultTtsConfigId} disabled={props.ttsConfigs.length === 0} onChange={(event) => void props.onDefaultTtsChange(event.target.value)}><option value="">未设置</option>{props.ttsConfigs.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <div className="button-row"><button onClick={() => void props.onSaveTts()} disabled={props.ttsBusy}>保存设置</button><button className="secondary" onClick={() => void props.onTestTts()} disabled={props.ttsBusy}>连接测试</button>{props.ttsConfigs.some((item) => item.id === props.ttsConfig.id) && <button className="danger" onClick={() => void props.onDeleteTtsConfig()} disabled={props.ttsBusy}>删除配置</button>}</div>
     </div></div></details>
     <details className="fold-card" open><summary>任务路由</summary><div className="fold-body"><div className="provider-card routing-card">
       <h3>任务路由</h3>
