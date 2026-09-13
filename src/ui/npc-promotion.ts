@@ -19,6 +19,43 @@ export interface PromoteNpcOpInput {
   exampleDialogue?: string;
 }
 
+export function buildNpcExpansionPrompt(npc: NpcLite, draft: NpcPromotionDraft): { role: 'system' | 'user'; content: string }[] {
+  return [
+    {
+      role: 'system',
+      content: '你是角色卡草稿助手。只根据用户提供的半正式 NPC 事实和当前草稿，只返回一个 JSON 对象，不要输出 Markdown、解释、ops 或任何世界状态变化。JSON 键只能是 description、personality、scenario、firstMes、exampleDialogue，值必须是字符串；不得编造具体经历、数值、地点或时间。',
+    },
+    {
+      role: 'user',
+      content: JSON.stringify({ npc: { id: npc.id, name: npc.name, facts: npc.facts, tags: npc.tags, lightMemory: npc.lightMemory }, draft }),
+    },
+  ];
+}
+
+export function parseNpcExpansionResponse(raw: string, fallback: NpcPromotionDraft): NpcPromotionDraft | undefined {
+  const trimmed = raw.trim();
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  if (start < 0 || end <= start) return undefined;
+  let value: unknown;
+  try { value = JSON.parse(trimmed.slice(start, end + 1)); } catch { return undefined; }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const text = (key: keyof NpcPromotionDraft) => {
+    if (typeof source[key] !== 'string') return fallback[key];
+    const value = source[key].trim();
+    return value || fallback[key];
+  };
+  const next = {
+    description: text('description'),
+    personality: text('personality'),
+    scenario: text('scenario'),
+    firstMes: text('firstMes'),
+    exampleDialogue: text('exampleDialogue'),
+  } satisfies NpcPromotionDraft;
+  return next.description && next.personality ? next : undefined;
+}
+
 export function createNpcPromotionDraft(npc: NpcLite): NpcPromotionDraft {
   return {
     description: npc.facts.map((fact) => fact.trim()).filter(Boolean).join('；') || `${npc.name} 是这个世界里有自己生活轨迹的人。`,

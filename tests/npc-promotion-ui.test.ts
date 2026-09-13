@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
-import { buildPromoteNpcOp, characterCardFromPromotedCharacter, createNpcPromotionDraft, summarizeNpcSchedule } from '../src/ui/npc-promotion';
+import { buildNpcExpansionPrompt, buildPromoteNpcOp, characterCardFromPromotedCharacter, createNpcPromotionDraft, parseNpcExpansionResponse, summarizeNpcSchedule } from '../src/ui/npc-promotion';
 
 describe('NPC promotion UI data', () => {
   it('prefills editable fields without mutating the semi-formal NPC', () => {
@@ -47,5 +47,14 @@ describe('NPC promotion UI data', () => {
       visuals: { portraits: [] }, schedule: { grid: {}, overrides: {} }, source: 'promoted',
     }, updatedAt);
     expect(card).toEqual({ id: 'vendor-1', name: '摊主', description: '经营花摊。', personality: '爽朗。', scenario: '港口清晨', updatedAt });
+  });
+
+  it('parses an explicit JSON expansion into a draft without accepting ops or facts outside the schema', () => {
+    const fallback = { description: '原简介', personality: '原性格', scenario: '', firstMes: '', exampleDialogue: '' };
+    const prompt = buildNpcExpansionPrompt({ id: 'npc', name: '路人', tier: 'semi', facts: ['卖花'], tags: ['细心'], lightMemory: [] }, fallback);
+    expect(prompt[0].content).toContain('只返回一个 JSON 对象');
+    expect(parseNpcExpansionResponse('建议如下：{"description":"新简介","personality":"新性格","scenario":"","firstMes":"你好","exampleDialogue":""}', fallback)).toEqual({ description: '新简介', personality: '新性格', scenario: '', firstMes: '你好', exampleDialogue: '' });
+    expect(parseNpcExpansionResponse('{"description":"","personality":"新性格"}', fallback)).toEqual({ ...fallback, personality: '新性格' });
+    expect(parseNpcExpansionResponse('{"description":"新简介","personality":"新性格","ops":[{"op":"set_flag"}]}', fallback)).toEqual({ ...fallback, description: '新简介', personality: '新性格' });
   });
 });
