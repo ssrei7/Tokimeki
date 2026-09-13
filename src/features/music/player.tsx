@@ -17,6 +17,7 @@ import {
   type MusicTrackInput,
 } from './model';
 import type { MusicPlaybackMode, MusicState, MusicTrack } from '../../data/content';
+import { browserMediaSession, installMediaSessionHandlers, updateMediaSessionMetadata, updateMediaSessionPlaybackState, updateMediaSessionPosition } from './media-session';
 
 export type MusicPlayerController = {
   audioRef: RefObject<HTMLAudioElement | null>;
@@ -201,6 +202,29 @@ export function useMusicPlayer(): MusicPlayerController {
   }, [persistPosition]);
   const setVolume = useCallback((volume: number) => commit(setMusicVolume(stateRef.current, volume, stamp())), [commit]);
   const setMode = useCallback((mode: MusicPlaybackMode) => commit(setMusicMode(stateRef.current, mode, stamp())), [commit]);
+
+  useEffect(() => {
+    const session = browserMediaSession();
+    if (!session) return undefined;
+    return installMediaSessionHandlers(session, { play, pause, previous, next });
+  }, [next, pause, play, previous]);
+
+  useEffect(() => {
+    const session = browserMediaSession();
+    if (!session) return;
+    const assetBaseUrl = typeof document === 'undefined' ? undefined : new URL(import.meta.env.BASE_URL, document.baseURI).href;
+    updateMediaSessionMetadata(session, currentTrack, 'Tokimeki', assetBaseUrl);
+  }, [currentTrack?.artist, currentTrack?.id, currentTrack?.title]);
+
+  useEffect(() => {
+    const session = browserMediaSession();
+    if (session) updateMediaSessionPlaybackState(session, currentTrack, isPlaying);
+  }, [currentTrack?.id, isPlaying]);
+
+  useEffect(() => {
+    const session = browserMediaSession();
+    if (session) updateMediaSessionPosition(session, currentTrack ? duration : 0, currentTime);
+  }, [currentTime, currentTrack, duration]);
 
   const addTrack = useCallback((input: MusicTrackInput) => {
     const result = addMusicTrack(stateRef.current, input, stamp());
