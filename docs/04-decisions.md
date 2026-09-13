@@ -535,3 +535,8 @@
 **决定**：阶段 10 首个垂直切片将现有单一 TTS 配置扩展为多个命名语音 API 配置，并在 Provider IndexedDB 中保存一个全局默认语音配置 ID。每份配置包含名称、OpenAI-compatible Speech endpoint、API key、模型、voice、输出格式和可选自定义 headers；请求仍只在用户显式连接测试或后续显式生成时发起。
 
 **兼容与边界**：Provider DB 从 v4 升级到 v5，旧版 `tts` 单例配置自动补默认名称并继续作为默认配置；API key 永不进入 SaveFile 或普通导出包。默认配置或未来角色绑定引用中的语音配置禁止直接删除，必须先切换或解除引用。该切片不修改世界 SaveFile v41，不实现角色绑定、消息语音附件、缓存或 Media Session。
+
+## D97 角色消息语音采用原位附件与显式生成
+**决定**：消息 App 仅允许为角色发出的文字消息生成语音；面对面聊天仅允许为 `assistant` 角色台词生成语音，并按 `speakerId` 解析角色语音 Provider。生成入口位于消息长按菜单，每次点击最多发起一次 OpenAI-compatible Speech 请求，全局同时只允许一个语音请求。成功后把音频附件原位写回目标文字消息，不插入重复语音消息；重生成成功后替换旧引用，失败时保留旧音频。
+
+**兼容与边界**：面对面聊天保存在 Content IndexedDB，`ChatMessage` 增加可选稳定 ID 和语音附件；旧记录读取时自动补 ID 并回写。终端消息复用 v41 已有的可选音频资产字段，旧 `type: 'voice'` 消息继续兼容播放，因此世界 SaveFile 保持 v41。编辑文字会清除不再匹配的语音引用，删除或替换后仅回收无其他引用的 Assets IndexedDB 二进制；包含聊天的 zip 导出继续使用 `AssetRef` 和独立音频文件，不写入 base64。统一跨消息缓存、下载和数据管理留给下一垂直切片。

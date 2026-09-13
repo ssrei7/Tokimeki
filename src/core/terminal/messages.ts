@@ -134,6 +134,17 @@ export function sendTerminalVoiceMessage(world: WorldState, characterId: string,
   });
 }
 
+/** Attach generated audio to an existing character text message without inserting a second message. */
+export function attachTerminalVoiceToMessage(world: WorldState, characterId: string, messageId: string, asset: AssetRef, audioFormat: string, durationMs: number, requestId: string): TerminalMessageResult {
+  if (!messageId.trim() || !audioFormat.trim() || !requestId.trim() || !Number.isFinite(durationMs) || durationMs < 0) return { ok: false, changed: false, warning: '语音消息元数据无效。' };
+  const message = listTerminalMessages(world, characterId).find((item) => item.id === messageId);
+  if (!message) return { ok: false, changed: false, warning: '目标消息不存在。' };
+  if (message.senderId !== characterId || message.type !== 'text' || !message.text?.trim()) return { ok: false, changed: false, warning: '只能为角色发送的文字消息生成语音。' };
+  if (message.voiceRequestId === requestId && message.asset) return { ok: true, changed: false, message };
+  Object.assign(message, { asset, audioFormat: audioFormat.trim(), durationMs, voiceRequestId: requestId.trim() });
+  return { ok: true, changed: true, message };
+}
+
 export function sendTerminalReplyMessage(world: WorldState, characterId: string, text: string, day = world.clock.day, slotId = world.clock.slotId): TerminalMessageResult {
   const trimmed = text.trim();
   if (!trimmed) return { ok: false, changed: false, warning: '回复不能为空。' };
@@ -154,6 +165,12 @@ export function editTerminalMessage(world: WorldState, characterId: string, mess
   if (!nextText) return { ok: false, changed: false, warning: '消息内容不能为空。' };
   if (message.text === nextText) return { ok: true, changed: false, message };
   message.text = nextText;
+  if (message.type === 'text' && message.voiceRequestId) {
+    delete message.asset;
+    delete message.audioFormat;
+    delete message.durationMs;
+    delete message.voiceRequestId;
+  }
   return { ok: true, changed: true, message };
 }
 

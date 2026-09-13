@@ -10,11 +10,11 @@ import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGener
 import { parseGeneratedTopicTree } from './core/topics/parser';
 import { isTopicTreeFresh, mergeDailyTopicTree, topicResponse, topicTreeKey, topicVisibility, visibleTopics } from './core/topics';
 import { addCharacterToWorld, deriveNodeScope, nodeScopeLabel, proposeDeparture, recentEncounterTraces, resolveDeparture, triggerEncounter, updateEncounterOutcome, whoIsHere, whoIsWhere, type EncounterCandidate, type EncounterTrace } from './core/encounter';
-import { buildTerminalReplyPrompt, confirmTerminalAppointment, createFriendRequest, createTerminalAppointmentRequest, createTerminalOpRegistry, deleteTerminalMessage, deliverNightlyTerminalMessage, editTerminalMessage, isAcceptedFriend, listContactCandidates, listTerminalAppointmentRequests, listTerminalCalls, listTerminalMessages, listTerminalMessageThreads, listTerminalTransfers, recordTerminalCall, resolveFriendRequest, resolveIncomingTransfer as resolveIncomingTransferOp, resolveTerminalAppointmentRequest, sendPlayerTransfer, sendTerminalRejoinRequest, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, sendTerminalVoiceMessage, simulateTerminalAppointmentAcceptance, TERMINAL_PLAYER_ID, type ContactDirection, type TerminalAppointmentAction, type TerminalAppointmentInput, type TerminalCallStatus, type TransferAction } from './core/terminal';
+import { attachTerminalVoiceToMessage, buildTerminalReplyPrompt, confirmTerminalAppointment, createFriendRequest, createTerminalAppointmentRequest, createTerminalOpRegistry, deleteTerminalMessage, deliverNightlyTerminalMessage, editTerminalMessage, isAcceptedFriend, listContactCandidates, listTerminalAppointmentRequests, listTerminalCalls, listTerminalMessages, listTerminalMessageThreads, listTerminalTransfers, recordTerminalCall, resolveFriendRequest, resolveIncomingTransfer as resolveIncomingTransferOp, resolveTerminalAppointmentRequest, sendPlayerTransfer, sendTerminalRejoinRequest, sendTerminalReplyMessage, sendTerminalStickerMessage, sendTerminalTextMessage, simulateTerminalAppointmentAcceptance, TERMINAL_PLAYER_ID, type ContactDirection, type TerminalAppointmentAction, type TerminalAppointmentInput, type TerminalCallStatus, type TransferAction } from './core/terminal';
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
-import { PresetBundleSchema, PresetSchema, type CharacterCard, type ChatMessage, type ChatRecord, type ChatRecoveryRecord, type Persona, type Preset, type PresetBundle, type TerminalStickerRecord, type WorldbookEntry } from './data/content';
+import { PresetBundleSchema, PresetSchema, normalizeChatMessages, type CharacterCard, type ChatMessage, type ChatRecord, type ChatRecoveryRecord, type Persona, type Preset, type PresetBundle, type TerminalStickerRecord, type VoiceAttachment, type WorldbookEntry } from './data/content';
 import { clearChatRecovery, clearChats, clearMemoryVectors, contentDb, deleteCharacter, deletePersona, deletePreset, deletePresetBundle, deleteStoryScenePreset, deleteTerminalSticker, deleteWorldbook, listTerminalStickers, loadChat, loadChatRecovery, loadMemoryVectors, saveCharacter, saveChat, saveChatRecovery, saveMemoryVectors, savePersona, savePreset, savePresetBundle, saveStoryScenePreset, saveTerminalSticker, saveWorldbook } from './data/db/content';
 import { BUILTIN_NARRATION_PRESET_BUNDLE_ID, createBuiltinNarrationPresetBundle, mergeBuiltinNarrationPresetBundle } from './data/presets/builtins';
 import { deleteAsset, loadAsset, saveAsset } from './data/db/assets';
@@ -38,7 +38,7 @@ import { simulateEncounterDistribution } from './dev/encounter-simulator';
 import { simulateLeadDistribution } from './dev/lead-simulator';
 import { simulateTopicDistribution } from './dev/topic-simulator';
 import { CharacterProviderBindingSchema, EmbeddingConfigSchema, ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, TtsConfigSchema, type CharacterProviderBinding, type EmbeddingConfig, type ProviderBinding, type ProviderConfig, type TaskId, type TtsConfig } from './providers/types';
-import { synthesizeSpeech } from './providers/speech';
+import { speechCacheFingerprint, synthesizeSpeech } from './providers/speech';
 import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from './ui/chat-state';
 import { createChatRequestId, markBackgroundRequestInterrupted, recoveryMessagesForRetry } from './ui/chat-recovery';
 import { latestDialogueSpeakerId, splitDialogueMessage } from './ui/dialogue';
@@ -215,6 +215,7 @@ const slug = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9\u4e
 const newProvider = (): ProviderConfig => ({ id: `provider-${Date.now()}`, name: '新 Provider', kind: 'openai-compatible', endpoint: '', model: '', contextWindow: 8192, maxOutputTokens: 1024, temperature: 0.7 });
 const newEmbeddingConfig = (): EmbeddingConfig => ({ id: 'embedding', enabled: false, endpoint: '', model: '', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
 const newTtsConfig = (): TtsConfig => ({ id: `tts-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: '新语音配置', enabled: false, endpoint: '', model: '', voice: 'alloy', format: 'mp3', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
+const newChatMessageId = (characterId: string) => `${characterId}-chat-${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`;
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 async function measureAudioDurationMs(blob: Blob): Promise<number> {
   if (typeof Audio === 'undefined' || typeof URL === 'undefined') return 0;
@@ -231,6 +232,7 @@ async function measureAudioDurationMs(blob: Blob): Promise<number> {
     });
   } catch { URL.revokeObjectURL(source); return 0; }
 }
+function storedAssetId(reference: AssetRef | undefined): string | undefined { return reference?.kind === 'stored' ? reference.assetId : undefined; }
 const TASK_LABELS: Record<TaskId, string> = {
   narrate_main: '主线叙述', narrate_daily: '日常对话', topic_tree: '话题树', world_morning: '晨间世界更新',
   world_gen: '世界生成', map_gen: '地图生成', npc_batch: 'NPC 批处理', extract_ops: '状态变化整理', summarize_memory: '记忆整理',
@@ -304,6 +306,7 @@ export function App() {
   const [storyScenePresets, setStoryScenePresets] = useState<StoryScenePreset[]>(createBuiltinStoryScenePresets());
   const [selectedPresetBundleId, setSelectedPresetBundleId] = useState('');
   const [selectedCharacterId, setSelectedCharacterId] = useState('');
+  const selectedCharacterIdRef = useRef('');
   const [chatParticipantIds, setChatParticipantIds] = useState<string[]>([]);
   const [visualCharacterId, setVisualCharacterId] = useState('');
   const [personaEditingId, setPersonaEditingId] = useState('');
@@ -335,6 +338,7 @@ export function App() {
   const ttsConfigRef = useRef<TtsConfig>(newTtsConfig());
   const [ttsHeadersDraft, setTtsHeadersDraft] = useState('{}');
   const [ttsBusy, setTtsBusy] = useState(false);
+  const ttsBusyRef = useRef(false);
   const [requestStatus, setRequestStatus] = useState<RequestStatus>('idle');
   const [busy, setBusy] = useState(false);
   const [terminalBusy, setTerminalBusy] = useState(false);
@@ -449,6 +453,7 @@ export function App() {
 
   useEffect(() => { setHeadersDraft(JSON.stringify(provider.headers ?? {}, null, 2)); }, [provider.id]);
   useEffect(() => { setTtsHeadersDraft(JSON.stringify(ttsConfig.headers ?? {}, null, 2)); }, [ttsConfig.id]);
+  useEffect(() => { selectedCharacterIdRef.current = selectedCharacterId; }, [selectedCharacterId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -461,14 +466,17 @@ export function App() {
       setMessages(record?.messages ?? []);
       const restored = markBackgroundRequestInterrupted(recovery);
       if (restored) {
-        updateChatRecovery(restored);
+        const normalizedMessages = normalizeChatMessages(selectedCharacterId, restored.messages).messages;
+        const normalizedBaseMessages = normalizeChatMessages(selectedCharacterId, restored.baseMessages).messages;
+        const normalizedRecovery = { ...restored, messages: normalizedMessages, baseMessages: normalizedBaseMessages };
+        updateChatRecovery(normalizedRecovery);
         setInput(restored.input);
         if (restored.status === 'interrupted' || restored.status === 'error') {
           setRequestStatus('error');
           if (restored.raw && !restored.opsApplied) setPendingOps({ raw: restored.raw, actorId: restored.actorId, messageIndex: restored.messageIndex, streamError: restored.error, requestId: restored.requestId });
           setFeedback({ tone: 'info', text: restored.status === 'interrupted' ? '上次回复在页面进入后台时中断，正文已保留；请手动重试。' : '上次回复未完成，正文已保留；请手动重试。' });
         }
-        if (restored.messages.length) setMessages(restored.messages);
+        if (normalizedMessages.length) setMessages(normalizedMessages);
       } else updateChatRecovery(recovery ?? null);
       setLoadedChatCharacterId(selectedCharacterId);
     });
@@ -586,18 +594,22 @@ export function App() {
     commitSave(next);
   }
 
-  function editTerminalText(characterId: string, messageId: string, text: string): void {
+  async function editTerminalText(characterId: string, messageId: string, text: string): Promise<void> {
+    const previousAssetId = storedAssetId(listTerminalMessages(saveRef.current.world, characterId).find((message) => message.id === messageId)?.asset);
     const next = structuredClone(saveRef.current);
     const result = editTerminalMessage(next.world, characterId, messageId, text);
     if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '消息编辑失败。' }); return; }
     if (result.changed) commitSave(next);
+    if (result.changed && previousAssetId) await deleteVoiceAssetIfUnreferenced(previousAssetId);
   }
 
-  function deleteTerminalText(characterId: string, messageId: string): void {
+  async function deleteTerminalText(characterId: string, messageId: string): Promise<void> {
+    const previousAssetId = storedAssetId(listTerminalMessages(saveRef.current.world, characterId).find((message) => message.id === messageId)?.asset);
     const next = structuredClone(saveRef.current);
     const result = deleteTerminalMessage(next.world, characterId, messageId);
     if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '消息删除失败。' }); return; }
     if (result.changed) commitSave(next);
+    if (result.changed && previousAssetId) await deleteVoiceAssetIfUnreferenced(previousAssetId);
   }
 
   function sendTerminalStickerUrl(characterId: string, url: string, quoteMessageId?: string): void {
@@ -677,38 +689,49 @@ export function App() {
     setFeedback({ tone: 'success', text: result.changed ? '约定已写入日历。' : '这项约定已经在日历中。' });
   }
 
-  async function sendTerminalVoice(characterId: string, text: string, retryRequestId?: string): Promise<void> {
-    if (ttsBusy) return;
-    const trimmed = text.trim();
+  async function deleteVoiceAssetIfUnreferenced(assetId: string): Promise<void> {
+    const chats = await contentDb.chats.toArray();
+    const chatReferenced = chats.some((record) => record.messages.some((message) => message.voice?.asset.kind === 'stored' && message.voice.asset.assetId === assetId));
+    const terminalReferenced = Object.values(saveRef.current.world.terminal.messageThreads).some((thread) => thread.some((message) => message.asset?.kind === 'stored' && message.asset.assetId === assetId));
+    const stickerReferenced = terminalStickers.some((sticker) => sticker.asset.kind === 'stored' && sticker.asset.assetId === assetId);
+    if (!chatReferenced && !terminalReferenced && !stickerReferenced) await deleteAsset(assetId);
+  }
+
+  async function sendTerminalVoice(characterId: string, messageId: string, retryRequestId?: string): Promise<void> {
+    if (ttsBusyRef.current) return;
+    const target = listTerminalMessages(saveRef.current.world, characterId).find((message) => message.id === messageId);
+    const trimmed = target?.text?.trim() ?? '';
     if (!trimmed) { setFeedback({ tone: 'error', text: '语音文本不能为空。' }); return; }
     const config = resolveTtsProviderForCharacter(ttsConfigs, characterBindings, saveRef.current.meta.id, characterId, defaultTtsConfigId);
     if (!config || !config.enabled) { setFeedback({ tone: 'error', text: '请先在设置的“语音”中启用并保存语音 API，或为当前角色绑定可用配置。' }); return; }
-    const requestId = retryRequestId ?? (config.pendingRequest?.characterId === characterId && config.pendingRequest.text === trimmed ? config.pendingRequest.requestId : `tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-    const existing = listTerminalMessages(saveRef.current.world, characterId).find((message) => message.type === 'voice' && message.voiceRequestId === requestId);
-    if (existing) {
-      await persistTtsResult(config, 'success', undefined, null);
-      setFeedback({ tone: 'success', text: '这条语音已经发送，不会重复插入。' });
-      return;
-    }
+    if (!target || target.senderId !== characterId || target.type !== 'text' || target.text !== trimmed) { setFeedback({ tone: 'error', text: '只能为角色发送的文字消息生成语音。' }); return; }
+    const requestId = retryRequestId ?? `tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const pendingRequest = { requestId, characterId, text: trimmed };
-    setTtsBusy(true); setFeedback(null);
+    ttsBusyRef.current = true; setTtsBusy(true); setFeedback(null);
+    let generatedAssetId: string | undefined;
     try {
       await persistTtsResult(config, 'requesting', undefined, pendingRequest);
       const result = await synthesizeSpeech(config, trimmed);
       const durationMs = await measureAudioDurationMs(result.blob);
       const assetId = `terminal-voice-${requestId}`;
       await saveAsset({ id: assetId, blob: result.blob, mimeType: result.mimeType, createdAt: now() });
+      generatedAssetId = assetId;
       const next = structuredClone(saveRef.current);
-      const message = sendTerminalVoiceMessage(next.world, characterId, trimmed, { kind: 'stored', assetId }, result.format, durationMs, requestId);
+      const latestTarget = listTerminalMessages(next.world, characterId).find((message) => message.id === messageId);
+      if (!latestTarget || latestTarget.text?.trim() !== trimmed) throw new Error('消息已变化，语音未附加。');
+      const previousAssetId = storedAssetId(latestTarget.asset);
+      const message = attachTerminalVoiceToMessage(next.world, characterId, messageId, { kind: 'stored', assetId }, result.format, durationMs, requestId);
       if (!message.ok) throw new Error(message.warning ?? '语音消息保存失败。');
       commitSave(next);
+      if (previousAssetId && previousAssetId !== assetId) await deleteVoiceAssetIfUnreferenced(previousAssetId);
       await persistTtsResult(config, 'success', undefined, null);
-      setFeedback({ tone: 'success', text: message.changed ? '语音消息已发送。' : '这条语音已经发送，不会重复插入。' });
+      setFeedback({ tone: 'success', text: message.changed ? '语音已附加到这条消息。' : '这条消息的语音没有变化。' });
     } catch (error) {
       const message = errorMessage(error, '语音生成失败，可手动重试。');
+      if (generatedAssetId) await deleteVoiceAssetIfUnreferenced(generatedAssetId).catch(() => undefined);
       await persistTtsResult(config, 'error', message, pendingRequest).catch(() => undefined);
       setFeedback({ tone: 'error', text: `${message} 可手动重试，重试不会重复插入已保存的语音。` });
-    } finally { setTtsBusy(false); }
+    } finally { ttsBusyRef.current = false; setTtsBusy(false); }
   }
 
   function startTerminalCall(characterId: string): void {
@@ -1757,8 +1780,8 @@ export function App() {
     if (applied.changes.length) promptEvents.emit('onOpsApply', { changes: applied.changes });
     const nextMessages = [
       ...messages,
-      { role: 'user' as const, content: topic.label, kind: 'dialogue' as const, speakerId: 'player' },
-      { role: 'assistant' as const, content: response, kind: 'dialogue' as const, speakerId: selectedCharacterId },
+      { id: newChatMessageId(selectedCharacterId), role: 'user' as const, content: topic.label, kind: 'dialogue' as const, speakerId: 'player' },
+      { id: newChatMessageId(selectedCharacterId), role: 'assistant' as const, content: response, kind: 'dialogue' as const, speakerId: selectedCharacterId },
     ];
     setMessages(nextMessages);
     markResponseSource('topic');
@@ -1883,7 +1906,7 @@ export function App() {
     const item = next.world.items[itemId];
     const character = next.world.characters[targetId];
     const giftContext: GiftGenerationContext = { giftId: gift.id, itemId, itemName: item?.name ?? itemId, charId: targetId, charName: character?.name ?? targetId };
-    const giftMessage: ChatMessage = { role: 'user', content: `（你送出了${item?.name ?? itemId}。）`, kind: 'dialogue', speakerId: 'player' };
+    const giftMessage: ChatMessage = { id: newChatMessageId(selectedCharacterId), role: 'user', content: `（你送出了${item?.name ?? itemId}。）`, kind: 'dialogue', speakerId: 'player' };
     const nextMessages = [...messages, giftMessage];
     setMessages(nextMessages);
     void saveChat({ characterId: selectedCharacterId, messages: nextMessages, updatedAt: now() });
@@ -1917,7 +1940,7 @@ export function App() {
       if (applied.changes.length) promptEvents.emit('onOpsApply', { changes: applied.changes });
     }
     if (evidence?.matched) commitSave(next);
-    const message: ChatMessage = { role: 'user', content: `（你向对方出示了收藏《${entry.title}》${entry.description ? `：${entry.description}` : ''}。）`, kind: 'dialogue', speakerId: 'player' };
+    const message: ChatMessage = { id: newChatMessageId(selectedCharacterId), role: 'user', content: `（你向对方出示了收藏《${entry.title}》${entry.description ? `：${entry.description}` : ''}。）`, kind: 'dialogue', speakerId: 'player' };
     const nextMessages = [...messages, message];
     setMessages(nextMessages);
     void saveChat({ characterId: selectedCharacterId, messages: nextMessages, updatedAt: now() });
@@ -1936,7 +1959,7 @@ export function App() {
     const text = input.trim();
     if (!text || busy) return;
     if (!selectedCharacterId) { setFeedback({ tone: 'error', text: '请先选择聊天角色。' }); return; }
-    const next = [...messages, { role: 'user' as const, content: text, kind: 'dialogue' as const, speakerId: 'player' }];
+    const next = [...messages, { id: newChatMessageId(selectedCharacterId), role: 'user' as const, content: text, kind: 'dialogue' as const, speakerId: 'player' }];
     setMessages(next); setInput(''); setRequestStatus('idle');
     markResponseSource(null);
     setFeedback({ tone: 'info', text: '消息已发送，点击“生成回复”后才会请求 API。' });
@@ -1945,6 +1968,7 @@ export function App() {
 
   async function editChatHistoryMessage(index: number, content: string): Promise<void> {
     if (!selectedCharacterId || !messages[index] || !isEditableChatMessage(messages[index])) return;
+    const previousAssetId = storedAssetId(messages[index].voice?.asset);
     const next = updateChatMessage(messages, index, content);
     if (next === messages) return;
     const nextSave = structuredClone(saveRef.current);
@@ -1955,10 +1979,12 @@ export function App() {
     setMessages(next);
     setFeedback({ tone: 'success', text: `台词已修改。${removedMemories ? `已移除 ${removedMemories} 条由原聊天产生的旧记忆；` : ''}下一次生成会使用编辑后的上下文，不会回滚其他状态变化。` });
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
+    if (previousAssetId) await deleteVoiceAssetIfUnreferenced(previousAssetId);
   }
 
   async function deleteChatHistoryMessage(index: number): Promise<void> {
     if (!selectedCharacterId || !messages[index] || !isEditableChatMessage(messages[index])) return;
+    const previousAssetId = storedAssetId(messages[index].voice?.asset);
     const next = deleteChatMessage(messages, index);
     if (next === messages) return;
     const nextSave = structuredClone(saveRef.current);
@@ -1969,13 +1995,53 @@ export function App() {
     setMessages(next);
     setFeedback({ tone: 'success', text: `台词已从聊天记录中删除。${removedMemories ? `已移除 ${removedMemories} 条受影响的旧记忆；` : ''}不会回滚其他状态变化。` });
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
+    if (previousAssetId) await deleteVoiceAssetIfUnreferenced(previousAssetId);
+  }
+
+  async function generateChatVoice(index: number, retryRequestId?: string): Promise<void> {
+    if (ttsBusyRef.current) return;
+    const message = messages[index];
+    if (!message || message.role !== 'assistant' || !message.content.trim()) { setFeedback({ tone: 'error', text: '只能为角色回复生成语音。' }); return; }
+    const chatCharacterId = selectedCharacterId;
+    const speakerId = message.speakerId && message.speakerId !== 'player' ? message.speakerId : selectedCharacterId;
+    const config = resolveTtsProviderForCharacter(ttsConfigs, characterBindings, saveRef.current.meta.id, speakerId, defaultTtsConfigId);
+    if (!config || !config.enabled) { setFeedback({ tone: 'error', text: '请先在设置的“语音”中启用并保存语音 API，或为当前角色绑定可用配置。' }); return; }
+    const requestId = retryRequestId ?? `chat-tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const previousAssetId = storedAssetId(message.voice?.asset);
+    ttsBusyRef.current = true; setTtsBusy(true); setFeedback(null);
+    let generatedAssetId: string | undefined;
+    try {
+      await persistTtsResult(config, 'requesting', undefined, { requestId, characterId: speakerId, text: message.content.trim() });
+      const result = await synthesizeSpeech(config, message.content.trim());
+      const durationMs = await measureAudioDurationMs(result.blob);
+      const assetId = `chat-voice-${requestId}`;
+      await saveAsset({ id: assetId, blob: result.blob, mimeType: result.mimeType, createdAt: now() });
+      generatedAssetId = assetId;
+      const attachment: VoiceAttachment = { asset: { kind: 'stored', assetId }, audioFormat: result.format, durationMs, requestId, cacheFingerprint: speechCacheFingerprint(config, message.content) };
+      const latestRecord = await loadChat(chatCharacterId);
+      const latestMessages = latestRecord?.messages ?? messages;
+      const targetIndex = message.id ? latestMessages.findIndex((item) => item.id === message.id) : index;
+      const latestTarget = latestMessages[targetIndex];
+      if (!latestTarget || latestTarget.role !== 'assistant' || latestTarget.content !== message.content) throw new Error('消息已变化，语音未附加。');
+      const next = latestMessages.map((item, messageIndex) => messageIndex === targetIndex ? { ...item, voice: attachment } : item);
+      if (selectedCharacterIdRef.current === chatCharacterId) setMessages(next);
+      await saveChat({ characterId: chatCharacterId, messages: next, updatedAt: now() });
+      if (previousAssetId && previousAssetId !== assetId) await deleteVoiceAssetIfUnreferenced(previousAssetId);
+      await persistTtsResult(config, 'success', undefined, null);
+      setFeedback({ tone: 'success', text: '语音已附加到这条角色消息。' });
+    } catch (error) {
+      const messageText = errorMessage(error, '语音生成失败，可手动重试。');
+      if (generatedAssetId) await deleteVoiceAssetIfUnreferenced(generatedAssetId).catch(() => undefined);
+      await persistTtsResult(config, 'error', messageText, { requestId, characterId: speakerId, text: message.content.trim() }).catch(() => undefined);
+      setFeedback({ tone: 'error', text: `${messageText} 原有语音保持不变。` });
+    } finally { ttsBusyRef.current = false; setTtsBusy(false); }
   }
 
   async function generateReply(giftContext?: GiftGenerationContext, providedMessages?: ChatMessage[], suppressItemGains = false, collectionContext?: CollectionGenerationContext) {
     if (busy) return;
     if (!selectedCharacterId) { setFeedback({ tone: 'error', text: '请先选择聊天角色。' }); return; }
     const text = input.trim();
-    const next = providedMessages ?? (text ? [...messages, { role: 'user' as const, content: text, kind: 'dialogue' as const, speakerId: 'player' }] : messages);
+    const next = providedMessages ?? (text ? [...messages, { id: newChatMessageId(selectedCharacterId), role: 'user' as const, content: text, kind: 'dialogue' as const, speakerId: 'player' }] : messages);
     if (!hasQueuedUserMessage(next) && next.length === 0) { setFeedback({ tone: 'error', text: '请先发送第一条消息。' }); return; }
     const generationCharacterId = giftContext?.charId ?? selectedCharacterId;
     const routedProvider = mockFixtureId
@@ -1990,6 +2056,7 @@ export function App() {
     setMessages(next); setInput(''); setBusy(true); setReplyInProgress(true); setRequestStatus('requesting'); setFeedback(null); setPendingOps(null);
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
     const requestId = createChatRequestId();
+    const assistantMessageId = newChatMessageId(selectedCharacterId);
     updateChatRecovery({ characterId: selectedCharacterId, requestId, status: 'requesting', input: text, messages: next, baseMessages: next, assistantText: '', raw: '', actorId: generationCharacterId, messageIndex: next.length, opsApplied: false, updatedAt: now() });
     let narrative = '';
     const splitter = new OpsStreamSplitter();
@@ -2007,12 +2074,12 @@ export function App() {
     try {
       await streamChat(parsed, assembled.messages, (delta) => {
         narrative += splitter.push(delta);
-        setMessages([...next, { role: 'assistant', content: narrative }]);
-        updateChatRecovery({ characterId: selectedCharacterId, requestId, status: 'generating', input: text, messages: [...next, { role: 'assistant', content: narrative }], baseMessages: next, assistantText: narrative, raw: '', actorId: generationCharacterId, messageIndex: next.length, opsApplied: false, updatedAt: now() });
+        setMessages([...next, { id: assistantMessageId, role: 'assistant', content: narrative, kind: 'dialogue', speakerId: generationCharacterId }]);
+        updateChatRecovery({ characterId: selectedCharacterId, requestId, status: 'generating', input: text, messages: [...next, { id: assistantMessageId, role: 'assistant', content: narrative, kind: 'dialogue', speakerId: generationCharacterId }], baseMessages: next, assistantText: narrative, raw: '', actorId: generationCharacterId, messageIndex: next.length, opsApplied: false, updatedAt: now() });
       }, { taskId: 'narrate_main', onStatus: (status) => setRequestStatus(status) });
       const finished = splitter.finish();
       narrative += finished.text;
-      const completed = [...next, { role: 'assistant' as const, content: narrative }];
+      const completed = [...next, { id: assistantMessageId, role: 'assistant' as const, content: narrative, kind: 'dialogue' as const, speakerId: generationCharacterId }];
       setMessages(completed);
       markResponseSource('manual');
       await saveChat({ characterId: selectedCharacterId, messages: completed, updatedAt: now() });
@@ -2027,14 +2094,14 @@ export function App() {
       const finished = splitter.finish();
       narrative += finished.text;
       if (narrative) {
-        const completed = [...next, { role: 'assistant' as const, content: narrative }];
+        const completed = [...next, { id: assistantMessageId, role: 'assistant' as const, content: narrative, kind: 'dialogue' as const, speakerId: generationCharacterId }];
         setMessages(completed);
         await saveChat({ characterId: selectedCharacterId, messages: completed, updatedAt: now() });
       } else {
         setMessages(next);
       }
       setRequestStatus('error'); setFeedback({ tone: 'error', text: message });
-      updateChatRecovery({ characterId: selectedCharacterId, requestId, status: 'error', input: text, messages: narrative ? [...next, { role: 'assistant', content: narrative }] : next, baseMessages: next, assistantText: narrative, raw: finished.raw, actorId: generationCharacterId, messageIndex: narrative ? next.length : undefined, opsApplied: false, error: message, updatedAt: now() });
+      updateChatRecovery({ characterId: selectedCharacterId, requestId, status: 'error', input: text, messages: narrative ? [...next, { id: assistantMessageId, role: 'assistant', content: narrative, kind: 'dialogue', speakerId: generationCharacterId }] : next, baseMessages: next, assistantText: narrative, raw: finished.raw, actorId: generationCharacterId, messageIndex: narrative ? next.length : undefined, opsApplied: false, error: message, updatedAt: now() });
       if (finished.raw) setPendingOps({ raw: finished.raw, actorId: generationCharacterId, messageIndex: narrative ? next.length : undefined, streamError: message, requestId });
       setDebug((current) => ({
         ...current,
@@ -2053,7 +2120,7 @@ export function App() {
     const baseMessages = messages.slice(0, latestAssistantIndex);
     const routedProvider = mockFixtureId
       ? createMockProviderConfig(mockFixtureId)
-      : resolveProviderForTask(providers, bindings, 'narrate_main', defaultProviderId);
+      : resolveProviderForCharacter(providers, bindings, characterBindings, saveRef.current.meta.id, selectedCharacterId, 'narrate_main', defaultProviderId);
     let parsed: ProviderConfig;
     try {
       if (!routedProvider) throw new Error('请先保存并设置默认 Provider，或在高级调试中启用 Mock fixture。');
@@ -2071,16 +2138,17 @@ export function App() {
     setDebug((current) => ({ ...current, prompt: assembled }));
     setBusy(true); setReplyInProgress(true); setRequestStatus('requesting'); setFeedback(null); setPendingOps(null);
     let narrative = '';
+    const assistantMessageId = newChatMessageId(selectedCharacterId);
     const splitter = new OpsStreamSplitter();
     try {
       await streamChat(parsed, assembled.messages, (delta) => {
         narrative += splitter.push(delta);
-        setMessages(narrative ? [...baseMessages, { role: 'assistant', content: narrative }] : baseMessages);
+        setMessages(narrative ? [...baseMessages, { id: assistantMessageId, role: 'assistant', content: narrative, kind: 'dialogue', speakerId: selectedCharacterId }] : baseMessages);
       }, { taskId: 'narrate_main', onStatus: (status) => setRequestStatus(status) });
       const finished = splitter.finish();
       narrative += finished.text;
       if (!narrative.trim()) throw new Error('Provider 未返回可读正文。');
-      const completed = [...baseMessages, { role: 'assistant' as const, content: narrative }];
+      const completed = [...baseMessages, { id: assistantMessageId, role: 'assistant' as const, content: narrative, kind: 'dialogue' as const, speakerId: selectedCharacterId }];
       setMessages(completed);
       const nextSave = structuredClone(saveRef.current);
       const removedMemories = removeRelationshipMemoriesFromMessage(nextSave.world, selectedCharacterId, latestAssistantIndex);
@@ -2391,7 +2459,8 @@ export function App() {
   }
 
   async function testTtsConnection(): Promise<void> {
-    setTtsBusy(true);
+    if (ttsBusyRef.current) return;
+    ttsBusyRef.current = true; setTtsBusy(true);
     let config: TtsConfig | undefined;
     try {
       config = parseEditedTtsConfig();
@@ -2403,7 +2472,7 @@ export function App() {
       const message = errorMessage(error, '语音连接失败。');
       if (config) await persistTtsResult(config, 'error', message);
       setFeedback({ tone: 'error', text: message });
-    } finally { setTtsBusy(false); }
+    } finally { ttsBusyRef.current = false; setTtsBusy(false); }
   }
 
   async function saveProviderConfig() {
@@ -2622,7 +2691,8 @@ export function App() {
     if (selectedCharacterId) await saveChat({ characterId: selectedCharacterId, messages, updatedAt: now() });
     const extras: Record<string, unknown> = { characters, worldbooks, presets, presetBundles };
     const assetMeta: Record<string, { mimeType: string; width?: number; height?: number }> = {};
-    if (includeChatsOnExport) extras.chats = await contentDb.chats.toArray();
+    const exportedChats = includeChatsOnExport ? await contentDb.chats.toArray() : [];
+    if (includeChatsOnExport) extras.chats = exportedChats;
     const assets: Record<string, Uint8Array> = {};
     const assetRefs: AssetRef[] = [
       saveRef.current.world.map.view.background,
@@ -2630,6 +2700,7 @@ export function App() {
       ...Object.values(saveRef.current.world.characters).flatMap((character) => [character.visuals.avatar, ...character.visuals.portraits.map((portrait) => portrait.image)]),
       ...Object.values(saveRef.current.world.npcs).flatMap((npc) => [npc.visuals?.avatar]),
       ...Object.values(saveRef.current.world.terminal.messageThreads).flatMap((thread) => thread.map((message) => message.asset)),
+      ...exportedChats.flatMap((record) => record.messages.map((message) => message.voice?.asset)),
       ...(await listTerminalStickers()).map((sticker) => sticker.asset),
     ].filter((ref): ref is AssetRef => Boolean(ref));
     for (const ref of assetRefs) if (ref.kind === 'stored' && !assets[ref.assetId]) {
@@ -2645,8 +2716,10 @@ export function App() {
 
   async function clearAllChats(): Promise<void> {
     if (!window.confirm('确定清除全部聊天记录吗？此操作不可撤销。')) return;
+    const voiceAssetIds = [...new Set((await contentDb.chats.toArray()).flatMap((record) => record.messages.map((message) => storedAssetId(message.voice?.asset)).filter((id): id is string => Boolean(id))))];
     await clearChats();
     setMessages([]); setLoadedChatCharacterId(selectedCharacterId);
+    for (const assetId of voiceAssetIds) await deleteVoiceAssetIfUnreferenced(assetId);
     setFeedback({ tone: 'success', text: '全部聊天记录已清除；角色卡、世界状态和其他资料未受影响。' });
   }
 
@@ -2769,10 +2842,10 @@ export function App() {
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView {...dayViewProps} activePage={dayPage} onOpenPage={setDayPage} onBack={() => setDayPage(null)} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} interrupted={Boolean(chatRecovery && (chatRecovery.status === 'interrupted' || chatRecovery.status === 'error'))} onRetryInterrupted={retryInterruptedReply} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
+      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} onGenerateVoice={generateChatVoice} voiceAvailableCharacterIds={Object.keys(save.world.characters).filter((characterId) => Boolean(resolveTtsProviderForCharacter(ttsConfigs, characterBindings, save.meta.id, characterId, defaultTtsConfigId)?.enabled))} ttsBusy={ttsBusy} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} interrupted={Boolean(chatRecovery && (chatRecovery.status === 'interrupted' || chatRecovery.status === 'error'))} onRetryInterrupted={retryInterruptedReply} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
       {tab === 'library' && libraryDayPage && <DayView {...dayViewProps} activePage={libraryDayPage} onOpenPage={() => undefined} onBack={() => setLibraryPage(null)} shellEyebrow="终端" />}
       {/* @ts-expect-error legacy unused sticker callbacks remain accepted by LibraryView */}
-      {tab === 'library' && !libraryDayPage && !(['story', 'memories', 'collection'] as LibraryPage[]).includes(libraryPage ?? 'messages') && <LibraryNavigationContext.Provider value={{ activePage: libraryPage, onOpenPage: setLibraryPage, onBack: () => setLibraryPage(null) }}><LibraryView appName={appName} characters={characters} worldbooks={worldbooks} providers={providers} ttsConfigs={ttsConfigs} characterBindings={characterBindings} onCharacterProviderBindingChange={updateCharacterProviderBinding} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} onRequestFriend={requestTerminalFriend} onResolveFriend={resolveTerminalFriend} onSendTerminalText={sendTerminalText} onSendStickerAsset={sendTerminalStickerAsset} stickers={terminalStickers} onImportStickerFile={importTerminalStickerFile} onImportStickerUrl={importTerminalStickerUrl} onDeleteSticker={removeTerminalSticker} onRejoin={requestTerminalRejoin} onEditTerminalMessage={editTerminalText} onDeleteTerminalMessage={deleteTerminalText} onGenerateTerminalReply={generateTerminalReply} onSendVoice={sendTerminalVoice} ttsConfig={ttsConfig} ttsBusy={ttsBusy} onSendPlayerTransfer={sendPlayerTerminalTransfer} onResolveIncomingTransfer={resolveIncomingTransfer} onCreateTerminalAppointment={createTerminalAppointment} onSimulateIncomingAppointment={(characterId, input) => createTerminalAppointment(characterId, input, 'incoming')} onResolveTerminalAppointment={resolveTerminalAppointment} onSimulateAppointmentAcceptance={simulateTerminalAppointmentAcceptanceForUi} onConfirmTerminalAppointment={confirmTerminalAppointmentForUi} terminalCall={terminalCall} onStartCall={startTerminalCall} onSimulateIncomingCall={simulateIncomingTerminalCall} onAnswerCall={answerTerminalCall} onSimulateCallAnswer={simulateTerminalCallAnswer} onEndCall={endTerminalCall} terminalBusy={terminalBusy} musicPlayer={musicPlayer} /></LibraryNavigationContext.Provider>}
+      {tab === 'library' && !libraryDayPage && !(['story', 'memories', 'collection'] as LibraryPage[]).includes(libraryPage ?? 'messages') && <LibraryNavigationContext.Provider value={{ activePage: libraryPage, onOpenPage: setLibraryPage, onBack: () => setLibraryPage(null) }}><LibraryView appName={appName} characters={characters} worldbooks={worldbooks} providers={providers} ttsConfigs={ttsConfigs} characterBindings={characterBindings} onCharacterProviderBindingChange={updateCharacterProviderBinding} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} onRequestFriend={requestTerminalFriend} onResolveFriend={resolveTerminalFriend} onSendTerminalText={sendTerminalText} onSendStickerAsset={sendTerminalStickerAsset} stickers={terminalStickers} onImportStickerFile={importTerminalStickerFile} onImportStickerUrl={importTerminalStickerUrl} onDeleteSticker={removeTerminalSticker} onRejoin={requestTerminalRejoin} onEditTerminalMessage={editTerminalText} onDeleteTerminalMessage={deleteTerminalText} onGenerateTerminalReply={generateTerminalReply} onSendVoice={sendTerminalVoice} isVoiceAvailable={(characterId) => Boolean(resolveTtsProviderForCharacter(ttsConfigs, characterBindings, save.meta.id, characterId, defaultTtsConfigId)?.enabled)} ttsConfig={ttsConfig} ttsBusy={ttsBusy} onSendPlayerTransfer={sendPlayerTerminalTransfer} onResolveIncomingTransfer={resolveIncomingTransfer} onCreateTerminalAppointment={createTerminalAppointment} onSimulateIncomingAppointment={(characterId, input) => createTerminalAppointment(characterId, input, 'incoming')} onResolveTerminalAppointment={resolveTerminalAppointment} onSimulateAppointmentAcceptance={simulateTerminalAppointmentAcceptanceForUi} onConfirmTerminalAppointment={confirmTerminalAppointmentForUi} terminalCall={terminalCall} onStartCall={startTerminalCall} onSimulateIncomingCall={simulateIncomingTerminalCall} onAnswerCall={answerTerminalCall} onSimulateCallAnswer={simulateTerminalCallAnswer} onEndCall={endTerminalCall} terminalBusy={terminalBusy} musicPlayer={musicPlayer} /></LibraryNavigationContext.Provider>}
       {tab === 'library' && libraryPage === 'story' && <SubpageShell eyebrow="终端" title="多人剧情" pageId="story" onBack={() => setLibraryPage(null)}><StorySceneLibraryView save={save} storyScenePresets={storyScenePresets} onSavePreset={saveStoryScenePresetCopy} onUpdatePreset={updateStoryScenePreset} onDeletePreset={removeStoryScenePreset} onCreateDraft={createStorySceneDraftFromInput} onEditDraft={editStorySceneDraft} onDeleteDraft={removeStorySceneDraft} onConfirmDraft={confirmStorySceneDraft} onAdvanceStage={advanceStoryScene} onSetStatus={setStorySceneStatus} onReadStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'read')} onSelectStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'select')} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'memories' && <SubpageShell eyebrow="终端" title="记忆库" pageId="memories" onBack={() => setLibraryPage(null)}><MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'collection' && <SubpageShell eyebrow="终端" title="收藏" pageId="collection" onBack={() => setLibraryPage(null)}><CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} /></SubpageShell>}
@@ -3259,6 +3332,9 @@ function ChatView(props: {
   onGenerate: () => Promise<void>;
   onEditMessage: (index: number, content: string) => Promise<void>;
   onDeleteMessage: (index: number) => Promise<void>;
+  onGenerateVoice: (index: number, requestId?: string) => Promise<void>;
+  voiceAvailableCharacterIds: string[];
+  ttsBusy: boolean;
   regenerateInput: string;
   setRegenerateInput: (value: string) => void;
   onRegenerate: () => Promise<void>;
@@ -3496,6 +3572,7 @@ function ChatView(props: {
     setEditingMessageIndex(index);
     setEditingMessageText(message.content);
   };
+  const messageVoiceSpeakerId = (message: ChatMessage) => message.speakerId && message.speakerId !== 'player' ? message.speakerId : props.selectedCharacterId;
   const cancelMessageMenu = () => { setMessageMenuIndex(null); setEditingMessageIndex(null); setEditingMessageText(''); };
 
   return <section className="chat-screen vn-chat-screen">
@@ -3506,7 +3583,7 @@ function ChatView(props: {
       </div>
       <div className="vn-dialogue-box" style={{ height: `${dialogueBoxHeight}px` }}>
         <div className="vn-dialogue-resize-handle" role="separator" tabIndex={0} aria-label="调整对话框高度" aria-orientation="horizontal" aria-valuemin={80} aria-valuemax={dialogueMaxHeight} aria-valuenow={dialogueBoxHeight} onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); setDialogueBoxHeight((height) => Math.min(dialogueMaxHeight, Math.max(80, height + (event.key === 'ArrowUp' ? 10 : -10)))); } }} onPointerDown={beginDialogueResize} onPointerMove={moveDialogueResize} onPointerUp={endDialogueResize} onPointerCancel={endDialogueResize} />
-        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.map((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, speakerLabelsById); const isLatestCollapsible = latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, effectiveRevealedLineCount)) : lines; const editable = isEditableChatMessage(message); const menuOpen = messageMenuIndex === messageIndex; const editing = editingMessageIndex === messageIndex; return <div className={`vn-message-group ${message.role}`} key={`${message.role}-${messageIndex}`} onPointerDown={(event) => beginMessagePress(event, messageIndex)} onPointerUp={clearMessagePress} onPointerCancel={clearMessagePress} onPointerLeave={clearMessagePress} onContextMenu={(event) => { event.preventDefault(); openMessageMenu(messageIndex); }}>{displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>)}{editable && menuOpen && !editing && <div className="message-action-menu" role="menu"><button type="button" onClick={() => startMessageEdit(messageIndex)}>编辑</button><button type="button" className="danger" onClick={() => { if (window.confirm('删除这条台词？只会删除聊天记录，不会回滚已执行的状态变化。')) { void props.onDeleteMessage(messageIndex); cancelMessageMenu(); } }}>删除</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div>}{editing && <div className="message-edit-panel"><textarea aria-label="编辑台词" value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} autoFocus /><div className="button-row"><button type="button" onClick={() => { void props.onEditMessage(messageIndex, editingMessageText); cancelMessageMenu(); }} disabled={!editingMessageText.trim()}>保存</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}</div>; })}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > effectiveRevealedLineCount ? <button className="vn-next-line" onClick={() => { followLatestRef.current = true; setRevealedAssistantKey(latestAssistantKey); setRevealedLineCount(Math.min(latestAssistantLines.length, effectiveRevealedLineCount + 1)); }}>下一段 · {effectiveRevealedLineCount}/{latestAssistantLines.length}</button> : replyProgress && <div className="vn-generation-progress" role="status" aria-live="polite"><span>{replyProgress === 'first-line' ? '正在生成第一段' : '后续内容生成中'}</span><span className="vn-generation-dots" aria-hidden="true"><i /><i /><i /></span></div>}</div>
+        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.map((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, speakerLabelsById); const isLatestCollapsible = latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, effectiveRevealedLineCount)) : lines; const editable = isEditableChatMessage(message); const menuOpen = messageMenuIndex === messageIndex; const editing = editingMessageIndex === messageIndex; return <div className={`vn-message-group ${message.role}`} key={message.id ?? `${message.role}-${messageIndex}`} onPointerDown={(event) => beginMessagePress(event, messageIndex)} onPointerUp={clearMessagePress} onPointerCancel={clearMessagePress} onPointerLeave={clearMessagePress} onContextMenu={(event) => { event.preventDefault(); openMessageMenu(messageIndex); }}>{displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>)}{message.voice && <TerminalVoiceAudio asset={message.voice.asset} durationMs={message.voice.durationMs} />}{editable && menuOpen && !editing && <div className="message-action-menu" role="menu">{message.role === 'assistant' && message.kind !== 'narration' && <button type="button" onClick={() => { void props.onGenerateVoice(messageIndex); cancelMessageMenu(); }} disabled={props.ttsBusy || !props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message))} title={props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message)) ? undefined : '请先设置语音 API'}>{props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message)) ? (message.voice ? '重新生成语音' : '生成语音') : '前往设置语音 API'}</button>}<button type="button" onClick={() => startMessageEdit(messageIndex)} disabled={props.ttsBusy}>编辑</button><button type="button" className="danger" disabled={props.ttsBusy} onClick={() => { if (window.confirm('删除这条台词？只会删除聊天记录，不会回滚已执行的状态变化。')) { void props.onDeleteMessage(messageIndex); cancelMessageMenu(); } }}>删除</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div>}{editing && <div className="message-edit-panel"><textarea aria-label="编辑台词" value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} autoFocus /><div className="button-row"><button type="button" onClick={() => { void props.onEditMessage(messageIndex, editingMessageText); cancelMessageMenu(); }} disabled={!editingMessageText.trim()}>保存</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}</div>; })}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > effectiveRevealedLineCount ? <button className="vn-next-line" onClick={() => { followLatestRef.current = true; setRevealedAssistantKey(latestAssistantKey); setRevealedLineCount(Math.min(latestAssistantLines.length, effectiveRevealedLineCount + 1)); }}>下一段 · {effectiveRevealedLineCount}/{latestAssistantLines.length}</button> : replyProgress && <div className="vn-generation-progress" role="status" aria-live="polite"><span>{replyProgress === 'first-line' ? '正在生成第一段' : '后续内容生成中'}</span><span className="vn-generation-dots" aria-hidden="true"><i /><i /><i /></span></div>}</div>
       </div>
     </div>
     {props.topicMode === 'topics' && <div className="topic-tree-panel" aria-label="话题树">
@@ -3866,10 +3943,11 @@ function TerminalAssetImage({ asset, alt = '贴图' }: { asset?: AssetRef; alt?:
 function TerminalVoiceAudio({ asset, durationMs }: { asset?: AssetRef; durationMs?: number }) {
   const [src, setSrc] = useState<string>();
   useEffect(() => {
+    let cancelled = false;
     let objectUrl: string | undefined;
-    if (asset?.kind === 'stored') void loadAsset(asset.assetId).then((stored) => { if (stored) { objectUrl = URL.createObjectURL(stored.blob); setSrc(objectUrl); } });
-    else setSrc(undefined);
-    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    setSrc(undefined);
+    if (asset?.kind === 'stored') void loadAsset(asset.assetId).then((stored) => { if (stored && !cancelled) { objectUrl = URL.createObjectURL(stored.blob); setSrc(objectUrl); } });
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [asset]);
   return src ? <div className="terminal-voice"><audio controls preload="metadata" src={src} /><small>{durationMs ? `${(durationMs / 1000).toFixed(1)} 秒` : '语音消息'}</small></div> : <span className="terminal-sticker-missing">语音不可用</span>;
 }
@@ -3887,6 +3965,9 @@ function TerminalMessagesView(props: {
   onEditMessage: (characterId: string, messageId: string, text: string) => void;
   onDeleteMessage: (characterId: string, messageId: string) => void;
   onGenerateReply: (characterId: string) => Promise<void>;
+  onGenerateVoice: (characterId: string, messageId: string, requestId?: string) => Promise<void>;
+  voiceAvailable: (characterId: string) => boolean;
+  voiceBusy: boolean;
   onSendPlayerTransfer: (characterId: string, currencyId: string, amount: number) => void;
   onResolveIncomingTransfer: (requestId: string, action: TransferAction) => void;
   onCreateTerminalAppointment: (characterId: string, input: TerminalAppointmentInput) => void;
@@ -4012,7 +4093,9 @@ function TerminalMessagesView(props: {
           ? <TerminalAssetImage asset={message.asset} />
           : message.type === 'voice'
             ? <><TerminalVoiceAudio asset={message.asset} durationMs={message.durationMs} />{message.text && <p className="terminal-voice-transcript">{message.text}</p>}</>
-            : <p>{message.text ?? (message.type === 'transfer' ? '[转账]' : '[系统消息]')}</p>;
+            : message.type === 'text'
+              ? <>{message.asset && <TerminalVoiceAudio asset={message.asset} durationMs={message.durationMs} />}<p>{message.text}</p></>
+              : <p>{message.text ?? (message.type === 'transfer' ? '[转账]' : '[系统消息]')}</p>;
         return <div className={`terminal-message-row ${mine ? 'mine' : 'theirs'}`} key={message.id}
           onPointerDown={() => beginMessagePress(message.id)}
           onPointerUp={clearMessagePress}
@@ -4026,8 +4109,9 @@ function TerminalMessagesView(props: {
             <div className="terminal-message-actions" onPointerDown={(event) => event.stopPropagation()}>
               {messageMenuId === message.id && !editingMessageId && <div className="terminal-message-menu" role="menu">
                 <button type="button" aria-label="引用这条消息" onClick={() => { setQuoteId(message.id); cancelMessageMenu(); }}><Reply aria-hidden="true" /><span>引用</span></button>
-                <button type="button" onClick={() => startMessageEdit(message)}>编辑</button>
-                <button type="button" className="danger" onClick={() => { if (window.confirm('删除这条消息？')) { props.onDeleteMessage(selected.id, message.id); cancelMessageMenu(); } }}>删除</button>
+                {!mine && message.type === 'text' && message.text?.trim() && <button type="button" onClick={() => { void props.onGenerateVoice(selected.id, message.id, message.asset ? undefined : message.voiceRequestId); cancelMessageMenu(); }} disabled={props.voiceBusy || !props.voiceAvailable(selected.id)} title={props.voiceAvailable(selected.id) ? undefined : '请先设置语音 API'}>{props.voiceAvailable(selected.id) ? (message.asset ? '重新生成语音' : '生成语音') : '前往设置语音 API'}</button>}
+                <button type="button" onClick={() => startMessageEdit(message)} disabled={props.voiceBusy}>编辑</button>
+                <button type="button" className="danger" disabled={props.voiceBusy} onClick={() => { if (window.confirm('删除这条消息？')) { props.onDeleteMessage(selected.id, message.id); cancelMessageMenu(); } }}>删除</button>
                 <button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button>
               </div>}
               {editingMessageId === message.id && <div className="terminal-message-edit">
@@ -4105,13 +4189,13 @@ function TerminalCallsView(props: { save: SaveFile; activeCall: TerminalCallSess
   </div>;
 }
 
-function LibraryView(props: { appName: string; characters: CharacterCard[]; worldbooks: WorldbookEntry[]; providers: ProviderConfig[]; ttsConfigs: TtsConfig[]; characterBindings: CharacterProviderBinding[]; onCharacterProviderBindingChange: (characterId: string, kind: 'provider' | 'tts', providerId: string) => Promise<void>; presets: Preset[]; presetBundles: PresetBundle[]; selectedPresetBundleId: string; setSelectedPresetBundleId: (value: string) => void; presetBundleName: string; setPresetBundleName: (value: string) => void; onCreatePresetBundle: () => Promise<void>; onRenamePresetBundle: () => Promise<void>; onDeletePresetBundle: (id: string) => Promise<void>; onSetPresetEntryEnabled: (bundleId: string, entryId: string, enabled: boolean) => Promise<void>; onMovePresetEntry: (bundleId: string, entryId: string, direction: -1 | 1) => Promise<void>; save: SaveFile; name: string; setName: (value: string) => void; draftText: string; setDraftText: (value: string) => void; editing: { kind: ContentKind; id: string } | null; setEditing: (editing: { kind: ContentKind; id: string } | null) => void; addContent: (kind: ContentKind) => Promise<void>; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void>; onExportSave: () => Promise<void>; onImportSave: (file?: File) => Promise<void>; onExportPresetBundle: () => Promise<void>; onImportPresetBundle: (file?: File) => Promise<void>; includeChatsOnExport: boolean; setIncludeChatsOnExport: (value: boolean) => void; onClearChats: () => Promise<void>; itemName: string; setItemName: (value: string) => void; itemTags: string; setItemTags: (value: string) => void; itemDescription: string; setItemDescription: (value: string) => void; onAddItem: () => void; onAddCharacterToWorld: (id: string) => void; visualCharacterId: string; setVisualCharacterId: (value: string) => void; onImportCharacterVisual: (characterId: string, kind: 'avatar' | 'portrait', file?: File) => Promise<void>; onRemoveCharacterVisual: (characterId: string, kind: 'avatar' | 'portrait') => Promise<void>; onUpdateCharacterAccentColor: (characterId: string, color?: string) => void; onRequestFriend: (characterId: string, direction: ContactDirection) => void; onResolveFriend: (requestId: string, action: 'accept' | 'reject' | 'revoke') => void; onSendTerminalText: (characterId: string, text: string, quoteMessageId?: string) => void; onSendTerminalStickerUrl: (characterId: string, url: string, quoteMessageId?: string) => void; onSendTerminalStickerFile: (characterId: string, file?: File, quoteMessageId?: string) => Promise<void>; onSendStickerAsset: (characterId: string, asset: AssetRef, quoteMessageId?: string) => void; stickers: TerminalStickerRecord[]; onImportStickerFile: (file?: File) => Promise<void>; onImportStickerUrl: (url: string) => Promise<void>; onDeleteSticker: (record: TerminalStickerRecord) => Promise<void>; onRejoin: (characterId: string, requirement: string) => void; onEditTerminalMessage: (characterId: string, messageId: string, text: string) => void; onDeleteTerminalMessage: (characterId: string, messageId: string) => void; onGenerateTerminalReply: (characterId: string) => Promise<void>; onSendVoice: (characterId: string, text: string, requestId?: string) => Promise<void>; ttsConfig: TtsConfig; ttsBusy: boolean; onSendPlayerTransfer: (characterId: string, currencyId: string, amount: number) => void; onResolveIncomingTransfer: (requestId: string, action: TransferAction) => void; onCreateTerminalAppointment: (characterId: string, input: TerminalAppointmentInput) => void; onSimulateIncomingAppointment: (characterId: string, input: TerminalAppointmentInput) => void; onResolveTerminalAppointment: (requestId: string, action: TerminalAppointmentAction) => void; onSimulateAppointmentAcceptance: (requestId: string) => void; onConfirmTerminalAppointment: (requestId: string) => void; terminalCall: TerminalCallSession | null; onStartCall: (characterId: string) => void; onSimulateIncomingCall: (characterId: string) => void; onAnswerCall: () => void; onSimulateCallAnswer: () => void; onEndCall: () => void; terminalBusy: boolean; musicPlayer: MusicPlayerController; selectedPresetId?: string; setSelectedPresetId?: (value: string) => void }) {
+function LibraryView(props: { appName: string; characters: CharacterCard[]; worldbooks: WorldbookEntry[]; providers: ProviderConfig[]; ttsConfigs: TtsConfig[]; characterBindings: CharacterProviderBinding[]; onCharacterProviderBindingChange: (characterId: string, kind: 'provider' | 'tts', providerId: string) => Promise<void>; presets: Preset[]; presetBundles: PresetBundle[]; selectedPresetBundleId: string; setSelectedPresetBundleId: (value: string) => void; presetBundleName: string; setPresetBundleName: (value: string) => void; onCreatePresetBundle: () => Promise<void>; onRenamePresetBundle: () => Promise<void>; onDeletePresetBundle: (id: string) => Promise<void>; onSetPresetEntryEnabled: (bundleId: string, entryId: string, enabled: boolean) => Promise<void>; onMovePresetEntry: (bundleId: string, entryId: string, direction: -1 | 1) => Promise<void>; save: SaveFile; name: string; setName: (value: string) => void; draftText: string; setDraftText: (value: string) => void; editing: { kind: ContentKind; id: string } | null; setEditing: (editing: { kind: ContentKind; id: string } | null) => void; addContent: (kind: ContentKind) => Promise<void>; onDelete: (kind: ContentKind, id: string) => Promise<void>; onExport: (kind: ContentKind, value: unknown, name: string) => void; onImport: (kind: ContentKind, file?: File) => Promise<void>; onExportSave: () => Promise<void>; onImportSave: (file?: File) => Promise<void>; onExportPresetBundle: () => Promise<void>; onImportPresetBundle: (file?: File) => Promise<void>; includeChatsOnExport: boolean; setIncludeChatsOnExport: (value: boolean) => void; onClearChats: () => Promise<void>; itemName: string; setItemName: (value: string) => void; itemTags: string; setItemTags: (value: string) => void; itemDescription: string; setItemDescription: (value: string) => void; onAddItem: () => void; onAddCharacterToWorld: (id: string) => void; visualCharacterId: string; setVisualCharacterId: (value: string) => void; onImportCharacterVisual: (characterId: string, kind: 'avatar' | 'portrait', file?: File) => Promise<void>; onRemoveCharacterVisual: (characterId: string, kind: 'avatar' | 'portrait') => Promise<void>; onUpdateCharacterAccentColor: (characterId: string, color?: string) => void; onRequestFriend: (characterId: string, direction: ContactDirection) => void; onResolveFriend: (requestId: string, action: 'accept' | 'reject' | 'revoke') => void; onSendTerminalText: (characterId: string, text: string, quoteMessageId?: string) => void; onSendTerminalStickerUrl: (characterId: string, url: string, quoteMessageId?: string) => void; onSendTerminalStickerFile: (characterId: string, file?: File, quoteMessageId?: string) => Promise<void>; onSendStickerAsset: (characterId: string, asset: AssetRef, quoteMessageId?: string) => void; stickers: TerminalStickerRecord[]; onImportStickerFile: (file?: File) => Promise<void>; onImportStickerUrl: (url: string) => Promise<void>; onDeleteSticker: (record: TerminalStickerRecord) => Promise<void>; onRejoin: (characterId: string, requirement: string) => void; onEditTerminalMessage: (characterId: string, messageId: string, text: string) => void; onDeleteTerminalMessage: (characterId: string, messageId: string) => void; onGenerateTerminalReply: (characterId: string) => Promise<void>; onSendVoice: (characterId: string, messageId: string, requestId?: string) => Promise<void>; isVoiceAvailable: (characterId: string) => boolean; ttsConfig: TtsConfig; ttsBusy: boolean; onSendPlayerTransfer: (characterId: string, currencyId: string, amount: number) => void; onResolveIncomingTransfer: (requestId: string, action: TransferAction) => void; onCreateTerminalAppointment: (characterId: string, input: TerminalAppointmentInput) => void; onSimulateIncomingAppointment: (characterId: string, input: TerminalAppointmentInput) => void; onResolveTerminalAppointment: (requestId: string, action: TerminalAppointmentAction) => void; onSimulateAppointmentAcceptance: (requestId: string) => void; onConfirmTerminalAppointment: (requestId: string) => void; terminalCall: TerminalCallSession | null; onStartCall: (characterId: string) => void; onSimulateIncomingCall: (characterId: string) => void; onAnswerCall: () => void; onSimulateCallAnswer: () => void; onEndCall: () => void; terminalBusy: boolean; musicPlayer: MusicPlayerController; selectedPresetId?: string; setSelectedPresetId?: (value: string) => void }) {
   const navigation = useContext(LibraryNavigationContext);
   const entries: readonly DesktopEntry[] = LIBRARY_PAGE_DEFINITIONS;
   const pageTitle = LIBRARY_PAGE_DEFINITIONS.find((entry) => entry.id === navigation.activePage)?.pageTitle ?? '终端';
   if (!navigation.activePage) return <DesktopLauncher launcherId="terminal" title="终端" appName={props.appName} entries={entries} onOpen={(id) => navigation.onOpenPage(id as LibraryPage)} />;
   if (navigation.activePage === 'contacts') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><ContactsView save={props.save} onRequestFriend={props.onRequestFriend} onResolveFriend={props.onResolveFriend} onOpenMessage={(characterId) => { writeTerminalSelectedContact(characterId); navigation.onOpenPage('messages'); }} /></SubpageShell>;
-  if (navigation.activePage === 'messages') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><TerminalMessagesView save={props.save} onOpenContacts={() => navigation.onOpenPage('contacts')} onSendText={props.onSendTerminalText} onSendStickerAsset={props.onSendStickerAsset} stickers={props.stickers} onImportStickerFile={props.onImportStickerFile} onImportStickerUrl={props.onImportStickerUrl} onDeleteSticker={props.onDeleteSticker} onRejoin={props.onRejoin} onEditMessage={props.onEditTerminalMessage} onDeleteMessage={props.onDeleteTerminalMessage} onGenerateReply={props.onGenerateTerminalReply} onSendPlayerTransfer={props.onSendPlayerTransfer} onResolveIncomingTransfer={props.onResolveIncomingTransfer} onCreateTerminalAppointment={props.onCreateTerminalAppointment} onSimulateIncomingAppointment={props.onSimulateIncomingAppointment} onResolveTerminalAppointment={props.onResolveTerminalAppointment} onSimulateAppointmentAcceptance={props.onSimulateAppointmentAcceptance} onConfirmTerminalAppointment={props.onConfirmTerminalAppointment} terminalBusy={props.terminalBusy} /></SubpageShell>;
+  if (navigation.activePage === 'messages') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><TerminalMessagesView save={props.save} onOpenContacts={() => navigation.onOpenPage('contacts')} onSendText={props.onSendTerminalText} onSendStickerAsset={props.onSendStickerAsset} stickers={props.stickers} onImportStickerFile={props.onImportStickerFile} onImportStickerUrl={props.onImportStickerUrl} onDeleteSticker={props.onDeleteSticker} onRejoin={props.onRejoin} onEditMessage={props.onEditTerminalMessage} onDeleteMessage={props.onDeleteTerminalMessage} onGenerateReply={props.onGenerateTerminalReply} onGenerateVoice={props.onSendVoice} voiceAvailable={props.isVoiceAvailable} voiceBusy={props.ttsBusy} onSendPlayerTransfer={props.onSendPlayerTransfer} onResolveIncomingTransfer={props.onResolveIncomingTransfer} onCreateTerminalAppointment={props.onCreateTerminalAppointment} onSimulateIncomingAppointment={props.onSimulateIncomingAppointment} onResolveTerminalAppointment={props.onResolveTerminalAppointment} onSimulateAppointmentAcceptance={props.onSimulateAppointmentAcceptance} onConfirmTerminalAppointment={props.onConfirmTerminalAppointment} terminalBusy={props.terminalBusy} /></SubpageShell>;
   if (navigation.activePage === 'calls') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><TerminalCallsView save={props.save} activeCall={props.terminalCall} onStartCall={props.onStartCall} onSimulateIncomingCall={props.onSimulateIncomingCall} onAnswerCall={props.onAnswerCall} onSimulateCallAnswer={props.onSimulateCallAnswer} onEndCall={props.onEndCall} /></SubpageShell>;
   if (navigation.activePage === 'music') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><MusicApp player={props.musicPlayer} /></SubpageShell>;
   const worldCharacters = Object.values(props.save.world.characters);

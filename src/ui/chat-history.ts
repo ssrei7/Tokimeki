@@ -12,7 +12,11 @@ export function isEditableChatMessage(message: ChatMessage): boolean {
 export function updateChatMessage(messages: ChatMessage[], index: number, content: string): ChatMessage[] {
   const nextContent = content.trim();
   if (!nextContent || !messages[index] || !isEditableChatMessage(messages[index])) return messages;
-  return messages.map((message, messageIndex) => messageIndex === index ? { ...message, content: nextContent } : message);
+  return messages.map((message, messageIndex) => {
+    if (messageIndex !== index) return message;
+    const { voice: _voice, ...withoutVoice } = message;
+    return { ...withoutVoice, content: nextContent };
+  });
 }
 
 export function deleteChatMessage(messages: ChatMessage[], index: number): ChatMessage[] {

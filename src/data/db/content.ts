@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import { CharacterCardSchema, ChatRecordSchema, ChatRecoveryRecordSchema, MemoryVectorRecordSchema, MusicStateSchema, PersonaSchema, PresetBundleSchema, PresetSchema, StoryScenePresetSchema, TerminalStickerRecordSchema, WorldbookEntrySchema, type CharacterCard, type ChatRecord, type ChatRecoveryRecord, type MemoryVectorRecord, type MusicState, type Persona, type Preset, type PresetBundle, type StoryScenePresetRecord, type TerminalStickerRecord, type WorldbookEntry } from '../content';
+import { CharacterCardSchema, ChatRecordSchema, ChatRecoveryRecordSchema, MemoryVectorRecordSchema, MusicStateSchema, PersonaSchema, PresetBundleSchema, PresetSchema, StoryScenePresetSchema, TerminalStickerRecordSchema, WorldbookEntrySchema, normalizeChatMessages, type CharacterCard, type ChatRecord, type ChatRecoveryRecord, type MemoryVectorRecord, type MusicState, type Persona, type Preset, type PresetBundle, type StoryScenePresetRecord, type TerminalStickerRecord, type WorldbookEntry } from '../content';
 
 export class ContentDatabase extends Dexie {
   characters!: Table<CharacterCard, string>;
@@ -47,8 +47,8 @@ export async function savePresetBundle(bundle: PresetBundle): Promise<PresetBund
 export async function deletePresetBundle(id: string): Promise<void> { await contentDb.presetBundles.delete(id); }
 export async function saveStoryScenePreset(preset: StoryScenePresetRecord): Promise<StoryScenePresetRecord> { const parsed = StoryScenePresetSchema.parse(preset); await contentDb.storyScenePresets.put(parsed); return parsed; }
 export async function deleteStoryScenePreset(id: string): Promise<void> { await contentDb.storyScenePresets.delete(id); }
-export async function saveChat(record: ChatRecord): Promise<ChatRecord> { const parsed = ChatRecordSchema.parse(record); await contentDb.chats.put(parsed); return parsed; }
-export async function loadChat(characterId: string): Promise<ChatRecord | undefined> { return contentDb.chats.get(characterId); }
+export async function saveChat(record: ChatRecord): Promise<ChatRecord> { const normalized = normalizeChatMessages(record.characterId, record.messages); const parsed = ChatRecordSchema.parse({ ...record, messages: normalized.messages }); await contentDb.chats.put(parsed); return parsed; }
+export async function loadChat(characterId: string): Promise<ChatRecord | undefined> { const record = await contentDb.chats.get(characterId); if (!record) return undefined; const normalized = normalizeChatMessages(characterId, record.messages); if (!normalized.changed) return record; return saveChat({ ...record, messages: normalized.messages }); }
 export async function clearChats(): Promise<void> { await Promise.all([contentDb.chats.clear(), contentDb.chatRecovery.clear()]); }
 export async function saveChatRecovery(record: ChatRecoveryRecord): Promise<ChatRecoveryRecord> { const parsed = ChatRecoveryRecordSchema.parse(record); await contentDb.chatRecovery.put(parsed); return parsed; }
 export async function loadChatRecovery(characterId: string): Promise<ChatRecoveryRecord | undefined> { return contentDb.chatRecovery.get(characterId); }

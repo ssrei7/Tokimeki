@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { createFriendRequest, sendTerminalVoiceMessage, simulateFriendAcceptance } from '../src/core/terminal';
+import { attachTerminalVoiceToMessage, createFriendRequest, editTerminalMessage, sendTerminalReplyMessage, sendTerminalTextMessage, sendTerminalVoiceMessage, simulateFriendAcceptance } from '../src/core/terminal';
 import { migrateSave } from '../src/data/migrations';
 import { TtsConfigSchema, type TtsConfig } from '../src/providers/types';
-import { buildSpeechRequest, synthesizeSpeech } from '../src/providers/speech';
+import { buildSpeechRequest, speechCacheFingerprint, synthesizeSpeech } from '../src/providers/speech';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
 function makeSave() {
@@ -41,6 +41,22 @@ describe('terminal voice', () => {
     expect(duplicate).toMatchObject({ ok: true, changed: false, message: { asset: { assetId: 'voice-1' } } });
   });
 
+  it('attaches audio to one character text message without inserting a duplicate', () => {
+    const save = makeSave();
+    const request = createFriendRequest(save.world, 'formal', 'outgoing');
+    simulateFriendAcceptance(save.world, request.request!.id);
+    sendTerminalTextMessage(save.world, 'formal', '玩家消息');
+    const reply = sendTerminalReplyMessage(save.world, 'formal', '角色消息');
+    const before = save.world.terminal.messageThreads['terminal-thread-formal'].length;
+    const attached = attachTerminalVoiceToMessage(save.world, 'formal', reply.message!.id, { kind: 'stored', assetId: 'voice-attachment' }, 'mp3', 900, 'request-attachment');
+    expect(attached).toMatchObject({ ok: true, changed: true, message: { type: 'text', text: '角色消息', asset: { assetId: 'voice-attachment' } } });
+    expect(save.world.terminal.messageThreads['terminal-thread-formal']).toHaveLength(before);
+    expect(attachTerminalVoiceToMessage(save.world, 'formal', 'terminal-thread-formal-1', { kind: 'stored', assetId: 'invalid' }, 'mp3', 900, 'invalid')).toMatchObject({ ok: false, changed: false });
+    editTerminalMessage(save.world, 'formal', reply.message!.id, '修改后的角色消息');
+    expect(reply.message).not.toHaveProperty('asset');
+    expect(reply.message).not.toHaveProperty('voiceRequestId');
+  });
+
   it('sends one explicit OpenAI-compatible speech request and returns audio', async () => {
     const calls: Request[] = [];
     const result = await synthesizeSpeech(config(), '你好', {
@@ -63,6 +79,15 @@ describe('terminal voice', () => {
     expect(request.init.headers).toMatchObject({ 'x-client': 'tokimeki', Authorization: 'Bearer ' + 'secret' });
     expect(String(request.init.body)).not.toContain('secret');
     expect(JSON.parse(String(request.init.body))).toEqual({ model: 'voice-model', input: '你好', voice: 'alloy', response_format: 'mp3' });
+  });
+
+  it('builds a stable cache fingerprint without including the API key', () => {
+    const first = speechCacheFingerprint(config({ id: 'voice-a', apiKey: 'secret-one', headers: { 'x-client': 'tokimeki' } }), '  你好   世界 ');
+    const same = speechCacheFingerprint(config({ id: 'voice-a', apiKey: 'secret-two', headers: { 'x-client': 'tokimeki' } }), '你好 世界');
+    const changed = speechCacheFingerprint(config({ id: 'voice-a', apiKey: 'secret-two', voice: 'nova', headers: { 'x-client': 'tokimeki' } }), '你好 世界');
+    expect(first).toBe(same);
+    expect(changed).not.toBe(first);
+    expect(first).not.toContain('secret');
   });
 
   it('accepts legacy singleton config data without a name and defaults it for migration', () => {

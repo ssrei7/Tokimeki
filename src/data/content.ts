@@ -54,15 +54,36 @@ export type StoryScenePresetRecord = z.infer<typeof StoryScenePresetSchema>;
 
 export const DialogueKindSchema = z.enum(['dialogue', 'narration']);
 export type DialogueKind = z.infer<typeof DialogueKindSchema>;
+export const VoiceAttachmentSchema = z.object({
+  asset: AssetRefSchema,
+  audioFormat: z.string().min(1),
+  durationMs: z.number().finite().nonnegative(),
+  requestId: Id,
+  cacheFingerprint: z.string().min(1),
+});
+export type VoiceAttachment = z.infer<typeof VoiceAttachmentSchema>;
 export const ChatMessageSchema = z.object({
+  id: Id.optional(),
   role: z.enum(['system', 'user', 'assistant']),
   content: z.string(),
   kind: DialogueKindSchema.optional(),
   speakerId: Id.optional(),
+  voice: VoiceAttachmentSchema.optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export const ChatRecordSchema = z.object({ characterId: Id, messages: z.array(ChatMessageSchema), updatedAt: z.string().datetime() });
 export type ChatRecord = z.infer<typeof ChatRecordSchema>;
+
+export function normalizeChatMessages(characterId: string, messages: ChatMessage[]): { messages: ChatMessage[]; changed: boolean } {
+  let changed = false;
+  const next = messages.map((message, index) => {
+    if (message.id) return message;
+    changed = true;
+    const unique = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`;
+    return { ...message, id: `${characterId}-chat-${unique}` };
+  });
+  return { messages: next, changed };
+}
 
 export const ChatRecoveryRecordSchema = z.object({
   characterId: Id,

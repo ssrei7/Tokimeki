@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deleteChatMessage, isEditableChatMessage, updateChatMessage } from '../src/ui/chat-history';
-import type { ChatMessage } from '../src/data/content';
+import { normalizeChatMessages, type ChatMessage } from '../src/data/content';
 
 const user = (content: string): ChatMessage => ({ role: 'user', content, kind: 'dialogue', speakerId: 'player' });
 
@@ -31,5 +31,21 @@ describe('chat history editing', () => {
     const system: ChatMessage = { role: 'system', content: '系统提示' };
     expect(updateChatMessage([system], 0, '修改')).toBeInstanceOf(Array);
     expect(deleteChatMessage([system], 0)).toEqual([system]);
+  });
+
+  it('removes a stale voice attachment when its message text changes', () => {
+    const message: ChatMessage = { id: 'reply-1', role: 'assistant', content: '旧文本', kind: 'dialogue', speakerId: 'formal', voice: { asset: { kind: 'stored', assetId: 'voice-1' }, audioFormat: 'mp3', durationMs: 900, requestId: 'request-1', cacheFingerprint: 'fingerprint-1' } };
+    const edited = updateChatMessage([message], 0, '新文本');
+    expect(edited[0]).toMatchObject({ id: 'reply-1', content: '新文本' });
+    expect(edited[0]).not.toHaveProperty('voice');
+  });
+
+  it('adds stable IDs to legacy chat messages without replacing existing IDs', () => {
+    const legacy: ChatMessage[] = [user('你好'), { id: 'existing', role: 'assistant', content: '你好', kind: 'dialogue', speakerId: 'formal' }];
+    const first = normalizeChatMessages('formal', legacy);
+    expect(first.changed).toBe(true);
+    expect(first.messages[0].id).toMatch(/^formal-chat-/);
+    expect(first.messages[1].id).toBe('existing');
+    expect(normalizeChatMessages('formal', first.messages)).toEqual({ messages: first.messages, changed: false });
   });
 });

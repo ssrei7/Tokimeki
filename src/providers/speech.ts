@@ -34,6 +34,18 @@ export function buildSpeechRequest(config: TtsConfig, text: string): { url: stri
   };
 }
 
+export function speechCacheFingerprint(config: TtsConfig, text: string): string {
+  const normalizedText = text.trim().replace(/\s+/g, ' ');
+  const headers = Object.entries(config.headers ?? {}).sort(([left], [right]) => left.localeCompare(right));
+  const source = JSON.stringify({ text: normalizedText, providerId: config.id, endpoint: config.endpoint, model: config.model, voice: config.voice, format: config.format, headers });
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `speech-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
 const MIME_TYPES: Record<TtsFormat, string> = {
   mp3: 'audio/mpeg', opus: 'audio/ogg', aac: 'audio/aac', flac: 'audio/flac', wav: 'audio/wav', pcm: 'audio/pcm',
 };
