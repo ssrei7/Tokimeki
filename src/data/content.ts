@@ -55,7 +55,7 @@ export type StoryScenePresetRecord = z.infer<typeof StoryScenePresetSchema>;
 export const DialogueKindSchema = z.enum(['dialogue', 'narration']);
 export type DialogueKind = z.infer<typeof DialogueKindSchema>;
 export const VoiceAttachmentSchema = z.object({
-  asset: AssetRefSchema,
+  asset: AssetRefSchema.optional(),
   audioFormat: z.string().min(1),
   durationMs: z.number().finite().nonnegative(),
   requestId: Id,

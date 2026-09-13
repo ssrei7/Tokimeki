@@ -55,3 +55,7 @@ export async function loadSnapshot(id: string): Promise<SaveSnapshot | undefined
   const snapshot = await saveDb.snapshots.get(id);
   return snapshot ? { ...snapshot, save: SaveFileSchema.parse(snapshot.save) } : undefined;
 }
+
+export async function saveSnapshotRecords(records: readonly SaveSnapshot[]): Promise<void> {
+  await saveDb.snapshots.bulkPut(records.map((record) => ({ ...record, save: SaveFileSchema.parse(record.save) })));
+}
