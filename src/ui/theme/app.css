@@ -352,6 +352,13 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .npc-promotion-fields { display: grid; gap: 9px; }
 .npc-promotion-fields label { display: grid; gap: 5px; color: var(--gray-600); font-size: 12px; }
 .npc-promotion-fields textarea { min-height: 58px; resize: vertical; }
+.asset-integrity-report { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--gray-100); background: var(--gray-25); }
+.asset-integrity-report details { border-top: 1px solid var(--gray-100); padding-top: 7px; }
+.asset-integrity-report summary { cursor: pointer; color: var(--gray-700); font-size: 12px; font-weight: 600; }
+.integrity-issue-list { display: grid; gap: 7px; margin-top: 8px; }
+.integrity-issue-list > div { display: grid; gap: 2px; overflow-wrap: anywhere; }
+.integrity-issue-list strong { font-size: 12px; }
+.integrity-issue-list small { color: var(--gray-500); font-size: 11px; line-height: 1.4; }
 @media (max-width: 500px) { .contact-card { grid-template-columns: 36px minmax(0, 1fr) auto; } .contact-avatar { width: 36px; height: 36px; } .contact-card-actions { justify-content: flex-end; } .contact-card-actions > button:not(.terminal-small-icon-button) { padding-inline: 5px; font-size: 10px; } }
 .terminal-conversation-list { flex: 1; min-height: 0; display: grid; align-content: start; justify-items: stretch; overflow-y: auto; margin: -18px -16px 0; background: var(--gray-0); }
 .terminal-conversation-row { width: 100%; min-width: 0; min-height: 74px; justify-self: stretch; display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--gray-100); border-radius: 0; background: var(--gray-0); color: var(--gray-800); text-align: left; }

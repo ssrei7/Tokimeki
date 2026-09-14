@@ -53,6 +53,10 @@ export async function listVoiceAssets(): Promise<StoredAsset[]> {
   return assetDb.assets.where('category').equals('voice').toArray();
 }
 
+export async function listAssets(): Promise<StoredAsset[]> {
+  return assetDb.assets.toArray();
+}
+
 export function summarizeVoiceCache(assets: StoredAsset[], referenceCounts: ReadonlyMap<string, number>): VoiceCacheStats {
   return assets.reduce<VoiceCacheStats>((stats, asset) => ({ count: stats.count + 1, totalBytes: stats.totalBytes + asset.blob.size, referenceCount: stats.referenceCount + (referenceCounts.get(asset.id) ?? 0) }), { count: 0, totalBytes: 0, referenceCount: 0 });
 }

@@ -17,9 +17,10 @@ import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/
 import { PresetBundleSchema, PresetSchema, normalizeChatMessages, type CharacterCard, type ChatMessage, type ChatRecord, type ChatRecoveryRecord, type Persona, type Preset, type PresetBundle, type TerminalStickerRecord, type VoiceAttachment, type WorldbookEntry } from './data/content';
 import { clearChatRecovery, clearChats, clearMemoryVectors, contentDb, deleteCharacter, deletePersona, deletePreset, deletePresetBundle, deleteStoryScenePreset, deleteTerminalSticker, deleteWorldbook, listTerminalStickers, loadChat, loadChatRecovery, loadMemoryVectors, saveCharacter, saveChat, saveChatRecovery, saveMemoryVectors, savePersona, savePreset, savePresetBundle, saveStoryScenePreset, saveTerminalSticker, saveWorldbook } from './data/db/content';
 import { BUILTIN_NARRATION_PRESET_BUNDLE_ID, createBuiltinNarrationPresetBundle, mergeBuiltinNarrationPresetBundle } from './data/presets/builtins';
-import { deleteAsset, findVoiceAssetByFingerprint, listVoiceAssets, loadAsset, saveAsset, saveVoiceAsset, summarizeVoiceCache, unmarkVoiceAsset, type VoiceCacheStats } from './data/db/assets';
+import { deleteAsset, findVoiceAssetByFingerprint, listAssets, listVoiceAssets, loadAsset, saveAsset, saveVoiceAsset, summarizeVoiceCache, unmarkVoiceAsset, type VoiceCacheStats } from './data/db/assets';
 import { listSnapshots, loadCurrentSave, loadSnapshot, saveCurrentSave, saveDailySnapshot, saveSnapshotRecords, type SaveSnapshot } from './data/db/save';
 import { collectStoredAssetIds, countVoiceAssetReferences, detachVoiceAssetsFromChat, detachVoiceAssetsFromSave } from './data/voice-cache';
+import { auditAssetReferences, type AssetIntegrityReport } from './data/reference-integrity';
 import { downsampleImage } from './data/assets/image';
 import { exportPresetBundle, exportSaveZip, importPresetBundle, importSaveZip } from './data/io/zip';
 import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_ECONOMY_STATE, DEFAULT_SLOT_DEFS, DEFAULT_TERMINAL_STATE, SaveFileSchema, type AssetRef, type CollectionEntry, type EncounterDeparture, type GiftHistoryEntry, type SaveFile, type Topic, type TopicTree } from './data/schema/save';
@@ -349,6 +350,8 @@ export function App() {
   const ttsBusyRef = useRef(false);
   const [voiceCacheStats, setVoiceCacheStats] = useState<VoiceCacheStats>({ count: 0, totalBytes: 0, referenceCount: 0 });
   const [storageEstimate, setStorageEstimate] = useState<StorageEstimate>({});
+  const [assetIntegrityReport, setAssetIntegrityReport] = useState<AssetIntegrityReport | null>(null);
+  const [assetIntegrityBusy, setAssetIntegrityBusy] = useState(false);
   const [requestStatus, setRequestStatus] = useState<RequestStatus>('idle');
   const [busy, setBusy] = useState(false);
   const [terminalBusy, setTerminalBusy] = useState(false);
@@ -2904,6 +2907,24 @@ export function App() {
     setStorageEstimate(await readStorageEstimate());
   }
 
+  async function checkAssetIntegrity(): Promise<void> {
+    if (assetIntegrityBusy) return;
+    setAssetIntegrityBusy(true);
+    try {
+      const [assets, chats, savedSnapshots, stickers] = await Promise.all([listAssets(), contentDb.chats.toArray(), listSnapshots(), listTerminalStickers()]);
+      const report = auditAssetReferences([
+        { label: '当前世界', value: saveRef.current },
+        ...savedSnapshots.map((snapshot) => ({ label: `快照/${snapshot.id}`, value: snapshot.save })),
+        ...chats.map((record) => ({ label: `聊天/${record.characterId}`, value: record })),
+        ...stickers.map((sticker) => ({ label: `贴图库/${sticker.id}`, value: sticker })),
+      ], assets.map((asset) => ({ id: asset.id, size: asset.blob.size, mimeType: asset.mimeType, category: asset.category })));
+      setAssetIntegrityReport(report);
+      setFeedback({ tone: report.missing.length ? 'info' : 'success', text: report.missing.length ? `检查完成：发现 ${report.missing.length} 个缺失或空资产引用。` : '本地资产引用检查完成，未发现失效引用。' });
+    } catch (error) {
+      setFeedback({ tone: 'error', text: errorMessage(error, '本地资产引用检查失败。') });
+    } finally { setAssetIntegrityBusy(false); }
+  }
+
   async function loadSave(file?: File) {
     if (!file) return;
     try {
@@ -3031,7 +3052,7 @@ export function App() {
       {tab === 'library' && libraryPage === 'story' && <SubpageShell eyebrow="终端" title="多人剧情" pageId="story" onBack={() => setLibraryPage(null)}><StorySceneLibraryView save={save} storyScenePresets={storyScenePresets} onSavePreset={saveStoryScenePresetCopy} onUpdatePreset={updateStoryScenePreset} onDeletePreset={removeStoryScenePreset} onCreateDraft={createStorySceneDraftFromInput} onEditDraft={editStorySceneDraft} onDeleteDraft={removeStorySceneDraft} onConfirmDraft={confirmStorySceneDraft} onAdvanceStage={advanceStoryScene} onSetStatus={setStorySceneStatus} onReadStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'read')} onSelectStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'select')} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'memories' && <SubpageShell eyebrow="终端" title="记忆库" pageId="memories" onBack={() => setLibraryPage(null)}><MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'collection' && <SubpageShell eyebrow="终端" title="收藏" pageId="collection" onBack={() => setLibraryPage(null)}><CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} /></SubpageShell>}
-      {tab === 'settings' && <SettingsView appName={appName} activePage={settingsPage} onOpenPage={setSettingsPage} onBack={() => setSettingsPage(null)} provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} ttsConfigs={ttsConfigs} defaultTtsConfigId={defaultTtsConfigId} ttsConfig={ttsConfig} setTtsConfig={(next) => { setTtsConfig(next); ttsConfigRef.current = next; setTtsConfigs((items) => items.some((item) => item.id === next.id) ? items.map((item) => item.id === next.id ? next : item) : items); }} ttsHeadersDraft={ttsHeadersDraft} setTtsHeadersDraft={setTtsHeadersDraft} onSelectTtsConfig={selectTtsConfig} onNewTtsConfig={createTtsConfigDraft} onDeleteTtsConfig={deleteTtsConfig} onDefaultTtsChange={updateDefaultTtsConfig} ttsBusy={ttsBusy} onSaveTts={saveTtsSettings} onTestTts={testTtsConnection} voiceCacheStats={voiceCacheStats} onClearVoiceCache={clearVoiceCache} storageEstimate={storageEstimate} onPersistStorage={persistLocalStorage} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
+      {tab === 'settings' && <SettingsView appName={appName} activePage={settingsPage} onOpenPage={setSettingsPage} onBack={() => setSettingsPage(null)} provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} ttsConfigs={ttsConfigs} defaultTtsConfigId={defaultTtsConfigId} ttsConfig={ttsConfig} setTtsConfig={(next) => { setTtsConfig(next); ttsConfigRef.current = next; setTtsConfigs((items) => items.some((item) => item.id === next.id) ? items.map((item) => item.id === next.id ? next : item) : items); }} ttsHeadersDraft={ttsHeadersDraft} setTtsHeadersDraft={setTtsHeadersDraft} onSelectTtsConfig={selectTtsConfig} onNewTtsConfig={createTtsConfigDraft} onDeleteTtsConfig={deleteTtsConfig} onDefaultTtsChange={updateDefaultTtsConfig} ttsBusy={ttsBusy} onSaveTts={saveTtsSettings} onTestTts={testTtsConnection} voiceCacheStats={voiceCacheStats} onClearVoiceCache={clearVoiceCache} storageEstimate={storageEstimate} onPersistStorage={persistLocalStorage} assetIntegrityReport={assetIntegrityReport} assetIntegrityBusy={assetIntegrityBusy} onCheckAssetIntegrity={checkAssetIntegrity} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
     </main>
     <nav className="bottom-nav" aria-label="主导航">{BOTTOM_NAV_ITEMS.map(([id, label, Icon]) => <button key={id} type="button" className={tab === id ? 'selected' : ''} aria-label={label} title={label} onClick={() => setTab(id)}><Icon size={25} weight="fill" aria-hidden="true" /><span className="bottom-nav-label">{label}</span></button>)}</nav>
   </div>;
@@ -3846,6 +3867,9 @@ function SettingsView(props: {
   onClearVoiceCache: () => Promise<void>;
   storageEstimate: StorageEstimate;
   onPersistStorage: () => Promise<void>;
+  assetIntegrityReport: AssetIntegrityReport | null;
+  assetIntegrityBusy: boolean;
+  onCheckAssetIntegrity: () => Promise<void>;
   requestStatus: RequestStatus;
   onNewProvider: () => void;
   onSaveProvider: () => Promise<void>;
@@ -3978,6 +4002,10 @@ function SettingsView(props: {
       <div className="stat-list"><span>已用 {formatStorageBytes(props.storageEstimate.usage)}</span><span>配额 {formatStorageBytes(props.storageEstimate.quota)}</span>{storageUsagePercent(props.storageEstimate) !== undefined && <span>占用 {storageUsagePercent(props.storageEstimate)!.toFixed(1)}%</span>}<span>持久化：{props.storageEstimate.persisted === undefined ? '未知' : props.storageEstimate.persisted ? '已标记' : '未标记'}</span></div>
       <p className="io-scope">占用和配额由浏览器提供，包含本应用的 IndexedDB 与其他站点数据，数值仅供参考。持久化申请不会上传数据，也不会调用 Provider。</p>
       <button type="button" className="secondary" onClick={() => void props.onPersistStorage()}>请求持久化存储</button>
+      <h3>资产引用完整性</h3>
+      <p className="io-scope">检查当前世界、快照、面对面聊天和贴图库中的本地资产引用。检查只读取 IndexedDB，不修改或删除任何数据。</p>
+      <button type="button" className="secondary" disabled={props.assetIntegrityBusy} onClick={() => void props.onCheckAssetIntegrity()}>{props.assetIntegrityBusy ? '检查中…' : '运行本地完整性检查'}</button>
+      {props.assetIntegrityReport && <div className="asset-integrity-report"><div className="stat-list"><span>{props.assetIntegrityReport.referenceCount} 处引用</span><span>{props.assetIntegrityReport.referencedAssetCount} 个被引用资产</span><span>{props.assetIntegrityReport.storedAssetCount} 个本地资产</span><span>{props.assetIntegrityReport.missing.length} 个失效引用</span><span>{props.assetIntegrityReport.orphaned.length} 个孤立资产</span></div>{props.assetIntegrityReport.missing.length === 0 && props.assetIntegrityReport.orphaned.length === 0 ? <p className="io-scope">引用与本地二进制一致。</p> : <>{props.assetIntegrityReport.missing.length > 0 && <details><summary>缺失或空资产</summary><div className="integrity-issue-list">{props.assetIntegrityReport.missing.map((issue) => <div key={issue.assetId}><strong>{issue.assetId}</strong><small>{issue.empty ? '本地记录为零字节' : 'Assets IndexedDB 中不存在'} · {issue.sources.join('；')}</small></div>)}</div></details>}{props.assetIntegrityReport.orphaned.length > 0 && <details><summary>无引用资产</summary><div className="integrity-issue-list">{props.assetIntegrityReport.orphaned.map((asset) => <div key={asset.assetId}><strong>{asset.assetId}</strong><small>{formatByteSize(asset.size)} · {asset.mimeType}{asset.category ? ` · ${asset.category}` : ''}</small></div>)}</div></details>}</>}</div>}
       <h3>网络请求</h3>
       <p className="io-scope">查看设置、记忆和已有内容不会调用 API。只有用户触发生成、连接测试、模型列表、向量测试或索引重建时，才会请求对应的显式配置端点。</p>
       <h3>语音缓存</h3>
