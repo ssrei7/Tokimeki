@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { importPlainText } from '../src/data/text-import';
+import JSZip from 'jszip';
+import { importPlainText, readDocxPlainText } from '../src/data/text-import';
 
 describe('plain text content import', () => {
   it('maps TXT to a character description using the file name', () => {
@@ -13,5 +14,11 @@ describe('plain text content import', () => {
 
   it('rejects empty text', () => {
     expect(() => importPlainText('character', 'empty.txt', ' \n\t ', '2026-09-14T00:00:00.000Z')).toThrow('内容为空');
+  });
+
+  it('extracts plain text from DOCX paragraphs and line breaks', async () => {
+    const zip = new JSZip();
+    zip.file('word/document.xml', '<w:document><w:body><w:p><w:r><w:t>第一段</w:t></w:r></w:p><w:p><w:r><w:t>第二段</w:t></w:r><w:br/><w:t>换行</w:t></w:r></w:p></w:body></w:document>');
+    await expect(readDocxPlainText(await zip.generateAsync({ type: 'uint8array' }))).resolves.toBe('第一段\n第二段\n换行');
   });
 });
