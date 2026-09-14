@@ -8,58 +8,8 @@ export type ConditionScope = Record<string, Value>;
 export function evaluateCondition(condition: string, scope: ConditionScope): boolean {
   const source = condition.trim();
   if (!source) throw new Error('Condition cannot be empty.');
-  if (FUNCTION_CALL.test(source)) throw new Error('Function calls are not allowed in conditions.');
-  const sourceMembers = source.split(/[^A-Za-z0-9_$]+/).filter(Boolean);
-  const forbiddenSourceMember = sourceMembers.find((member) => FORBIDDEN_MEMBER_NAMES.has(member));
-  if (forbiddenSourceMember) throw new Error(`Unsafe member access is not allowed: ${forbiddenSourceMember}.`);
+  const expression = parseCondition(source);
   assertSafeValue(scope, 'scope');
-
-  const parser = new Parser({
-    allowMemberAccess: true,
-    operators: {
-      assignment: false,
-      fndef: false,
-      random: false,
-      in: false,
-      factorial: false,
-      concatenate: false,
-      conditional: false,
-      sin: false,
-      cos: false,
-      tan: false,
-      asin: false,
-      acos: false,
-      atan: false,
-      sinh: false,
-      cosh: false,
-      tanh: false,
-      asinh: false,
-      acosh: false,
-      atanh: false,
-      sqrt: false,
-      log: false,
-      ln: false,
-      lg: false,
-      log10: false,
-      abs: false,
-      ceil: false,
-      floor: false,
-      round: false,
-      trunc: false,
-      exp: false,
-      length: false,
-      min: false,
-      max: false,
-      cbrt: false,
-      expm1: false,
-      log1p: false,
-      sign: false,
-      log2: false,
-    },
-  });
-  parser.functions = {};
-
-  const expression = parser.parse(source);
   for (const variable of expression.variables({ withMembers: true })) {
     assertSafePath(variable);
     if (!hasPath(scope, variable)) throw new Error(`Unknown condition variable: ${variable}.`);
@@ -67,6 +17,27 @@ export function evaluateCondition(condition: string, scope: ConditionScope): boo
   const result: unknown = expression.evaluate(scope as Values);
   if (typeof result !== 'boolean') throw new Error('Condition must evaluate to a boolean.');
   return result;
+}
+
+/** Parse and safety-check a condition without evaluating it. */
+export function validateConditionSyntax(condition: string): void {
+  parseCondition(condition.trim());
+}
+
+function parseCondition(source: string) {
+  if (!source) throw new Error('Condition cannot be empty.');
+  if (FUNCTION_CALL.test(source)) throw new Error('Function calls are not allowed in conditions.');
+  const sourceMembers = source.split(/[^A-Za-z0-9_$]+/).filter(Boolean);
+  const forbiddenSourceMember = sourceMembers.find((member) => FORBIDDEN_MEMBER_NAMES.has(member));
+  if (forbiddenSourceMember) throw new Error(`Unsafe member access is not allowed: ${forbiddenSourceMember}.`);
+  const parser = new Parser({
+    allowMemberAccess: true,
+    operators: { assignment: false, fndef: false, random: false, in: false, factorial: false, concatenate: false, conditional: false, sin: false, cos: false, tan: false, asin: false, acos: false, atan: false, sinh: false, cosh: false, tanh: false, asinh: false, acosh: false, atanh: false, sqrt: false, log: false, ln: false, lg: false, log10: false, abs: false, ceil: false, floor: false, round: false, trunc: false, exp: false, length: false, min: false, max: false, cbrt: false, expm1: false, log1p: false, sign: false, log2: false },
+  });
+  parser.functions = {};
+  const expression = parser.parse(source);
+  for (const variable of expression.variables({ withMembers: true })) assertSafePath(variable);
+  return expression;
 }
 
 function assertSafePath(path: string): void {
