@@ -26,14 +26,15 @@ describe('settings desktop', () => {
       else Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
     }
   });
-  it('exposes ten unique reachable entries including vector memory and voice', () => {
+  it('exposes unique reachable entries including vector memory, voice and migration', () => {
     const ids = SETTINGS_PAGE_DEFINITIONS.map((entry) => entry.id);
-    expect(ids).toHaveLength(10);
+    expect(ids).toHaveLength(11);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toContain('vector-memory');
     expect(ids).toContain('privacy');
     expect(ids).toContain('voice');
-    expect(SETTINGS_PAGE_DEFINITIONS.map((entry) => entry.label)).toEqual(['身份', '模型', '向量', '语音', '路由', '显示', '规则', '隐私', '调试', '开发']);
+    expect(ids).toContain('migration');
+    expect(SETTINGS_PAGE_DEFINITIONS.map((entry) => entry.label)).toEqual(['身份', '模型', '向量', '语音', '路由', '迁移', '显示', '规则', '隐私', '调试', '开发']);
     expect(SETTINGS_PAGE_DEFINITIONS.every((entry) => Array.from(entry.label).length <= 2)).toBe(true);
     expect(SETTINGS_PAGE_DEFINITIONS.find((entry) => entry.id === 'vector-memory')?.pageTitle).toBe('向量记忆');
     expect(SETTINGS_PAGE_DEFINITIONS.find((entry) => entry.id === 'voice')?.pageTitle).toBe('语音生成');
@@ -44,7 +45,7 @@ describe('settings desktop', () => {
     for (const entry of SETTINGS_PAGE_DEFINITIONS) {
       expect(html).toContain(`aria-label="打开${entry.label}"`);
     }
-    expect((html.match(/class="desktop-app-icon"/g) ?? [])).toHaveLength(10);
+    expect((html.match(/class="desktop-app-icon"/g) ?? [])).toHaveLength(11);
     expect(html).not.toContain(' title=');
   });
 
