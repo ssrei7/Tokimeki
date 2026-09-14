@@ -353,6 +353,7 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .npc-promotion-fields label { display: grid; gap: 5px; color: var(--gray-600); font-size: 12px; }
 .npc-promotion-fields textarea { min-height: 58px; resize: vertical; }
 .asset-integrity-report { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--gray-100); background: var(--gray-25); }
+.character-package-card, .world-package-card { display: grid; gap: 10px; }
 .asset-integrity-report details { border-top: 1px solid var(--gray-100); padding-top: 7px; }
 .asset-integrity-report summary { cursor: pointer; color: var(--gray-700); font-size: 12px; font-weight: 600; }
 .integrity-issue-list { display: grid; gap: 7px; margin-top: 8px; }

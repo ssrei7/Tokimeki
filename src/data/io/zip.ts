@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import { migrateSave } from '../migrations';
 import { CURRENT_SCHEMA_VERSION, SaveFileSchema, type SaveFile } from '../schema/save';
 import { CharacterCardSchema, EventPackageSchema, PresetBundleSchema, PresetSchema, type CharacterCard, type EventPackage, type Preset, type PresetBundle } from '../content';
+import { WorldPackageSchema, type WorldPackage } from './world-package';
 import { CURRENT_PRESET_BUNDLE_SCHEMA_VERSION, migratePresetBundle } from '../migrations/preset-bundle';
 
 export interface ZipManifest { type: 'save' | 'character' | 'world' | 'events' | 'preset'; appVersion: string; schemaVersion: number }
@@ -9,6 +10,8 @@ export interface ImportedSaveZip { manifest: ZipManifest; save: SaveFile; assets
 export const CURRENT_CHARACTER_PACKAGE_SCHEMA_VERSION = 1;
 export interface CharacterAssetMetadata { mimeType: string; width?: number; height?: number }
 export interface ImportedCharacterPackage { manifest: ZipManifest; card: CharacterCard; assets: Map<string, Uint8Array>; assetMeta: Record<string, CharacterAssetMetadata> }
+export const CURRENT_WORLD_PACKAGE_SCHEMA_VERSION = 1;
+export interface ImportedWorldPackage { manifest: ZipManifest; pack: WorldPackage; assets: Map<string, Uint8Array>; assetMeta: Record<string, CharacterAssetMetadata> }
 
 export async function exportSaveZip(save: SaveFile, assets: Record<string, Uint8Array | Blob> = {}, extras: Record<string, unknown> = {}): Promise<Blob> {
   const parsed = SaveFileSchema.parse(save); const zip = new JSZip();
@@ -56,6 +59,33 @@ export async function importCharacterPackage(input: Blob | ArrayBuffer | Uint8Ar
   const metaFile = zip.file('data/asset-meta.json');
   const assetMeta = metaFile ? JSON.parse(await metaFile.async('text')) as Record<string, CharacterAssetMetadata> : {};
   return { manifest, card, assets, assetMeta };
+}
+
+export async function exportWorldPackage(pack: WorldPackage, assets: Record<string, Uint8Array | Blob> = {}, assetMeta: Record<string, CharacterAssetMetadata> = {}, appVersion = '0.0.1'): Promise<Blob> {
+  const parsed = WorldPackageSchema.parse(pack);
+  const zip = new JSZip();
+  zip.file('manifest.json', JSON.stringify({ type: 'world', appVersion, schemaVersion: CURRENT_WORLD_PACKAGE_SCHEMA_VERSION }, null, 2));
+  zip.file('world.json', JSON.stringify(parsed, null, 2));
+  if (Object.keys(assetMeta).length) zip.file('data/asset-meta.json', JSON.stringify(assetMeta, null, 2));
+  for (const [id, data] of Object.entries(assets)) zip.file(`assets/${id}`, data);
+  return zip.generateAsync({ type: 'blob' });
+}
+
+export async function importWorldPackage(input: Blob | ArrayBuffer | Uint8Array): Promise<ImportedWorldPackage> {
+  const source = typeof Blob !== 'undefined' && input instanceof Blob ? await input.arrayBuffer() : input;
+  const zip = await JSZip.loadAsync(source);
+  const manifestFile = zip.file('manifest.json');
+  const worldFile = zip.file('world.json');
+  if (!manifestFile || !worldFile) throw new Error('World package must contain manifest.json and world.json.');
+  const manifest = JSON.parse(await manifestFile.async('text')) as ZipManifest;
+  if (manifest.type !== 'world') throw new Error('This zip is not a world package.');
+  if (manifest.schemaVersion > CURRENT_WORLD_PACKAGE_SCHEMA_VERSION) throw new Error(`世界包 schema v${manifest.schemaVersion} 高于当前支持版本 v${CURRENT_WORLD_PACKAGE_SCHEMA_VERSION}，请升级 Tokimeki。`);
+  const pack = WorldPackageSchema.parse(JSON.parse(await worldFile.async('text')));
+  const assets = new Map<string, Uint8Array>();
+  for (const [name, entry] of Object.entries(zip.files)) if (name.startsWith('assets/') && !entry.dir) assets.set(name.slice('assets/'.length), await entry.async('uint8array'));
+  const metaFile = zip.file('data/asset-meta.json');
+  const assetMeta = metaFile ? JSON.parse(await metaFile.async('text')) as Record<string, CharacterAssetMetadata> : {};
+  return { manifest, pack, assets, assetMeta };
 }
 
 export async function exportPresetBundle(bundle: PresetBundle | readonly Preset[], appVersion = '0.0.1'): Promise<Blob> {
