@@ -15,6 +15,14 @@ describe('formal character roster', () => {
     expect(character.card.firstMes).toBe('你好。');
   });
 
+  it('applies reusable package visuals without importing another world schedule', () => {
+    const character = formalCharacterFromCard({ ...card, packageProfile: { visuals: { avatar: { kind: 'url', url: 'https://example.com/mio.png' }, portraits: [] }, giftPrefs: { likeTags: ['flower'], dislikeTags: [], specialItems: {} } } }, 'start');
+    expect(character.visuals.avatar).toEqual({ kind: 'url', url: 'https://example.com/mio.png' });
+    expect(character.giftPrefs?.likeTags).toEqual(['flower']);
+    expect(character.homeNodeId).toBe('start');
+    expect(character.schedule).toEqual({ grid: {}, overrides: {} });
+  });
+
   it('adds a character to the world without changing existing schedule data', () => {
     const save = seedScenario(createCurrentSaveScenario({ id: 'roster', title: 'Roster' }));
     const result = addCharacterToWorld(save.world, card);

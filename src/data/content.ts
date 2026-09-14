@@ -1,11 +1,17 @@
 import { z } from 'zod';
-import { AssetRefSchema, EventDefSchema } from './schema/save';
+import { AssetRefSchema, CharacterVisualsSchema, EventDefSchema } from './schema/save';
 
 const Id = z.string().min(1);
 
 export const CharacterCardSchema = z.object({
   id: Id, name: z.string().min(1), description: z.string().default(''), personality: z.string().default(''),
   scenario: z.string().optional(), firstMes: z.string().optional(), exampleDialogue: z.string().optional(),
+  packageProfile: z.object({
+    visuals: CharacterVisualsSchema.optional(),
+    initialAxes: z.record(z.string(), z.number()).optional(),
+    giftPrefs: z.object({ likeTags: z.array(z.string()), dislikeTags: z.array(z.string()), specialItems: z.record(z.string(), z.number()) }).optional(),
+    worldbookIds: z.array(Id).optional(),
+  }).optional(),
   updatedAt: z.string().datetime(),
 });
 export type CharacterCard = z.infer<typeof CharacterCardSchema>;

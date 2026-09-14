@@ -16,10 +16,15 @@ export interface PromoteNpcDetails {
 }
 
 export function formalCharacterFromCard(card: CharacterCard, homeNodeId: string): FormalCharacter {
+  const profile = card.packageProfile;
   return FormalCharacterSchema.parse({
     id: card.id, name: card.name, tier: 'formal',
     card: { description: card.description, personality: card.personality, scenario: card.scenario, firstMes: card.firstMes, exampleDialogue: card.exampleDialogue },
-    visuals: { portraits: [] }, homeNodeId, schedule: { grid: {}, overrides: {} }, source: 'user',
+    visuals: profile?.visuals ?? { portraits: [] }, homeNodeId, schedule: { grid: {}, overrides: {} },
+    ...(profile?.initialAxes ? { initialAxes: profile.initialAxes } : {}),
+    ...(profile?.giftPrefs ? { giftPrefs: profile.giftPrefs } : {}),
+    ...(profile?.worldbookIds ? { worldbookIds: profile.worldbookIds } : {}),
+    source: 'user',
   });
 }
 

@@ -1,11 +1,14 @@
 import JSZip from 'jszip';
 import { migrateSave } from '../migrations';
 import { CURRENT_SCHEMA_VERSION, SaveFileSchema, type SaveFile } from '../schema/save';
-import { EventPackageSchema, PresetBundleSchema, PresetSchema, type EventPackage, type Preset, type PresetBundle } from '../content';
+import { CharacterCardSchema, EventPackageSchema, PresetBundleSchema, PresetSchema, type CharacterCard, type EventPackage, type Preset, type PresetBundle } from '../content';
 import { CURRENT_PRESET_BUNDLE_SCHEMA_VERSION, migratePresetBundle } from '../migrations/preset-bundle';
 
 export interface ZipManifest { type: 'save' | 'character' | 'world' | 'events' | 'preset'; appVersion: string; schemaVersion: number }
 export interface ImportedSaveZip { manifest: ZipManifest; save: SaveFile; assets: Map<string, Uint8Array>; extras: Record<string, unknown> }
+export const CURRENT_CHARACTER_PACKAGE_SCHEMA_VERSION = 1;
+export interface CharacterAssetMetadata { mimeType: string; width?: number; height?: number }
+export interface ImportedCharacterPackage { manifest: ZipManifest; card: CharacterCard; assets: Map<string, Uint8Array>; assetMeta: Record<string, CharacterAssetMetadata> }
 
 export async function exportSaveZip(save: SaveFile, assets: Record<string, Uint8Array | Blob> = {}, extras: Record<string, unknown> = {}): Promise<Blob> {
   const parsed = SaveFileSchema.parse(save); const zip = new JSZip();
@@ -26,6 +29,33 @@ export async function importSaveZip(input: Blob | ArrayBuffer | Uint8Array): Pro
   const extras: Record<string, unknown> = {};
   for (const [name, entry] of Object.entries(zip.files)) if (name.startsWith('data/') && name.endsWith('.json') && !entry.dir) extras[name.slice('data/'.length, -'.json'.length)] = JSON.parse(await entry.async('text'));
   return { manifest, save, assets, extras };
+}
+
+export async function exportCharacterPackage(card: CharacterCard, assets: Record<string, Uint8Array | Blob> = {}, assetMeta: Record<string, CharacterAssetMetadata> = {}, appVersion = '0.0.1'): Promise<Blob> {
+  const parsed = CharacterCardSchema.parse(card);
+  const zip = new JSZip();
+  zip.file('manifest.json', JSON.stringify({ type: 'character', appVersion, schemaVersion: CURRENT_CHARACTER_PACKAGE_SCHEMA_VERSION }, null, 2));
+  zip.file('character.json', JSON.stringify(parsed, null, 2));
+  if (Object.keys(assetMeta).length) zip.file('data/asset-meta.json', JSON.stringify(assetMeta, null, 2));
+  for (const [id, data] of Object.entries(assets)) zip.file(`assets/${id}`, data);
+  return zip.generateAsync({ type: 'blob' });
+}
+
+export async function importCharacterPackage(input: Blob | ArrayBuffer | Uint8Array): Promise<ImportedCharacterPackage> {
+  const source = typeof Blob !== 'undefined' && input instanceof Blob ? await input.arrayBuffer() : input;
+  const zip = await JSZip.loadAsync(source);
+  const manifestFile = zip.file('manifest.json');
+  const characterFile = zip.file('character.json');
+  if (!manifestFile || !characterFile) throw new Error('Character package must contain manifest.json and character.json.');
+  const manifest = JSON.parse(await manifestFile.async('text')) as ZipManifest;
+  if (manifest.type !== 'character') throw new Error('This zip is not a character package.');
+  if (manifest.schemaVersion > CURRENT_CHARACTER_PACKAGE_SCHEMA_VERSION) throw new Error(`角色包 schema v${manifest.schemaVersion} 高于当前支持版本 v${CURRENT_CHARACTER_PACKAGE_SCHEMA_VERSION}，请升级 Tokimeki。`);
+  const card = CharacterCardSchema.parse(JSON.parse(await characterFile.async('text')));
+  const assets = new Map<string, Uint8Array>();
+  for (const [name, entry] of Object.entries(zip.files)) if (name.startsWith('assets/') && !entry.dir) assets.set(name.slice('assets/'.length), await entry.async('uint8array'));
+  const metaFile = zip.file('data/asset-meta.json');
+  const assetMeta = metaFile ? JSON.parse(await metaFile.async('text')) as Record<string, CharacterAssetMetadata> : {};
+  return { manifest, card, assets, assetMeta };
 }
 
 export async function exportPresetBundle(bundle: PresetBundle | readonly Preset[], appVersion = '0.0.1'): Promise<Blob> {
