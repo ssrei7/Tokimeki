@@ -50,6 +50,7 @@ import { markAppointmentOnEnter, markAppointmentOnTimeAdvance, settleAppointment
 import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
 import { readCallHistoryCollapsed, readContactGroupCollapsed, readContactGroupPreferences, writeCallHistoryCollapsed, writeContactGroupCollapsed, writeContactGroupPreferences, type ContactCustomGroup } from './ui/contact-groups';
 import { buildNpcExpansionPrompt, buildPromoteNpcOp, characterCardFromPromotedCharacter, createNpcPromotionDraft, parseNpcExpansionResponse, summarizeNpcSchedule, type NpcPromotionDraft } from './ui/npc-promotion';
+import { formatStorageBytes, readStorageEstimate, requestPersistentStorage, storageUsagePercent, type StorageEstimate } from './ui/storage';
 import { PLAYER_ACCENT_COLOR, resolveCharacterAccentColors, resolveSpeakerAccentColor } from './ui/character-color';
 import { Calendar, ChatCircle, DeviceMobile, GearSix, MapTrifold, type Icon as PhosphorIcon } from '@phosphor-icons/react';
 import { StorySceneReader } from './ui/story-scene';
@@ -347,6 +348,7 @@ export function App() {
   const [ttsBusy, setTtsBusy] = useState(false);
   const ttsBusyRef = useRef(false);
   const [voiceCacheStats, setVoiceCacheStats] = useState<VoiceCacheStats>({ count: 0, totalBytes: 0, referenceCount: 0 });
+  const [storageEstimate, setStorageEstimate] = useState<StorageEstimate>({});
   const [requestStatus, setRequestStatus] = useState<RequestStatus>('idle');
   const [busy, setBusy] = useState(false);
   const [terminalBusy, setTerminalBusy] = useState(false);
@@ -465,6 +467,10 @@ export function App() {
   useEffect(() => {
     if (tab === 'settings' && settingsPage === 'privacy') void refreshVoiceCacheStats();
   }, [settingsPage, tab]);
+  useEffect(() => {
+    if (tab !== 'settings' || settingsPage !== 'privacy') return;
+    void readStorageEstimate().then(setStorageEstimate);
+  }, [settingsPage, tab, voiceCacheStats]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2891,6 +2897,13 @@ export function App() {
     }
   }
 
+  async function persistLocalStorage(): Promise<void> {
+    const persisted = await requestPersistentStorage();
+    if (persisted === undefined) setFeedback({ tone: 'info', text: '当前浏览器不支持持久化存储申请。' });
+    else setFeedback({ tone: persisted ? 'success' : 'info', text: persisted ? '已请求浏览器将本地数据标记为持久化。' : '浏览器未授予持久化存储；本地数据仍保存在当前浏览器。' });
+    setStorageEstimate(await readStorageEstimate());
+  }
+
   async function loadSave(file?: File) {
     if (!file) return;
     try {
@@ -3018,7 +3031,7 @@ export function App() {
       {tab === 'library' && libraryPage === 'story' && <SubpageShell eyebrow="终端" title="多人剧情" pageId="story" onBack={() => setLibraryPage(null)}><StorySceneLibraryView save={save} storyScenePresets={storyScenePresets} onSavePreset={saveStoryScenePresetCopy} onUpdatePreset={updateStoryScenePreset} onDeletePreset={removeStoryScenePreset} onCreateDraft={createStorySceneDraftFromInput} onEditDraft={editStorySceneDraft} onDeleteDraft={removeStorySceneDraft} onConfirmDraft={confirmStorySceneDraft} onAdvanceStage={advanceStoryScene} onSetStatus={setStorySceneStatus} onReadStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'read')} onSelectStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'select')} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'memories' && <SubpageShell eyebrow="终端" title="记忆库" pageId="memories" onBack={() => setLibraryPage(null)}><MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'collection' && <SubpageShell eyebrow="终端" title="收藏" pageId="collection" onBack={() => setLibraryPage(null)}><CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} /></SubpageShell>}
-      {tab === 'settings' && <SettingsView appName={appName} activePage={settingsPage} onOpenPage={setSettingsPage} onBack={() => setSettingsPage(null)} provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} ttsConfigs={ttsConfigs} defaultTtsConfigId={defaultTtsConfigId} ttsConfig={ttsConfig} setTtsConfig={(next) => { setTtsConfig(next); ttsConfigRef.current = next; setTtsConfigs((items) => items.some((item) => item.id === next.id) ? items.map((item) => item.id === next.id ? next : item) : items); }} ttsHeadersDraft={ttsHeadersDraft} setTtsHeadersDraft={setTtsHeadersDraft} onSelectTtsConfig={selectTtsConfig} onNewTtsConfig={createTtsConfigDraft} onDeleteTtsConfig={deleteTtsConfig} onDefaultTtsChange={updateDefaultTtsConfig} ttsBusy={ttsBusy} onSaveTts={saveTtsSettings} onTestTts={testTtsConnection} voiceCacheStats={voiceCacheStats} onClearVoiceCache={clearVoiceCache} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
+      {tab === 'settings' && <SettingsView appName={appName} activePage={settingsPage} onOpenPage={setSettingsPage} onBack={() => setSettingsPage(null)} provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} ttsConfigs={ttsConfigs} defaultTtsConfigId={defaultTtsConfigId} ttsConfig={ttsConfig} setTtsConfig={(next) => { setTtsConfig(next); ttsConfigRef.current = next; setTtsConfigs((items) => items.some((item) => item.id === next.id) ? items.map((item) => item.id === next.id ? next : item) : items); }} ttsHeadersDraft={ttsHeadersDraft} setTtsHeadersDraft={setTtsHeadersDraft} onSelectTtsConfig={selectTtsConfig} onNewTtsConfig={createTtsConfigDraft} onDeleteTtsConfig={deleteTtsConfig} onDefaultTtsChange={updateDefaultTtsConfig} ttsBusy={ttsBusy} onSaveTts={saveTtsSettings} onTestTts={testTtsConnection} voiceCacheStats={voiceCacheStats} onClearVoiceCache={clearVoiceCache} storageEstimate={storageEstimate} onPersistStorage={persistLocalStorage} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} />}
     </main>
     <nav className="bottom-nav" aria-label="主导航">{BOTTOM_NAV_ITEMS.map(([id, label, Icon]) => <button key={id} type="button" className={tab === id ? 'selected' : ''} aria-label={label} title={label} onClick={() => setTab(id)}><Icon size={25} weight="fill" aria-hidden="true" /><span className="bottom-nav-label">{label}</span></button>)}</nav>
   </div>;
@@ -3831,6 +3844,8 @@ function SettingsView(props: {
   onTestTts: () => Promise<void>;
   voiceCacheStats: VoiceCacheStats;
   onClearVoiceCache: () => Promise<void>;
+  storageEstimate: StorageEstimate;
+  onPersistStorage: () => Promise<void>;
   requestStatus: RequestStatus;
   onNewProvider: () => void;
   onSaveProvider: () => Promise<void>;
@@ -3959,6 +3974,10 @@ function SettingsView(props: {
     <details className="fold-card settings-privacy-page" open><summary>数据与隐私</summary><div className="fold-body"><div className="provider-card">
       <h3>数据存放</h3>
       <p className="io-scope">世界存档、聊天、内容包和 API key 只保存在当前浏览器。世界存档导出不包含 Provider 配置或 API key。</p>
+      <h3>浏览器存储</h3>
+      <div className="stat-list"><span>已用 {formatStorageBytes(props.storageEstimate.usage)}</span><span>配额 {formatStorageBytes(props.storageEstimate.quota)}</span>{storageUsagePercent(props.storageEstimate) !== undefined && <span>占用 {storageUsagePercent(props.storageEstimate)!.toFixed(1)}%</span>}<span>持久化：{props.storageEstimate.persisted === undefined ? '未知' : props.storageEstimate.persisted ? '已标记' : '未标记'}</span></div>
+      <p className="io-scope">占用和配额由浏览器提供，包含本应用的 IndexedDB 与其他站点数据，数值仅供参考。持久化申请不会上传数据，也不会调用 Provider。</p>
+      <button type="button" className="secondary" onClick={() => void props.onPersistStorage()}>请求持久化存储</button>
       <h3>网络请求</h3>
       <p className="io-scope">查看设置、记忆和已有内容不会调用 API。只有用户触发生成、连接测试、模型列表、向量测试或索引重建时，才会请求对应的显式配置端点。</p>
       <h3>语音缓存</h3>
