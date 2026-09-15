@@ -37,7 +37,7 @@ import { createEmbeddings } from './providers/embedding';
 import { queryVectorMemories, rebuildVectorMemoryRecords } from './providers/vector-memory';
 import { createMockProviderConfig } from './providers/adapters/mock';
 import { createProviderSettingsPackage, exportProviderSettingsPackage, importProviderSettingsPackage, mergeProviderSettingsPackage, type ProviderSettingsPackage, type ProviderSettingsSelection } from './providers/settings-package';
-import { exportGlobalBackup, importGlobalBackup, type ImportedGlobalBackup } from './data/io/global-backup';
+import { exportGlobalBackup, importGlobalBackup, type GlobalBackupRestoreSelection, type ImportedGlobalBackup } from './data/io/global-backup';
 import { MOCK_FIXTURE_IDS, type MockFixtureId } from './providers/mock/fixtures';
 import { createStage4EncounterScenario } from './dev/scenarios/stage4';
 import { createCurrentSaveScenario, seedScenario } from './dev/scenarios/seeder';
@@ -3051,14 +3051,14 @@ export function App() {
     } catch (error) { setGlobalBackupPreview(null); setFeedback({ tone: 'error', text: errorMessage(error, '全局备份读取失败，当前数据未改变。') }); }
   }
 
-  async function restoreGlobalBackup(backup: ImportedGlobalBackup): Promise<void> {
-    if (!window.confirm('全局恢复将覆盖当前浏览器中的世界存档、资料、Provider 配置和资产。确定继续吗？')) return;
+  async function restoreGlobalBackup(backup: ImportedGlobalBackup, selection: GlobalBackupRestoreSelection = { world: true, content: true, providers: true, assets: true, preferences: true }): Promise<void> {
+    if (!window.confirm('恢复所选类别会覆盖当前浏览器中的对应本地数据。确定继续吗？')) return;
     try {
-      if (backup.data.currentSave) await saveCurrentSave(backup.data.currentSave);
-      await saveSnapshotRecords(backup.data.snapshots);
-      await Promise.all([contentDb.characters.clear(), contentDb.personas.clear(), contentDb.worldbooks.clear(), contentDb.presets.clear(), contentDb.presetBundles.clear(), contentDb.storyScenePresets.clear(), contentDb.chats.clear(), contentDb.chatRecovery.clear(), contentDb.memoryVectors.clear(), contentDb.musicStates.clear(), contentDb.terminalStickers.clear(), providerDb.providers.clear(), providerDb.ttsConfigs.clear(), providerDb.bindings.clear(), providerDb.characterBindings.clear(), providerDb.settings.clear()]);
-      await Promise.all([contentDb.characters.bulkPut(backup.data.content.characters), contentDb.personas.bulkPut(backup.data.content.personas), contentDb.worldbooks.bulkPut(backup.data.content.worldbooks), contentDb.presets.bulkPut(backup.data.content.presets), contentDb.presetBundles.bulkPut(backup.data.content.presetBundles), contentDb.storyScenePresets.bulkPut(backup.data.content.storyScenePresets), contentDb.chats.bulkPut(backup.data.content.chats), contentDb.chatRecovery.bulkPut(backup.data.content.chatRecovery), contentDb.memoryVectors.bulkPut(backup.data.content.memoryVectors), contentDb.musicStates.bulkPut(backup.data.content.musicStates), contentDb.terminalStickers.bulkPut(backup.data.content.terminalStickers), providerDb.providers.bulkPut(backup.data.providers), providerDb.ttsConfigs.bulkPut(backup.data.ttsConfigs), providerDb.bindings.bulkPut(backup.data.bindings), providerDb.characterBindings.bulkPut(backup.data.characterBindings), providerDb.settings.bulkPut(backup.data.settings)]);
-      for (const [id, bytes] of backup.assets) { const meta = backup.assetMeta[id]; const copy = new ArrayBuffer(bytes.byteLength); new Uint8Array(copy).set(bytes); await saveAsset({ id, blob: new Blob([copy], { type: meta?.mimeType ?? 'application/octet-stream' }), mimeType: meta?.mimeType ?? 'application/octet-stream', category: meta?.category, cacheFingerprint: meta?.cacheFingerprint, audioFormat: meta?.audioFormat, durationMs: meta?.durationMs, voiceRequestId: meta?.voiceRequestId, width: meta?.width, height: meta?.height, createdAt: meta?.createdAt ?? now() }); }
+      if (selection.world) { if (backup.data.currentSave) await saveCurrentSave(backup.data.currentSave); await saveSnapshotRecords(backup.data.snapshots); }
+      if (selection.content) { await Promise.all([contentDb.characters.clear(), contentDb.personas.clear(), contentDb.worldbooks.clear(), contentDb.presets.clear(), contentDb.presetBundles.clear(), contentDb.storyScenePresets.clear(), contentDb.chats.clear(), contentDb.chatRecovery.clear(), contentDb.memoryVectors.clear(), contentDb.musicStates.clear(), contentDb.terminalStickers.clear()]); await Promise.all([contentDb.characters.bulkPut(backup.data.content.characters), contentDb.personas.bulkPut(backup.data.content.personas), contentDb.worldbooks.bulkPut(backup.data.content.worldbooks), contentDb.presets.bulkPut(backup.data.content.presets), contentDb.presetBundles.bulkPut(backup.data.content.presetBundles), contentDb.storyScenePresets.bulkPut(backup.data.content.storyScenePresets), contentDb.chats.bulkPut(backup.data.content.chats), contentDb.chatRecovery.bulkPut(backup.data.content.chatRecovery), contentDb.memoryVectors.bulkPut(backup.data.content.memoryVectors), contentDb.musicStates.bulkPut(backup.data.content.musicStates), contentDb.terminalStickers.bulkPut(backup.data.content.terminalStickers)]); }
+      if (selection.providers) { await Promise.all([providerDb.providers.clear(), providerDb.ttsConfigs.clear(), providerDb.bindings.clear(), providerDb.characterBindings.clear(), providerDb.settings.clear()]); await Promise.all([providerDb.providers.bulkPut(backup.data.providers), providerDb.ttsConfigs.bulkPut(backup.data.ttsConfigs), providerDb.bindings.bulkPut(backup.data.bindings), providerDb.characterBindings.bulkPut(backup.data.characterBindings), providerDb.settings.bulkPut(backup.data.settings)]); }
+      if (selection.preferences) { for (const [key, value] of Object.entries(backup.data.localStorage)) window.localStorage.setItem(key, value); }
+      if (selection.assets) for (const [id, bytes] of backup.assets) { const meta = backup.assetMeta[id]; const copy = new ArrayBuffer(bytes.byteLength); new Uint8Array(copy).set(bytes); await saveAsset({ id, blob: new Blob([copy], { type: meta?.mimeType ?? 'application/octet-stream' }), mimeType: meta?.mimeType ?? 'application/octet-stream', category: meta?.category, cacheFingerprint: meta?.cacheFingerprint, audioFormat: meta?.audioFormat, durationMs: meta?.durationMs, voiceRequestId: meta?.voiceRequestId, width: meta?.width, height: meta?.height, createdAt: meta?.createdAt ?? now() }); }
       window.location.reload();
     } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '全局备份恢复失败，部分数据可能已更新。') }); }
   }
@@ -4032,13 +4032,14 @@ function ChatView(props: {
   </section>;
 }
 
-function ProviderSettingsMigrationView(props: { providers: ProviderConfig[]; ttsConfigs: TtsConfig[]; onExport: (selection: ProviderSettingsSelection) => Promise<void>; onImport: (pack: ProviderSettingsPackage, selection: ProviderSettingsSelection) => Promise<void>; onExportGlobalBackup: (includeSecrets: boolean) => Promise<void>; onImportGlobalBackup: (file?: File) => Promise<void>; globalBackupPreview: ImportedGlobalBackup | null; onRestoreGlobalBackup: (backup: ImportedGlobalBackup) => Promise<void> }) {
+function ProviderSettingsMigrationView(props: { providers: ProviderConfig[]; ttsConfigs: TtsConfig[]; onExport: (selection: ProviderSettingsSelection) => Promise<void>; onImport: (pack: ProviderSettingsPackage, selection: ProviderSettingsSelection) => Promise<void>; onExportGlobalBackup: (includeSecrets: boolean) => Promise<void>; onImportGlobalBackup: (file?: File) => Promise<void>; globalBackupPreview: ImportedGlobalBackup | null; onRestoreGlobalBackup: (backup: ImportedGlobalBackup, selection?: GlobalBackupRestoreSelection) => Promise<void> }) {
   const [providerIds, setProviderIds] = useState(() => props.providers.map((item) => item.id));
   const [ttsIds, setTtsIds] = useState(() => props.ttsConfigs.map((item) => item.id));
   const [includeBindings, setIncludeBindings] = useState(true);
   const [includeSecrets, setIncludeSecrets] = useState(false);
   const [preview, setPreview] = useState<ProviderSettingsPackage | null>(null);
   const [importError, setImportError] = useState('');
+  const [restoreSelection, setRestoreSelection] = useState<GlobalBackupRestoreSelection>({ world: true, content: true, providers: true, assets: true, preferences: true });
   const availableProviders = preview?.providers ?? props.providers;
   const availableTtsConfigs = preview?.ttsConfigs ?? props.ttsConfigs;
   const toggle = (ids: string[], id: string, checked: boolean, setIds: (ids: string[]) => void) => setIds(checked ? [...new Set([...ids, id])] : ids.filter((item) => item !== id));
