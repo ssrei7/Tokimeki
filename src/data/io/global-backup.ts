@@ -22,6 +22,27 @@ export interface GlobalBackupData {
 export interface ImportedGlobalBackup { data: GlobalBackupData; assets: Map<string, Uint8Array>; assetMeta: Record<string, Omit<StoredAsset, 'blob' | 'id'>>; hasSecrets: boolean }
 export interface GlobalBackupRestoreSelection { world: boolean; content: boolean; providers: boolean; assets: boolean; preferences: boolean }
 
+export function collectTokimekiPreferences(storage: Pick<Storage, 'length' | 'key' | 'getItem'>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (!key?.startsWith('tokimeki.')) continue;
+    const value = storage.getItem(key);
+    if (value !== null) result[key] = value;
+  }
+  return result;
+}
+
+export function restoreTokimekiPreferences(storage: Pick<Storage, 'length' | 'key' | 'getItem' | 'setItem' | 'removeItem'>, preferences: Record<string, string>): void {
+  const existing: string[] = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (key?.startsWith('tokimeki.')) existing.push(key);
+  }
+  for (const key of existing) storage.removeItem(key);
+  for (const [key, value] of Object.entries(preferences)) if (key.startsWith('tokimeki.')) storage.setItem(key, value);
+}
+
 export async function exportGlobalBackup(data: GlobalBackupData, assets: readonly StoredAsset[], includeSecrets = false): Promise<Blob> {
   const zip = new JSZip();
   const safe = structuredClone(data);

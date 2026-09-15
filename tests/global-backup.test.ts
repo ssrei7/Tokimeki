@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { exportGlobalBackup, importGlobalBackup, type GlobalBackupData } from '../src/data/io/global-backup';
+import { collectTokimekiPreferences, exportGlobalBackup, importGlobalBackup, restoreTokimekiPreferences, type GlobalBackupData } from '../src/data/io/global-backup';
 
 const base = { snapshots: [], content: { characters: [], personas: [], worldbooks: [], presets: [], presetBundles: [], storyScenePresets: [], chats: [], chatRecovery: [], memoryVectors: [], musicStates: [], terminalStickers: [] }, providers: [], ttsConfigs: [], bindings: [], characterBindings: [], settings: [], localStorage: {} } satisfies Omit<GlobalBackupData, 'currentSave'>;
 
@@ -17,5 +17,14 @@ describe('global backup IO', () => {
     const zip = new JSZip(); zip.file('manifest.json', JSON.stringify({ type: 'global-backup', schemaVersion: 1 })); zip.file('data.json', JSON.stringify({ snapshots: [] }));
     await expect(importGlobalBackup(await zip.generateAsync({ type: 'uint8array' }))).rejects.toThrow();
   });
-});
 
+  it('exports only Tokimeki preferences and removes stale keys on restore', () => {
+    const values = new Map([['tokimeki.appName', '旧名称'], ['tokimeki.stale', '删除'], ['other.app', '保留']]);
+    const storage = { get length() { return values.size; }, key: (index: number) => [...values.keys()][index] ?? null, getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); } };
+    expect(collectTokimekiPreferences(storage)).toEqual({ 'tokimeki.appName': '旧名称', 'tokimeki.stale': '删除' });
+    restoreTokimekiPreferences(storage, { 'tokimeki.appName': '新名称' });
+    expect(values.get('tokimeki.appName')).toBe('新名称');
+    expect(values.has('tokimeki.stale')).toBe(false);
+    expect(values.get('other.app')).toBe('保留');
+  });
+});
