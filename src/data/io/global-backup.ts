@@ -32,7 +32,7 @@ export async function exportGlobalBackup(data: GlobalBackupData, assets: readonl
   zip.file('manifest.json', JSON.stringify({ type: 'global-backup', schemaVersion: GLOBAL_BACKUP_VERSION, appVersion: data.currentSave?.meta.appVersion ?? '0.0.1', exportedAt: new Date().toISOString(), includeSecrets }, null, 2));
   zip.file('data.json', JSON.stringify(safe));
   zip.file('asset-meta.json', JSON.stringify(Object.fromEntries(assets.map(({ id, blob: _blob, ...meta }) => [id, meta]))));
-  for (const asset of assets) zip.file(`assets/${asset.id}`, asset.blob);
+  for (const asset of assets) zip.file(`assets/${asset.id}`, await asset.blob.arrayBuffer());
   return zip.generateAsync({ type: 'blob' });
 }
 
