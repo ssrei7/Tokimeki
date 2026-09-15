@@ -74,6 +74,7 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .subpage-content > .fold-card, .subpage-content > .advanced { margin: 0; border: 0; background: transparent; box-shadow: none; overflow: visible; }
 .subpage-content > .fold-card > .fold-body { padding: 0; }
 .subpage-content[data-page='display'] > :nth-child(7) .provider-card > :nth-child(-n+3) { display: none; }
+.subpage-content[data-page='migration'] .library-legacy-content > * { display: block; }
 .subpage-content[data-page='messages'] > *,
 .subpage-content[data-page='contacts'] > *,
 .subpage-content[data-page='calls'] > *,
