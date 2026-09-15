@@ -61,18 +61,19 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .subpage-content[data-page='player'] > :nth-child(1),
 .subpage-content[data-page='provider'] > :nth-child(2),
 .subpage-content[data-page='vector-memory'] > :nth-child(3),
-.subpage-content[data-page='routing'] > :nth-child(4),
-.subpage-content[data-page='rules'] > :nth-child(5),
-.subpage-content[data-page='display'] > :nth-child(6),
-.subpage-content[data-page='privacy'] > :nth-child(7),
-.subpage-content[data-page='debug'] > :nth-child(8),
-.subpage-content[data-page='dev-tools'] > :nth-child(9),
-.subpage-content[data-page='dev-tools'] > :nth-child(10) { display: block; }
+.subpage-content[data-page='voice'] > :nth-child(4),
+.subpage-content[data-page='routing'] > :nth-child(5),
+.subpage-content[data-page='rules'] > :nth-child(6),
+.subpage-content[data-page='display'] > :nth-child(7),
+.subpage-content[data-page='privacy'] > :nth-child(8),
+.subpage-content[data-page='debug'] > :nth-child(9),
+.subpage-content[data-page='dev-tools'] > :nth-child(10),
+.subpage-content[data-page='migration'] > :nth-child(1) { display: block; }
 .subpage-content > details > summary { display: none; }
 .subpage-content > details > :not(summary) { display: block !important; }
 .subpage-content > .fold-card, .subpage-content > .advanced { margin: 0; border: 0; background: transparent; box-shadow: none; overflow: visible; }
 .subpage-content > .fold-card > .fold-body { padding: 0; }
-.subpage-content[data-page='display'] > :nth-child(6) .provider-card > :nth-child(-n+3) { display: none; }
+.subpage-content[data-page='display'] > :nth-child(7) .provider-card > :nth-child(-n+3) { display: none; }
 .subpage-content[data-page='messages'] > *,
 .subpage-content[data-page='contacts'] > *,
 .subpage-content[data-page='calls'] > *,

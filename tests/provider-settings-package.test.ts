@@ -30,4 +30,11 @@ describe('provider settings migration package', () => {
     const merged = mergeProviderSettingsPackage({ providers: [provider], ttsConfigs: [], bindings: [], characterBindings: [], saveId: 'world' }, pack);
     expect(merged.providers[0]).toMatchObject({ endpoint: 'https://new.example/v1', apiKey: 'secret', headers: { 'X-Trace': 'yes', Authorization: 'Bearer secret' } });
   });
+
+  it('can explicitly include secrets for a private migration', async () => {
+    const pack = createProviderSettingsPackage({ providers: [provider], ttsConfigs: [], bindings: [], characterBindings: [], saveId: 'world' }, { providerIds: ['chat'], ttsIds: [], includeBindings: false, includeSecrets: true });
+    const imported = await importProviderSettingsPackage(exportProviderSettingsPackage(pack));
+    expect(imported.providers[0].apiKey).toBe('secret');
+    expect(imported.providers[0].headers?.Authorization).toBe('Bearer secret');
+  });
 });

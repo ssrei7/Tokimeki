@@ -9,8 +9,8 @@ const ProviderSettingsPackageSchema = z.object({
   type: z.literal('tokimeki-provider-settings'),
   schemaVersion: z.literal(PROVIDER_SETTINGS_PACKAGE_VERSION),
   exportedAt: z.string().datetime(),
-  providers: z.array(ProviderConfigSchema.extend({ apiKey: z.never().optional() })).max(100),
-  ttsConfigs: z.array(TtsConfigSchema.safeExtend({ apiKey: z.never().optional() })).max(100),
+  providers: z.array(ProviderConfigSchema).max(100),
+  ttsConfigs: z.array(TtsConfigSchema).max(100),
   bindings: z.array(ProviderBindingSchema).max(100),
   characterBindings: z.array(PackageCharacterBindingSchema).max(500),
   defaultProviderId: z.string().min(1).optional(),
@@ -28,13 +28,13 @@ export interface ProviderSettingsPackage {
   defaultProviderId?: string;
   defaultTtsProviderId?: string;
 }
-export interface ProviderSettingsSelection { providerIds: readonly string[]; ttsIds: readonly string[]; includeBindings: boolean }
+export interface ProviderSettingsSelection { providerIds: readonly string[]; ttsIds: readonly string[]; includeBindings: boolean; includeSecrets?: boolean }
 
 export function createProviderSettingsPackage(input: { providers: readonly ProviderConfig[]; ttsConfigs: readonly TtsConfig[]; bindings: readonly ProviderBinding[]; characterBindings: readonly CharacterProviderBinding[]; saveId: string; defaultProviderId?: string; defaultTtsProviderId?: string }, selection: ProviderSettingsSelection): ProviderSettingsPackage {
   const providerIds = new Set(selection.providerIds);
   const ttsIds = new Set(selection.ttsIds);
-  const providers = input.providers.filter((item) => providerIds.has(item.id)).map(sanitizeProvider);
-  const ttsConfigs = input.ttsConfigs.filter((item) => ttsIds.has(item.id)).map(sanitizeTts);
+  const providers = input.providers.filter((item) => providerIds.has(item.id)).map((item) => selection.includeSecrets ? structuredClone(item) : sanitizeProvider(item));
+  const ttsConfigs = input.ttsConfigs.filter((item) => ttsIds.has(item.id)).map((item) => selection.includeSecrets ? structuredClone(item) : sanitizeTts(item));
   const bindings = selection.includeBindings ? input.bindings.filter((item) => providerIds.has(item.providerId)).map((item) => ({ ...item })) : [];
   const characterBindings = selection.includeBindings ? input.characterBindings.filter((item) => item.saveId === input.saveId).map(({ characterId, providerId, ttsProviderId }) => ({ characterId, providerId: providerId && providerIds.has(providerId) ? providerId : undefined, ttsProviderId: ttsProviderId && ttsIds.has(ttsProviderId) ? ttsProviderId : undefined })).filter((item) => item.providerId || item.ttsProviderId) : [];
   return ProviderSettingsPackageSchema.parse({ type: 'tokimeki-provider-settings', schemaVersion: PROVIDER_SETTINGS_PACKAGE_VERSION, exportedAt: new Date().toISOString(), providers, ttsConfigs, bindings, characterBindings, defaultProviderId: providerIds.has(input.defaultProviderId ?? '') ? input.defaultProviderId : undefined, defaultTtsProviderId: ttsIds.has(input.defaultTtsProviderId ?? '') ? input.defaultTtsProviderId : undefined }) as ProviderSettingsPackage;
@@ -49,7 +49,7 @@ export async function importProviderSettingsPackage(input: Blob | string): Promi
   const value = JSON.parse(raw) as { schemaVersion?: unknown };
   if (typeof value.schemaVersion === 'number' && value.schemaVersion > PROVIDER_SETTINGS_PACKAGE_VERSION) throw new Error(`设置迁移包版本 v${value.schemaVersion} 高于当前支持版本 v${PROVIDER_SETTINGS_PACKAGE_VERSION}。`);
   const parsed = ProviderSettingsPackageSchema.parse(value) as ProviderSettingsPackage;
-  return { ...parsed, providers: parsed.providers.map(sanitizeProvider), ttsConfigs: parsed.ttsConfigs.map(sanitizeTts) };
+  return parsed;
 }
 
 export function selectProviderSettingsPackage(pack: ProviderSettingsPackage, selection: ProviderSettingsSelection): ProviderSettingsPackage {
@@ -61,14 +61,14 @@ export function mergeProviderSettingsPackage(existing: { providers: readonly Pro
   for (const incoming of pack.providers) {
     const index = providers.findIndex((item) => item.id === incoming.id);
     const old = index >= 0 ? providers[index] : undefined;
-    const merged = { ...incoming, apiKey: old?.apiKey, headers: mergeHeaders(incoming.headers, old?.headers) };
+    const merged = { ...incoming, apiKey: incoming.apiKey ?? old?.apiKey, headers: mergeHeaders(incoming.headers, old?.headers, Boolean(incoming.apiKey)) };
     if (index >= 0) providers[index] = merged; else providers.push(merged);
   }
   const ttsConfigs = [...existing.ttsConfigs];
   for (const incoming of pack.ttsConfigs) {
     const index = ttsConfigs.findIndex((item) => item.id === incoming.id);
     const old = index >= 0 ? ttsConfigs[index] : undefined;
-    const merged = { ...incoming, apiKey: old?.apiKey, headers: mergeHeaders(incoming.headers, old?.headers) };
+    const merged = { ...incoming, apiKey: incoming.apiKey ?? old?.apiKey, headers: mergeHeaders(incoming.headers, old?.headers, Boolean(incoming.apiKey)) };
     if (index >= 0) ttsConfigs[index] = merged; else ttsConfigs.push(merged);
   }
   const bindings = [...existing.bindings];
@@ -89,8 +89,8 @@ function sanitizeHeaders(headers?: Record<string, string>): Record<string, strin
   return entries.length ? Object.fromEntries(entries) : undefined;
 }
 
-function mergeHeaders(incoming?: Record<string, string>, existing?: Record<string, string>): Record<string, string> | undefined {
-  const secretEntries = Object.entries(existing ?? {}).filter(([key]) => SECRET_HEADER.test(key));
+function mergeHeaders(incoming?: Record<string, string>, existing?: Record<string, string>, incomingHasSecret = false): Record<string, string> | undefined {
+  const secretEntries = incomingHasSecret ? [] : Object.entries(existing ?? {}).filter(([key]) => SECRET_HEADER.test(key));
   const entries = [...Object.entries(incoming ?? {}), ...secretEntries];
   return entries.length ? Object.fromEntries(entries) : undefined;
 }
