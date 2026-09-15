@@ -44,6 +44,7 @@ export const ImageConfigSchema = z.object({
   size: z.string().min(1).default('1024x1024'),
   quality: z.string().min(1).optional(),
   style: z.string().min(1).optional(),
+  stylePrompt: z.string().default(''),
   responseFormat: ImageResponseFormatSchema.default('b64_json'),
   referenceMode: ImageReferenceModeSchema.default('none'),
   editEndpoint: z.string().optional(),
@@ -59,6 +60,15 @@ export const ImageConfigSchema = z.object({
   catch { context.addIssue({ code: 'custom', path: ['editEndpoint'], message: '图像 edits 端点必须是有效 URL。' }); }
 });
 export type ImageConfig = z.infer<typeof ImageConfigSchema>;
+
+export const ImageVisualConfigSchema = z.object({
+  id: z.string().min(1),
+  saveId: z.string().min(1),
+  characterId: z.string().min(1),
+  appearancePrompt: z.string().default(''),
+  updatedAt: z.string().datetime(),
+});
+export type ImageVisualConfig = z.infer<typeof ImageVisualConfigSchema>;
 
 export const EmbeddingConfigSchema = z.object({
   id: z.literal('embedding').default('embedding'),

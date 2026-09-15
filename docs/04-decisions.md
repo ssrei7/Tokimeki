@@ -588,4 +588,7 @@
 ## D107 图像生成使用独立入口与显式能力声明
 **决定**：阶段 10 的图像生成从用户可见的任务路由列表移到设置桌面的独立“图像”入口。内部继续保留 `image` TaskId 与 Provider 绑定以兼容现有路由；图像页只选择 OpenAI-compatible Provider，并在 Provider IndexedDB 中保存尺寸、质量、style、响应格式、参考图能力、可选 edits 端点和请求状态。
 
+## D108 角色图像提示词与生成结果按世界隔离
+**决定**：阶段 10 图像切片 2 先实现全局画风提示词、当前世界角色外貌提示词、头像/立绘显式生成和本地资产保存。角色外貌配置按 `saveId + characterId` 保存在 Provider IndexedDB，不写入 SaveFile v41；生成成功后原位更新角色现有 `visuals.avatar` 或 `visuals.portraits`，失败时保留旧视觉资产。锁脸参考图和用户锁脸留在后续图像切片处理。
+
 **请求与降级边界**：纯文字生成使用 `/images/generations` JSON；只有用户明确把当前 Provider 标记为支持参考图、并且后续确有本地参考资产时，才使用 `/images/edits` multipart。未声明能力时不得发送参考图，后续锁脸功能必须明确显示已降级为固定外貌提示词。保存、查看和切换均为零 API；连接测试和生成图像分别由用户显式点击，每次最多一次请求。图像设置不进入 SaveFile，世界 schema 保持 v41。

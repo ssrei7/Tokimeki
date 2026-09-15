@@ -34,6 +34,7 @@ import { listProviderModels } from './providers/models';
 import { resolveProviderForCharacter, resolveProviderForTask, resolveProviderForTaskGroup, resolveTtsProviderForCharacter } from './providers/router';
 import { streamChat, type StreamStatus } from './providers/stream';
 import { generateImage } from './providers/image';
+import { buildCharacterImagePrompt } from './providers/image-prompt';
 import { createEmbeddings } from './providers/embedding';
 import { queryVectorMemories, rebuildVectorMemoryRecords } from './providers/vector-memory';
 import { createMockProviderConfig } from './providers/adapters/mock';
@@ -46,7 +47,7 @@ import { simulateDays } from './dev/simulator';
 import { simulateEncounterDistribution } from './dev/encounter-simulator';
 import { simulateLeadDistribution } from './dev/lead-simulator';
 import { simulateTopicDistribution } from './dev/topic-simulator';
-import { CharacterProviderBindingSchema, EmbeddingConfigSchema, ImageConfigSchema, ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, TtsConfigSchema, type CharacterProviderBinding, type EmbeddingConfig, type ImageConfig, type ProviderBinding, type ProviderConfig, type TaskId, type TtsConfig } from './providers/types';
+import { CharacterProviderBindingSchema, EmbeddingConfigSchema, ImageConfigSchema, ImageVisualConfigSchema, ProviderBindingSchema, ProviderConfigSchema, ProviderSettingSchema, TASK_IDS, TtsConfigSchema, type CharacterProviderBinding, type EmbeddingConfig, type ImageConfig, type ImageVisualConfig, type ProviderBinding, type ProviderConfig, type TaskId, type TtsConfig } from './providers/types';
 import { speechCacheFingerprint, synthesizeSpeech } from './providers/speech';
 import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from './ui/chat-state';
 import { createChatRequestId, markBackgroundRequestInterrupted, recoveryMessagesForRetry } from './ui/chat-recovery';
@@ -228,9 +229,22 @@ const slug = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9\u4e
 const newProvider = (): ProviderConfig => ({ id: `provider-${Date.now()}`, name: '新 Provider', kind: 'openai-compatible', endpoint: '', model: '', contextWindow: 8192, maxOutputTokens: 1024, temperature: 0.7 });
 const newEmbeddingConfig = (): EmbeddingConfig => ({ id: 'embedding', enabled: false, endpoint: '', model: '', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
 const newTtsConfig = (): TtsConfig => ({ id: `tts-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: '新语音配置', enabled: false, endpoint: '', model: '', voice: 'alloy', format: 'mp3', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
-const newImageConfig = (): ImageConfig => ({ id: 'image', size: '1024x1024', responseFormat: 'b64_json', referenceMode: 'none', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
+const newImageConfig = (): ImageConfig => ({ id: 'image', size: '1024x1024', stylePrompt: '', responseFormat: 'b64_json', referenceMode: 'none', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
 const newChatMessageId = (characterId: string) => `${characterId}-chat-${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`;
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
+function imageBase64ToBlob(base64: string, mimeType = 'image/png'): Blob {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: mimeType });
+}
+async function generatedImageToBlob(result: { base64?: string; url?: string }): Promise<Blob> {
+  if (result.base64) return imageBase64ToBlob(result.base64);
+  if (!result.url) throw new Error('图像 Provider 返回中没有可保存的图片。');
+  const response = await fetch(result.url);
+  if (!response.ok) throw new Error(`生成图片下载失败（HTTP ${response.status}）`);
+  return await response.blob();
+}
 async function measureAudioDurationMs(blob: Blob): Promise<number> {
   if (typeof Audio === 'undefined' || typeof URL === 'undefined') return 0;
   const source = URL.createObjectURL(blob);
@@ -362,6 +376,9 @@ export function App() {
   const imageConfigRef = useRef<ImageConfig>(newImageConfig());
   const [imageBusy, setImageBusy] = useState(false);
   const imageBusyRef = useRef(false);
+  const [imageVisualConfigs, setImageVisualConfigs] = useState<ImageVisualConfig[]>([]);
+  const [imagePrompt, setImagePrompt] = useState('');
+  const [imageTarget, setImageTarget] = useState<'avatar' | 'portrait'>('avatar');
   const [voiceCacheStats, setVoiceCacheStats] = useState<VoiceCacheStats>({ count: 0, totalBytes: 0, referenceCount: 0 });
   const [storageEstimate, setStorageEstimate] = useState<StorageEstimate>({});
   const [assetIntegrityReport, setAssetIntegrityReport] = useState<AssetIntegrityReport | null>(null);
@@ -418,7 +435,7 @@ export function App() {
   }
 
   useEffect(() => {
-    void Promise.all([contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), contentDb.presetBundles.toArray(), contentDb.storyScenePresets.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.characterBindings.toArray(), providerDb.settings.get('defaultProviderId'), providerDb.settings.get('defaultTtsProviderId'), providerDb.embeddingConfigs.get('embedding'), providerDb.ttsConfigs.toArray(), providerDb.imageConfigs.get('image'), loadCurrentSave(), listSnapshots()]).then(([c, masks, w, p, bundles, scenePresets, ps, bs, storedCharacterBindings, setting, ttsSetting, storedEmbedding, storedTtsConfigs, storedImageConfig, persistedSave, savedSnapshots]) => {
+    void Promise.all([contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.worldbooks.toArray(), contentDb.presets.toArray(), contentDb.presetBundles.toArray(), contentDb.storyScenePresets.toArray(), providerDb.providers.toArray(), providerDb.bindings.toArray(), providerDb.characterBindings.toArray(), providerDb.settings.get('defaultProviderId'), providerDb.settings.get('defaultTtsProviderId'), providerDb.embeddingConfigs.get('embedding'), providerDb.ttsConfigs.toArray(), providerDb.imageConfigs.get('image'), providerDb.imageVisualConfigs.toArray(), loadCurrentSave(), listSnapshots()]).then(([c, masks, w, p, bundles, scenePresets, ps, bs, storedCharacterBindings, setting, ttsSetting, storedEmbedding, storedTtsConfigs, storedImageConfig, storedImageVisualConfigs, persistedSave, savedSnapshots]) => {
       if (persistedSave) {
         const parsedSave = SaveFileSchema.parse(persistedSave);
         saveRef.current = parsedSave;
@@ -481,6 +498,9 @@ export function App() {
         : ImageConfigSchema.parse({ ...newImageConfig(), providerId: bs.find((binding) => binding.taskId === 'image')?.providerId ?? (resolvedDefaultProviderId || undefined) });
       imageConfigRef.current = parsedImage; setImageConfig(parsedImage);
       if (!storedImageConfig || storedImageConfig.lastStatus === 'requesting') void providerDb.imageConfigs.put(parsedImage);
+      const currentSaveId = persistedSave?.meta.id ?? defaultSave.meta.id;
+      setImageVisualConfigs(storedImageVisualConfigs.flatMap((item) => { const parsed = ImageVisualConfigSchema.safeParse(item); return parsed.success && parsed.data.saveId === currentSaveId ? [parsed.data] : []; }));
+      if (c[0] && !visualCharacterId) setVisualCharacterId(c[0].id);
     });
   }, []);
 
@@ -732,6 +752,12 @@ export function App() {
   async function deleteVoiceAssetIfUnreferenced(assetId: string): Promise<void> {
     const [chats, savedSnapshots, stickers] = await Promise.all([contentDb.chats.toArray(), listSnapshots(), listTerminalStickers()]);
     const referenced = collectStoredAssetIds([saveRef.current, chats, savedSnapshots.map((snapshot) => snapshot.save), stickers]);
+    if (!referenced.has(assetId)) await deleteAsset(assetId);
+  }
+
+  async function deleteImageAssetIfUnreferenced(assetId: string): Promise<void> {
+    const [chats, savedSnapshots, stickers] = await Promise.all([contentDb.chats.toArray(), listSnapshots(), listTerminalStickers()]);
+    const referenced = collectStoredAssetIds([saveRef.current, ...savedSnapshots.map((snapshot) => snapshot.save), chats, stickers]);
     if (!referenced.has(assetId)) await deleteAsset(assetId);
   }
 
@@ -2676,6 +2702,59 @@ export function App() {
     } finally { imageBusyRef.current = false; setImageBusy(false); }
   }
 
+  async function saveImageVisualConfig(characterId: string, appearancePrompt: string): Promise<void> {
+    const record = ImageVisualConfigSchema.parse({ id: `${saveRef.current.meta.id}:${characterId}`, saveId: saveRef.current.meta.id, characterId, appearancePrompt, updatedAt: now() });
+    await providerDb.imageVisualConfigs.put(record);
+    setImageVisualConfigs((items) => [...items.filter((item) => item.id !== record.id), record]);
+    setFeedback({ tone: 'success', text: '角色外貌提示词已保存到当前世界。' });
+  }
+
+  async function generateCharacterImage(characterId: string, target: 'avatar' | 'portrait', scenePrompt: string): Promise<void> {
+    if (imageBusyRef.current) return;
+    const character = saveRef.current.world.characters[characterId];
+    if (!character) { setFeedback({ tone: 'error', text: '当前世界中没有这个角色。' }); return; }
+    let config: ImageConfig;
+    try { config = ImageConfigSchema.parse(imageConfigRef.current); }
+    catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '图像设置无效。') }); return; }
+    const provider = providers.find((item) => item.id === config.providerId && item.kind === 'openai-compatible');
+    if (!provider) { setFeedback({ tone: 'error', text: '请先在图像设置中选择 OpenAI-compatible Provider。' }); return; }
+    const visualConfig = imageVisualConfigs.find((item) => item.saveId === saveRef.current.meta.id && item.characterId === characterId);
+    let prompt: string;
+    try { prompt = buildCharacterImagePrompt({ scenePrompt, stylePrompt: config.stylePrompt, appearancePrompt: visualConfig?.appearancePrompt }); }
+    catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '请先填写图像生成要求。') }); return; }
+    imageBusyRef.current = true; setImageBusy(true);
+    const requesting = ImageConfigSchema.parse({ ...config, lastStatus: 'requesting', lastCalledAt: now(), updatedAt: now() });
+    imageConfigRef.current = requesting; setImageConfig(requesting); await providerDb.imageConfigs.put(requesting);
+    let generatedAssetId: string | undefined;
+    try {
+      const result = await generateImage(provider, prompt, { size: config.size, quality: config.quality, style: config.style, responseFormat: config.responseFormat, referenceMode: 'none' });
+      const blob = await generatedImageToBlob(result);
+      generatedAssetId = `character-generated-${target}-${characterId}-${Date.now()}`;
+      await saveAsset({ id: generatedAssetId, blob, mimeType: blob.type || 'image/png', width: undefined, height: undefined, createdAt: now() });
+      const next = structuredClone(saveRef.current);
+      const visuals = next.world.characters[characterId].visuals;
+      const previousRefs = target === 'avatar' ? (visuals.avatar ? [visuals.avatar] : []) : visuals.portraits.map((portrait) => portrait.image);
+      if (target === 'avatar') visuals.avatar = { kind: 'stored', assetId: generatedAssetId };
+      else {
+        const portraitId = visuals.portraits[0]?.id ?? `portrait-${characterId}`;
+        const transform = visuals.portraits[0]?.transform;
+        visuals.portraits = [{ id: portraitId, name: '立绘', image: { kind: 'stored', assetId: generatedAssetId }, ...(transform ? { transform } : {}) }];
+        visuals.activePortraitId = portraitId;
+      }
+      commitSave(next);
+      for (const reference of previousRefs) if (reference.kind === 'stored' && reference.assetId !== generatedAssetId) await deleteImageAssetIfUnreferenced(reference.assetId).catch(() => undefined);
+      const success = ImageConfigSchema.parse({ ...requesting, lastStatus: 'success', requestCount: requesting.requestCount + 1, updatedAt: now() });
+      imageConfigRef.current = success; setImageConfig(success); await providerDb.imageConfigs.put(success);
+      setFeedback({ tone: 'success', text: `${character.name}的${target === 'avatar' ? '头像' : '立绘'}已生成并保存。` });
+    } catch (error) {
+      if (generatedAssetId) await deleteAsset(generatedAssetId).catch(() => undefined);
+      const message = errorMessage(error, '图像生成失败。');
+      const failed = ImageConfigSchema.parse({ ...requesting, lastStatus: 'error', requestCount: requesting.requestCount + 1, failureCount: requesting.failureCount + 1, lastError: message, updatedAt: now() });
+      imageConfigRef.current = failed; setImageConfig(failed); await providerDb.imageConfigs.put(failed);
+      setFeedback({ tone: 'error', text: `${message} 原有角色视觉保持不变。` });
+    } finally { imageBusyRef.current = false; setImageBusy(false); }
+  }
+
   async function saveProviderConfig() {
     try {
       const parsed = parseEditedProvider();
@@ -3327,7 +3406,7 @@ export function App() {
       {tab === 'library' && libraryPage === 'story' && <SubpageShell eyebrow="终端" title="多人剧情" pageId="story" onBack={() => setLibraryPage(null)}><StorySceneLibraryView save={save} storyScenePresets={storyScenePresets} onSavePreset={saveStoryScenePresetCopy} onUpdatePreset={updateStoryScenePreset} onDeletePreset={removeStoryScenePreset} onCreateDraft={createStorySceneDraftFromInput} onEditDraft={editStorySceneDraft} onDeleteDraft={removeStorySceneDraft} onConfirmDraft={confirmStorySceneDraft} onAdvanceStage={advanceStoryScene} onSetStatus={setStorySceneStatus} onReadStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'read')} onSelectStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'select')} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'memories' && <SubpageShell eyebrow="终端" title="记忆库" pageId="memories" onBack={() => setLibraryPage(null)}><MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'collection' && <SubpageShell eyebrow="终端" title="收藏" pageId="collection" onBack={() => setLibraryPage(null)}><CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} /></SubpageShell>}
-      {tab === 'settings' && <SettingsView appName={appName} activePage={settingsPage} onOpenPage={setSettingsPage} onBack={() => setSettingsPage(null)} provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} ttsConfigs={ttsConfigs} defaultTtsConfigId={defaultTtsConfigId} ttsConfig={ttsConfig} setTtsConfig={(next) => { setTtsConfig(next); ttsConfigRef.current = next; setTtsConfigs((items) => items.some((item) => item.id === next.id) ? items.map((item) => item.id === next.id ? next : item) : items); }} ttsHeadersDraft={ttsHeadersDraft} setTtsHeadersDraft={setTtsHeadersDraft} onSelectTtsConfig={selectTtsConfig} onNewTtsConfig={createTtsConfigDraft} onDeleteTtsConfig={deleteTtsConfig} onDefaultTtsChange={updateDefaultTtsConfig} ttsBusy={ttsBusy} onSaveTts={saveTtsSettings} onTestTts={testTtsConnection} imageConfig={imageConfig} setImageConfig={(next) => { const parsed = ImageConfigSchema.parse(next); imageConfigRef.current = parsed; setImageConfig(parsed); }} imageBusy={imageBusy} onSaveImage={saveImageSettings} onTestImage={testImageConnection} onOpenProvider={() => setSettingsPage('provider')} voiceCacheStats={voiceCacheStats} onClearVoiceCache={clearVoiceCache} storageEstimate={storageEstimate} onPersistStorage={persistLocalStorage} assetIntegrityReport={assetIntegrityReport} assetIntegrityBusy={assetIntegrityBusy} onCheckAssetIntegrity={checkAssetIntegrity} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} save={save} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} onExportProviderSettings={downloadProviderSettings} onImportProviderSettings={applyProviderSettings} onExportGlobalBackup={downloadGlobalBackup} onImportGlobalBackup={previewGlobalBackup} globalBackupPreview={globalBackupPreview} onRestoreGlobalBackup={restoreGlobalBackup} />}
+      {tab === 'settings' && <SettingsView appName={appName} activePage={settingsPage} onOpenPage={setSettingsPage} onBack={() => setSettingsPage(null)} provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} ttsConfigs={ttsConfigs} defaultTtsConfigId={defaultTtsConfigId} ttsConfig={ttsConfig} setTtsConfig={(next) => { setTtsConfig(next); ttsConfigRef.current = next; setTtsConfigs((items) => items.some((item) => item.id === next.id) ? items.map((item) => item.id === next.id ? next : item) : items); }} ttsHeadersDraft={ttsHeadersDraft} setTtsHeadersDraft={setTtsHeadersDraft} onSelectTtsConfig={selectTtsConfig} onNewTtsConfig={createTtsConfigDraft} onDeleteTtsConfig={deleteTtsConfig} onDefaultTtsChange={updateDefaultTtsConfig} ttsBusy={ttsBusy} onSaveTts={saveTtsSettings} onTestTts={testTtsConnection} imageConfig={imageConfig} setImageConfig={(next) => { const parsed = ImageConfigSchema.parse(next); imageConfigRef.current = parsed; setImageConfig(parsed); }} imageBusy={imageBusy} onSaveImage={saveImageSettings} onTestImage={testImageConnection} onOpenProvider={() => setSettingsPage('provider')} save={save} imageVisualConfigs={imageVisualConfigs} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} imagePrompt={imagePrompt} setImagePrompt={setImagePrompt} imageTarget={imageTarget} setImageTarget={setImageTarget} onSaveImageVisualConfig={saveImageVisualConfig} onGenerateCharacterImage={generateCharacterImage} voiceCacheStats={voiceCacheStats} onClearVoiceCache={clearVoiceCache} storageEstimate={storageEstimate} onPersistStorage={persistLocalStorage} assetIntegrityReport={assetIntegrityReport} assetIntegrityBusy={assetIntegrityBusy} onCheckAssetIntegrity={checkAssetIntegrity} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} onExportProviderSettings={downloadProviderSettings} onImportProviderSettings={applyProviderSettings} onExportGlobalBackup={downloadGlobalBackup} onImportGlobalBackup={previewGlobalBackup} globalBackupPreview={globalBackupPreview} onRestoreGlobalBackup={restoreGlobalBackup} />}
     </main>
     <nav className="bottom-nav" aria-label="主导航">{BOTTOM_NAV_ITEMS.map(([id, label, Icon]) => <button key={id} type="button" className={tab === id ? 'selected' : ''} aria-label={label} title={label} onClick={() => setTab(id)}><Icon size={25} weight="fill" aria-hidden="true" /><span className="bottom-nav-label">{label}</span></button>)}</nav>
   </div>;
@@ -4120,12 +4199,17 @@ function ProviderSettingsMigrationView(props: { providers: ProviderConfig[]; tts
   return <div className="library-subpage-content"><section className="library-legacy-content"><div className="section-heading"><div><span className="eyebrow">仅本地</span><h2>Provider 设置迁移</h2></div></div><div className="provider-card"><h3>全局备份</h3><p className="io-scope">一键备份当前世界、快照、聊天、资料、Provider 配置、界面偏好和本地资产。默认不包含 API key。</p><div className="button-row"><button onClick={() => void props.onExportGlobalBackup(false)}>导出全局备份</button><button className="secondary" onClick={() => { if (window.confirm('完整备份会把 API key 写入文件，请勿分享。确定继续吗？')) void props.onExportGlobalBackup(true); }}>导出完整备份（含 API key）</button><label className="file-button">导入全局备份<input type="file" accept=".zip" onChange={(event) => void props.onImportGlobalBackup(event.target.files?.[0])} /></label></div>{props.globalBackupPreview && <div className="fold-body"><p>备份预览：{props.globalBackupPreview.data.providers.length} 个普通 Provider、{props.globalBackupPreview.data.ttsConfigs.length} 个语音 Provider、{props.globalBackupPreview.assets.size} 个资产{props.globalBackupPreview.hasSecrets ? '，包含 API key' : ''}。</p>{([['world','世界存档与快照'],['content','资料、聊天与本地索引'],['providers','Provider 与绑定'],['assets','图片、音频等资产'],['preferences','界面偏好']] as const).map(([key, label]) => <label className="checkbox-line" key={key}><input type="checkbox" checked={restoreSelection[key]} onChange={(event) => setRestoreSelection((current) => ({ ...current, [key]: event.target.checked }))} />{label}</label>)}<button onClick={() => void props.onRestoreGlobalBackup(props.globalBackupPreview!, restoreSelection)}>确认恢复所选内容</button></div>}</div><div className="provider-card"><p className="io-scope">迁移非敏感配置、默认项和路由绑定。默认不导出 API key 或鉴权 headers；导入同 ID 配置时保留本机已有密钥。</p><h3>普通 Provider</h3>{availableProviders.length ? availableProviders.map((item) => <label className="checkbox-line" key={item.id}><input type="checkbox" checked={providerIds.includes(item.id)} onChange={(event) => toggle(providerIds, item.id, event.target.checked, setProviderIds)} />{item.name} · {item.model}</label>) : <p className="empty">没有普通 Provider 配置。</p>}<h3>语音 Provider</h3>{availableTtsConfigs.length ? availableTtsConfigs.map((item) => <label className="checkbox-line" key={item.id}><input type="checkbox" checked={ttsIds.includes(item.id)} onChange={(event) => toggle(ttsIds, item.id, event.target.checked, setTtsIds)} />{item.name} · {item.model || '未设置模型'}</label>) : <p className="empty">没有语音 Provider 配置。</p>}<label className="checkbox-line"><input type="checkbox" checked={includeBindings} onChange={(event) => setIncludeBindings(event.target.checked)} />包含任务路由和当前世界角色绑定</label><div className="button-row"><button onClick={() => { if (includeSecrets && !window.confirm('导出文件将包含 API key 和鉴权 headers。请确认文件只保存在你自己的设备上。')) return; void props.onExport(selection); }} disabled={!providerIds.length && !ttsIds.length}>导出所选设置</button><label className="file-button">选择迁移包<input type="file" accept=".json,application/json" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; try { const pack = await importProviderSettingsPackage(file); setPreview(pack); setImportError(''); setProviderIds(pack.providers.map((item) => item.id)); setTtsIds(pack.ttsConfigs.map((item) => item.id)); setIncludeBindings(true); setIncludeSecrets(Boolean(pack.providers.some((item) => item.apiKey) || pack.ttsConfigs.some((item) => item.apiKey))); } catch (error) { setPreview(null); setImportError(errorMessage(error, '迁移包无法读取。')); } }} /></label><label className="checkbox-line"><input type="checkbox" checked={includeSecrets} onChange={(event) => setIncludeSecrets(event.target.checked)} />包含 API key 和鉴权 headers（仅用于个人迁移）</label>{includeSecrets && <p className="io-scope" role="alert">API key 将写入导出的 JSON 文件。请勿分享此文件；导出前会再次确认。</p>}</div>{importError && <p className="io-scope" role="alert">{importError}</p>}</div>{preview && <div className="provider-card"><div className="list-heading"><div><h3>导入预览</h3><p className="io-scope">导出时间：{new Date(preview.exportedAt).toLocaleString()}</p></div></div><p>普通 Provider：{preview.providers.length} 个 · 语音 Provider：{preview.ttsConfigs.length} 个 · 任务路由：{preview.bindings.length} 条 · 角色绑定：{preview.characterBindings.length} 条</p><div className="button-row"><button onClick={() => void props.onImport(preview, selection)} disabled={!providerIds.length && !ttsIds.length}>导入所选设置</button><button className="secondary" onClick={() => setPreview(null)}>取消预览</button></div></div>}</section></div>;
 }
 
-function ImageSettingsView(props: { config: ImageConfig; providers: ProviderConfig[]; setProvider: (provider: ProviderConfig) => void; busy: boolean; onSave: (config: ImageConfig) => Promise<void>; onTest: (config: ImageConfig) => Promise<void>; onNewProvider: () => void; onOpenProvider: () => void }) {
+function ImageSettingsView(props: { config: ImageConfig; providers: ProviderConfig[]; setProvider: (provider: ProviderConfig) => void; busy: boolean; onSave: (config: ImageConfig) => Promise<void>; onTest: (config: ImageConfig) => Promise<void>; onNewProvider: () => void; onOpenProvider: () => void; save: SaveFile; imageVisualConfigs: ImageVisualConfig[]; visualCharacterId: string; setVisualCharacterId: (value: string) => void; imagePrompt: string; setImagePrompt: (value: string) => void; imageTarget: 'avatar' | 'portrait'; setImageTarget: (value: 'avatar' | 'portrait') => void; onSaveImageVisualConfig: (characterId: string, appearancePrompt: string) => Promise<void>; onGenerateCharacterImage: (characterId: string, target: 'avatar' | 'portrait', scenePrompt: string) => Promise<void> }) {
   const compatibleProviders = props.providers.filter((item) => item.kind === 'openai-compatible');
   const [draft, setDraft] = useState(props.config);
   useEffect(() => { setDraft(props.config); }, [props.config]);
   const selectedProvider = compatibleProviders.find((item) => item.id === draft.providerId);
   const update = (values: Partial<ImageConfig>) => setDraft((current) => ({ ...current, ...values }));
+  const worldCharacters = Object.values(props.save.world.characters);
+  const selectedCharacter = worldCharacters.find((item) => item.id === props.visualCharacterId) ?? worldCharacters[0];
+  const selectedVisual = props.imageVisualConfigs.find((item) => item.saveId === props.save.meta.id && item.characterId === selectedCharacter?.id);
+  const [appearanceDraft, setAppearanceDraft] = useState(selectedVisual?.appearancePrompt ?? '');
+  useEffect(() => { setAppearanceDraft(selectedVisual?.appearancePrompt ?? ''); }, [selectedVisual?.appearancePrompt, selectedCharacter?.id]);
   return <div className="library-subpage-content"><section className="library-legacy-content">
     <div className="section-heading"><div><span className="eyebrow">显式调用</span><h2>图像生成</h2></div><span className={`request-status ${draft.lastStatus === 'error' ? 'error' : ''}`}>{props.busy ? '请求中…' : draft.lastStatus === 'success' ? '最近成功' : draft.lastStatus === 'error' ? '最近失败' : '尚未调用'}</span></div>
     <div className="provider-card">
@@ -4136,12 +4220,25 @@ function ImageSettingsView(props: { config: ImageConfig; providers: ProviderConf
       <label>默认尺寸<input value={draft.size} onChange={(event) => update({ size: event.target.value })} placeholder="1024x1024" /></label>
       <label>质量（可选）<input value={draft.quality ?? ''} onChange={(event) => update({ quality: event.target.value || undefined })} placeholder="例如 high、standard" /></label>
       <label>Provider style 参数（可选）<input value={draft.style ?? ''} onChange={(event) => update({ style: event.target.value || undefined })} placeholder="例如 vivid、natural" /></label>
+      <label>全局画风提示词<textarea value={draft.stylePrompt} onChange={(event) => update({ stylePrompt: event.target.value })} placeholder="例如：日系动画、柔和光线、细腻背景、统一角色比例。" /></label>
       <label>响应格式<select value={draft.responseFormat} onChange={(event) => update({ responseFormat: event.target.value as ImageConfig['responseFormat'] })}><option value="b64_json">b64_json（推荐，收到后转存二进制）</option><option value="url">url</option></select></label>
       <label>参考图能力<select value={draft.referenceMode} onChange={(event) => update({ referenceMode: event.target.value as ImageConfig['referenceMode'] })}><option value="none">关闭 · 仅提示词生成</option><option value="openai-edits">OpenAI-compatible images/edits</option></select></label>
       {draft.referenceMode === 'openai-edits' ? <><label>自定义 edits 端点（可选）<input value={draft.editEndpoint ?? ''} onChange={(event) => update({ editEndpoint: event.target.value || undefined })} placeholder="留空时由 Provider 基础 URL 推导 /images/edits" /></label><p className="io-scope">启用后，只有存在锁脸参考图时才会使用 multipart edits 请求；没有参考图时仍使用 generations。</p></> : <p className="io-scope">当前 Provider 不会接收锁脸参考图；后续会明确降级为固定外貌提示词。</p>}
       <div className="stat-list"><span>调用 {draft.requestCount} 次</span><span>失败 {draft.failureCount} 次</span>{draft.lastCalledAt && <span>最近调用 {new Date(draft.lastCalledAt).toLocaleString()}</span>}</div>
       {draft.lastError && <p className="io-scope" role="alert">最近错误：{draft.lastError}</p>}
       <div className="button-row"><button onClick={() => void props.onSave(draft)} disabled={props.busy}>保存设置</button><button className="secondary" onClick={() => void props.onTest(draft)} disabled={props.busy || !selectedProvider}>连接测试</button></div>
+    </div>
+    <div className="provider-card">
+      <div className="list-heading"><div><span className="eyebrow">当前世界</span><h3>角色图像</h3></div><span className="io-scope">提示词预览与生成均不自动调用 API</span></div>
+      {worldCharacters.length ? <>
+        <label>角色<select aria-label="图像角色" value={selectedCharacter?.id ?? ''} onChange={(event) => props.setVisualCharacterId(event.target.value)}>{worldCharacters.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}</select></label>
+        <label>角色外貌提示词<textarea value={appearanceDraft} onChange={(event) => setAppearanceDraft(event.target.value)} placeholder="例如：短黑发、琥珀色眼睛、左眉有一颗小痣。" /></label>
+        <div className="button-row"><button className="secondary" onClick={() => selectedCharacter && void props.onSaveImageVisualConfig(selectedCharacter.id, appearanceDraft)}>保存外貌提示词</button></div>
+        <label>生成目标<select value={props.imageTarget} onChange={(event) => props.setImageTarget(event.target.value as 'avatar' | 'portrait')}><option value="avatar">头像</option><option value="portrait">立绘</option></select></label>
+        <label>场景 / 姿态要求<textarea value={props.imagePrompt} onChange={(event) => props.setImagePrompt(event.target.value)} placeholder="例如：站在雨后的海边车站，回头看向镜头。" /></label>
+        <label>最终 Prompt 预览<textarea readOnly value={selectedCharacter ? (() => { try { return buildCharacterImagePrompt({ scenePrompt: props.imagePrompt, stylePrompt: draft.stylePrompt, appearancePrompt: appearanceDraft }); } catch { return '请先填写场景 / 姿态要求。'; } })() : ''} /></label>
+        <div className="button-row"><button onClick={() => selectedCharacter && void props.onGenerateCharacterImage(selectedCharacter.id, props.imageTarget, props.imagePrompt)} disabled={props.busy || !selectedProvider || !selectedCharacter || !props.imagePrompt.trim()}>{props.busy ? '正在生成…' : `生成${props.imageTarget === 'avatar' ? '头像' : '立绘'}`}</button></div>
+      </> : <p className="empty">当前世界还没有正式角色，请先在终端的角色卡中加入角色。</p>}
     </div>
   </section></div>;
 }
@@ -4186,6 +4283,16 @@ function SettingsView(props: {
   onSaveImage: (config?: ImageConfig) => Promise<void>;
   onTestImage: (config?: ImageConfig) => Promise<void>;
   onOpenProvider: () => void;
+  save: SaveFile;
+  imageVisualConfigs: ImageVisualConfig[];
+  visualCharacterId: string;
+  setVisualCharacterId: (value: string) => void;
+  imagePrompt: string;
+  setImagePrompt: (value: string) => void;
+  imageTarget: 'avatar' | 'portrait';
+  setImageTarget: (value: 'avatar' | 'portrait') => void;
+  onSaveImageVisualConfig: (characterId: string, appearancePrompt: string) => Promise<void>;
+  onGenerateCharacterImage: (characterId: string, target: 'avatar' | 'portrait', scenePrompt: string) => Promise<void>;
   voiceCacheStats: VoiceCacheStats;
   onClearVoiceCache: () => Promise<void>;
   storageEstimate: StorageEstimate;
@@ -4204,7 +4311,6 @@ function SettingsView(props: {
   debug: { prompt: AssembledPrompt | null; raw: string; ops: string; state: string };
   debugTab: 'Prompt' | 'Raw' | 'Ops' | 'State';
   setDebugTab: (tab: 'Prompt' | 'Raw' | 'Ops' | 'State') => void;
-  save: SaveFile;
   onShowNumbersChange: (showNumbers: boolean) => void;
   onEnergyEnabledChange: (enabled: boolean) => void;
   onMorningStyleChange: (style: SaveFile['config']['morningStyle']) => void;
@@ -4248,7 +4354,7 @@ function SettingsView(props: {
   const pageTitle = SETTINGS_PAGE_DEFINITIONS.find((entry) => entry.id === props.activePage)?.pageTitle ?? '设置';
   if (!props.activePage) return <DesktopLauncher launcherId="settings" title="设置" appName={props.appName} entries={entries} onOpen={(id) => props.onOpenPage(id as SettingsPage)} />;
   if (props.activePage === 'migration') return <SubpageShell title={pageTitle} pageId="migration" onBack={props.onBack}><ProviderSettingsMigrationView providers={props.providers} ttsConfigs={props.ttsConfigs} onExport={props.onExportProviderSettings} onImport={props.onImportProviderSettings} onExportGlobalBackup={props.onExportGlobalBackup} onImportGlobalBackup={props.onImportGlobalBackup} globalBackupPreview={props.globalBackupPreview} onRestoreGlobalBackup={props.onRestoreGlobalBackup} /></SubpageShell>;
-  if (props.activePage === 'image') return <SubpageShell title={pageTitle} pageId="image" onBack={props.onBack}><ImageSettingsView config={props.imageConfig} providers={props.providers} setProvider={props.setProvider} busy={props.imageBusy} onSave={props.onSaveImage} onTest={props.onTestImage} onNewProvider={props.onNewProvider} onOpenProvider={props.onOpenProvider} /></SubpageShell>;
+  if (props.activePage === 'image') return <SubpageShell title={pageTitle} pageId="image" onBack={props.onBack}><ImageSettingsView config={props.imageConfig} providers={props.providers} setProvider={props.setProvider} busy={props.imageBusy} onSave={props.onSaveImage} onTest={props.onTestImage} onNewProvider={props.onNewProvider} onOpenProvider={props.onOpenProvider} save={props.save} imageVisualConfigs={props.imageVisualConfigs} visualCharacterId={props.visualCharacterId} setVisualCharacterId={props.setVisualCharacterId} imagePrompt={props.imagePrompt} setImagePrompt={props.setImagePrompt} imageTarget={props.imageTarget} setImageTarget={props.setImageTarget} onSaveImageVisualConfig={props.onSaveImageVisualConfig} onGenerateCharacterImage={props.onGenerateCharacterImage} /></SubpageShell>;
   return <SubpageShell title={pageTitle} pageId={props.activePage} onBack={props.onBack}>
     <details className="fold-card" open><summary>玩家身份 · 面具身份</summary><div className="fold-body"><div className="provider-card persona-card"><div className="list-heading"><div><span className="eyebrow">玩家身份</span><h3>面具身份</h3></div><span className="io-scope">每个世界绑定一个</span></div><div className="persona-fields"><input placeholder="身份名称，例如：旅人" value={props.personaName} onChange={(event) => props.setPersonaName(event.target.value)} /><input placeholder="对话框称呼，例如：小明" value={props.personaDisplayName} onChange={(event) => props.setPersonaDisplayName(event.target.value)} /><textarea placeholder="自我描述（会注入面对面提示词）" value={props.personaDescription} onChange={(event) => props.setPersonaDescription(event.target.value)} /></div><div className="button-row"><button onClick={() => void props.onSavePersona()}>{props.personaEditingId ? '更新面具' : '保存面具'}</button><button className="secondary" onClick={() => { props.setPersonaEditingId(''); props.setPersonaName(''); props.setPersonaDisplayName(''); props.setPersonaDescription(''); }}>新建面具</button></div>{props.personas.length ? <div className="persona-list">{props.personas.map((persona) => <div className="list-row" key={persona.id}><span>{persona.name}<small>对话框：{persona.displayName}{persona.description ? ` · ${persona.description}` : ''}</small></span><span className="button-row"><button className={props.personaId === persona.id ? '' : 'secondary'} onClick={() => props.onBindPersona(persona.id)}>{props.personaId === persona.id ? '当前绑定' : '绑定'}</button><button className="secondary" onClick={() => { props.setPersonaEditingId(persona.id); props.setPersonaName(persona.name); props.setPersonaDisplayName(persona.displayName); props.setPersonaDescription(persona.description); }}>编辑</button><button className="danger" onClick={() => void props.onDeletePersona(persona.id)}>删除</button></span></div>)}</div> : <p className="empty">还没有面具身份，聊天名牌默认使用玩家名字。</p>}</div></div></details>
     <details className="fold-card" open><summary>Provider 配置 {props.requestStatus === 'requesting' ? '· 请求中' : ''}</summary><div className="fold-body"><div className="section-heading"><div><span className="eyebrow">本地设置</span><h2>Provider</h2></div>{props.requestStatus === 'requesting' && <span className="request-status requesting">请求中…</span>}</div>
