@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { BOTTOM_NAV_ITEMS, DAY_PAGE_DEFINITIONS, LIBRARY_PAGE_DEFINITIONS, SETTINGS_PAGE_DEFINITIONS } from '../src/App';
+import { BOTTOM_NAV_ITEMS, DAY_PAGE_DEFINITIONS, LIBRARY_PAGE_DEFINITIONS, ROUTING_TASK_IDS, SETTINGS_PAGE_DEFINITIONS } from '../src/App';
 import { DesktopLauncher, SubpageShell } from '../src/components/desktop-shell';
 import { clearDesktopOrder, clearDesktopPages, moveIdBefore, moveIdToPageEnd, readDesktopOrder, readDesktopPages, reconcileDesktopOrder, writeDesktopOrder, writeDesktopPage } from '../src/components/desktop-order';
 import { desktopIconContrastForLuminance } from '../src/ui/desktop-icon-contrast';
@@ -26,18 +26,20 @@ describe('settings desktop', () => {
       else Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
     }
   });
-  it('exposes unique reachable entries including vector memory, voice and migration', () => {
+  it('exposes unique reachable entries including vector memory, voice, image and migration', () => {
     const ids = SETTINGS_PAGE_DEFINITIONS.map((entry) => entry.id);
-    expect(ids).toHaveLength(11);
+    expect(ids).toHaveLength(12);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toContain('vector-memory');
     expect(ids).toContain('privacy');
     expect(ids).toContain('voice');
     expect(ids).toContain('migration');
-    expect(SETTINGS_PAGE_DEFINITIONS.map((entry) => entry.label)).toEqual(['身份', '模型', '向量', '语音', '路由', '迁移', '显示', '规则', '隐私', '调试', '开发']);
+    expect(SETTINGS_PAGE_DEFINITIONS.map((entry) => entry.label)).toEqual(['身份', '模型', '向量', '语音', '图像', '路由', '迁移', '显示', '规则', '隐私', '调试', '开发']);
     expect(SETTINGS_PAGE_DEFINITIONS.every((entry) => Array.from(entry.label).length <= 2)).toBe(true);
     expect(SETTINGS_PAGE_DEFINITIONS.find((entry) => entry.id === 'vector-memory')?.pageTitle).toBe('向量记忆');
     expect(SETTINGS_PAGE_DEFINITIONS.find((entry) => entry.id === 'voice')?.pageTitle).toBe('语音生成');
+    expect(SETTINGS_PAGE_DEFINITIONS.find((entry) => entry.id === 'image')?.pageTitle).toBe('图像生成');
+    expect(ROUTING_TASK_IDS).not.toContain('image');
   });
 
   it('renders every launcher as a named button', () => {
@@ -45,7 +47,7 @@ describe('settings desktop', () => {
     for (const entry of SETTINGS_PAGE_DEFINITIONS) {
       expect(html).toContain(`aria-label="打开${entry.label}"`);
     }
-    expect((html.match(/class="desktop-app-icon"/g) ?? [])).toHaveLength(11);
+    expect((html.match(/class="desktop-app-icon"/g) ?? [])).toHaveLength(12);
     expect(html).not.toContain(' title=');
   });
 

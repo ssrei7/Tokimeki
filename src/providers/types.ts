@@ -32,6 +32,34 @@ export type ProviderBinding = z.infer<typeof ProviderBindingSchema>;
 export const ProviderSettingSchema = z.object({ key: z.enum(['defaultProviderId', 'defaultTtsProviderId', 'chatPlayerLabel']), value: z.string().min(1) });
 export type ProviderSetting = z.infer<typeof ProviderSettingSchema>;
 
+export const ImageReferenceModeSchema = z.enum(['none', 'openai-edits']);
+export type ImageReferenceMode = z.infer<typeof ImageReferenceModeSchema>;
+
+export const ImageResponseFormatSchema = z.enum(['url', 'b64_json']);
+export type ImageResponseFormat = z.infer<typeof ImageResponseFormatSchema>;
+
+export const ImageConfigSchema = z.object({
+  id: z.literal('image').default('image'),
+  providerId: z.string().min(1).optional(),
+  size: z.string().min(1).default('1024x1024'),
+  quality: z.string().min(1).optional(),
+  style: z.string().min(1).optional(),
+  responseFormat: ImageResponseFormatSchema.default('b64_json'),
+  referenceMode: ImageReferenceModeSchema.default('none'),
+  editEndpoint: z.string().optional(),
+  requestCount: z.number().int().nonnegative().default(0),
+  failureCount: z.number().int().nonnegative().default(0),
+  lastStatus: z.enum(['idle', 'requesting', 'success', 'error']).default('idle'),
+  lastError: z.string().optional(),
+  lastCalledAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime(),
+}).superRefine((config, context) => {
+  if (!config.editEndpoint?.trim()) return;
+  try { new URL(config.editEndpoint); }
+  catch { context.addIssue({ code: 'custom', path: ['editEndpoint'], message: '图像 edits 端点必须是有效 URL。' }); }
+});
+export type ImageConfig = z.infer<typeof ImageConfigSchema>;
+
 export const EmbeddingConfigSchema = z.object({
   id: z.literal('embedding').default('embedding'),
   enabled: z.boolean().default(false),

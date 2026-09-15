@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { CharacterProviderBinding, EmbeddingConfig, ProviderBinding, ProviderConfig, ProviderSetting, TtsConfig } from './types';
+import type { CharacterProviderBinding, EmbeddingConfig, ImageConfig, ProviderBinding, ProviderConfig, ProviderSetting, TtsConfig } from './types';
 
 /** Provider secrets stay in this local-only IndexedDB database and are never part of SaveFile exports. */
 export class ProviderDatabase extends Dexie {
@@ -9,6 +9,7 @@ export class ProviderDatabase extends Dexie {
   embeddingConfigs!: Table<EmbeddingConfig, string>;
   ttsConfigs!: Table<TtsConfig, string>;
   characterBindings!: Table<CharacterProviderBinding, string>;
+  imageConfigs!: Table<ImageConfig, string>;
 
   constructor(name = 'tokimeki-providers') {
     super(name);
@@ -27,6 +28,7 @@ export class ProviderDatabase extends Dexie {
       }
     });
     this.version(6).stores({ providers: 'id', bindings: 'taskId', settings: 'key', embeddingConfigs: 'id', ttsConfigs: 'id', characterBindings: 'id, saveId, [saveId+characterId]' });
+    this.version(7).stores({ providers: 'id', bindings: 'taskId', settings: 'key', embeddingConfigs: 'id', ttsConfigs: 'id', characterBindings: 'id, saveId, [saveId+characterId]', imageConfigs: 'id' });
   }
 }
 

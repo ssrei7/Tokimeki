@@ -573,6 +573,7 @@
 - 导出"含图 / 仅引用"开关
 - 引用完整性检查器：孤立节点、失效 charId、断裂 unlocks 链
 - 生图与语音适配器（接口在阶段 0 已定形，此处接上）
+- 图像生成独立设置入口：复用 `image` 任务绑定，管理 OpenAI-compatible generations / edits 能力、全局画风、按世界角色外貌提示词及角色/用户锁脸参考图；仅在用户显式生成时请求 API，图片二进制进入 Assets IndexedDB
 - 语音资产管理：在语音 API 接入稳定后，为已生成语音提供本地缓存复用、长按重新生成、单条导出下载和数据管理清除；重新生成失败时保留原音频
 - Tauri 桌面版（顺带解决 CORS 与存储配额）
 - `navigator.storage.persist()`
