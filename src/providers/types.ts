@@ -61,14 +61,33 @@ export const ImageConfigSchema = z.object({
 });
 export type ImageConfig = z.infer<typeof ImageConfigSchema>;
 
+export const StoredImageAssetRefSchema = z.object({
+  kind: z.literal('stored'),
+  assetId: z.string().min(1),
+});
+
 export const ImageVisualConfigSchema = z.object({
   id: z.string().min(1),
   saveId: z.string().min(1),
   characterId: z.string().min(1),
   appearancePrompt: z.string().default(''),
+  lockFaceEnabled: z.boolean().default(false),
+  referenceImage: StoredImageAssetRefSchema.optional(),
   updatedAt: z.string().datetime(),
 });
 export type ImageVisualConfig = z.infer<typeof ImageVisualConfigSchema>;
+
+export const ImageUserVisualConfigSchema = z.object({
+  id: z.string().min(1),
+  saveId: z.string().min(1),
+  identityId: z.string().min(1),
+  identityKind: z.enum(['player', 'persona']),
+  appearancePrompt: z.string().default(''),
+  lockFaceEnabled: z.boolean().default(false),
+  referenceImage: StoredImageAssetRefSchema.optional(),
+  updatedAt: z.string().datetime(),
+});
+export type ImageUserVisualConfig = z.infer<typeof ImageUserVisualConfigSchema>;
 
 export const EmbeddingConfigSchema = z.object({
   id: z.literal('embedding').default('embedding'),
