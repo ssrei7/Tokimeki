@@ -533,6 +533,19 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .list-heading, .debug-tab-buttons { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .list-heading { margin-bottom: 8px; }
 .list-heading .file-button { min-height: 32px; padding: 0 10px; font-size: 12px; }
+.package-help-heading-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.subpage-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.package-help-trigger { display: inline-grid; place-items: center; flex: 0 0 auto; width: 30px; min-height: 30px; padding: 5px; border: 1px solid var(--gray-200); border-radius: 50%; background: var(--gray-0); color: var(--gray-600); }
+.package-help-trigger:hover { background: var(--gray-50); color: var(--gray-800); }
+.package-help-trigger svg { width: 18px; height: 18px; }
+.package-help-dialog { display: grid; gap: 14px; width: min(720px, calc(100vw - 24px)); max-width: 720px; max-height: min(86dvh, 900px); overflow-y: auto; border-color: var(--gray-200); background: var(--gray-0); color: var(--gray-800); }
+.package-help-content { display: grid; gap: 16px; font-size: 14px; line-height: 1.65; }
+.package-help-content section { display: grid; gap: 7px; }
+.package-help-content h3 { margin: 0; font-size: 15px; }
+.package-help-content p, .package-help-content ul, .package-help-content ol { margin: 0; }
+.package-help-content ul, .package-help-content ol { display: grid; gap: 5px; padding-left: 22px; }
+.package-help-content code { padding: 1px 4px; border-radius: 4px; background: var(--gray-100); font-size: 0.92em; }
+.package-help-code { overflow-x: auto; margin: 0; padding: 12px; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--gray-50); color: var(--gray-800); font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; }
 .debug-tab-buttons { justify-content: flex-start; flex-wrap: wrap; margin-bottom: 10px; }
 .debug-tab-buttons button { min-height: 38px; background: var(--gray-50); color: var(--gray-600); }
 .debug-tab-buttons button.selected { background: var(--gray-600); color: var(--gray-0); }
