@@ -5,7 +5,9 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerE
 import { cn } from '@/lib/utils';
 import { desktopIconContrastForLuminance, readWallpaperLuminance, type DesktopIconContrast } from '@/ui/desktop-icon-contrast';
 import { clearDesktopOrder, clearDesktopPages, moveIdBefore, moveIdToPageEnd, readDesktopOrder, readDesktopPages, reconcileDesktopOrder, writeDesktopOrder, writeDesktopPage } from './desktop-order';
-import { readDesktopTitleOverrides } from '@/ui/theme/preferences';
+import { readDesktopIconOverrides, readDesktopTitleOverrides } from '@/ui/theme/preferences';
+import { loadAsset } from '@/data/db/assets';
+import type { AssetRef } from '@/data/schema/save';
 
 export type DesktopEntry = {
   id: string;
@@ -25,6 +27,7 @@ export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperU
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
   const [titleOverrides, setTitleOverrides] = useState(() => typeof window === 'undefined' ? {} : readDesktopTitleOverrides(window.localStorage));
+  const [iconOverrides, setIconOverrides] = useState(() => typeof window === 'undefined' ? {} : readDesktopIconOverrides(window.localStorage));
   const entryIds = useMemo(() => entries.map((entry) => entry.id), [entries]);
   const entryIdsKey = entryIds.join('\u0001');
   const [orderedIds, setOrderedIds] = useState(() => readDesktopOrder(launcherId, entryIds));
@@ -37,7 +40,7 @@ export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperU
   const assignedPage = (id: string, index: number) => pageAssignments[id] ?? Math.floor(index / pageSize);
   const pageCount = Math.max(1, ...orderedEntries.map((entry, index) => assignedPage(entry.id, index) + 1));
   const visibleEntries = orderedEntries.filter((entry, index) => assignedPage(entry.id, index) === page).slice(0, pageSize);
-  const titledEntries = visibleEntries.map((entry) => ({ ...entry, label: titleOverrides[launcherId]?.[entry.id]?.trim() || entry.label }));
+  const titledEntries = visibleEntries.map((entry) => ({ ...entry, label: titleOverrides[launcherId]?.[entry.id]?.trim() || entry.label, iconAsset: iconOverrides[launcherId]?.[entry.id] }));
   const commitOrder = (next: readonly string[], movedId?: string) => {
     const reconciled = reconcileDesktopOrder(next, entryIds);
     setOrderedIds(reconciled);
@@ -149,7 +152,7 @@ export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperU
     });
   }, [launcherId, entryIdsKey]);
   useEffect(() => () => stopLongPress(), []);
-  useEffect(() => { const refresh = () => setTitleOverrides(readDesktopTitleOverrides(window.localStorage)); window.addEventListener('tokimeki:theme-change', refresh); return () => window.removeEventListener('tokimeki:theme-change', refresh); }, []);
+  useEffect(() => { const refresh = () => { setTitleOverrides(readDesktopTitleOverrides(window.localStorage)); setIconOverrides(readDesktopIconOverrides(window.localStorage)); }; window.addEventListener('tokimeki:theme-change', refresh); return () => window.removeEventListener('tokimeki:theme-change', refresh); }, []);
   const style = contrast ? {
     '--desktop-icon-ink': contrast.ink,
     '--desktop-icon-label': contrast.label,
@@ -167,10 +170,12 @@ export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperU
   </section>;
 }
 
-export function DesktopAppIcon({ entry, reorderMode, dragged, focused, onOpen, onPointerDown, onPointerMove, onPointerUp, onKeyDown }: { entry: DesktopEntry; reorderMode: boolean; dragged: boolean; focused: boolean; onOpen: (id: string) => void; onPointerDown: (id: string, event: ReactPointerEvent<HTMLButtonElement>) => void; onPointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => void; onPointerUp: () => void; onKeyDown: (id: string, event: React.KeyboardEvent<HTMLButtonElement>) => void }) {
+export function DesktopAppIcon({ entry, reorderMode, dragged, focused, onOpen, onPointerDown, onPointerMove, onPointerUp, onKeyDown }: { entry: DesktopEntry & { iconAsset?: AssetRef }; reorderMode: boolean; dragged: boolean; focused: boolean; onOpen: (id: string) => void; onPointerDown: (id: string, event: ReactPointerEvent<HTMLButtonElement>) => void; onPointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => void; onPointerUp: () => void; onKeyDown: (id: string, event: React.KeyboardEvent<HTMLButtonElement>) => void }) {
   const Icon = entry.icon;
+  const [src, setSrc] = useState<string>();
+  useEffect(() => { let objectUrl: string | undefined; let cancelled = false; setSrc(undefined); if (!entry.iconAsset) return () => undefined; if (entry.iconAsset.kind === 'url') { setSrc(entry.iconAsset.url); return () => undefined; } void loadAsset(entry.iconAsset.assetId).then((asset) => { if (!cancelled && asset) { objectUrl = URL.createObjectURL(asset.blob); setSrc(objectUrl); } }); return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); }; }, [entry.iconAsset]);
   return <button type="button" data-desktop-entry-id={entry.id} className={cn('desktop-app-icon', reorderMode && 'reorderable', dragged && 'dragged', focused && 'reorder-focused')} draggable={false} onClick={() => onOpen(entry.id)} onPointerDown={(event) => onPointerDown(entry.id, event)} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onKeyDown={(event) => onKeyDown(entry.id, event)} onContextMenu={(event) => { if (reorderMode) event.preventDefault(); }} aria-label={reorderMode ? `排列${entry.label}` : `打开${entry.label}`} aria-grabbed={dragged}>
-    <span className={cn('desktop-app-icon-glyph', `tone-${entry.tone ?? 'gray'}`)} aria-hidden="true"><Icon /></span>
+    <span className={cn('desktop-app-icon-glyph', `tone-${entry.tone ?? 'gray'}`)} aria-hidden="true">{src ? <img src={src} alt="" onError={() => setSrc(undefined)} /> : <Icon />}</span>
     <span className="desktop-app-icon-label">{entry.label}</span>
   </button>;
 }

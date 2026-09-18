@@ -244,6 +244,12 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .desktop-title-editor strong { grid-column: 1 / -1; padding-top: 7px; border-top: 1px solid var(--theme-list-divider); color: var(--gray-700); }
 .desktop-title-editor label { display: contents; color: var(--gray-600); font-size: 12px; }
 .desktop-title-editor input { min-width: 0; padding: 7px 9px; }
+.desktop-icon-editor { display: grid; gap: 8px; }
+.desktop-icon-editor-row { display: grid; grid-template-columns: minmax(80px, auto) minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 8px 0; border-top: 1px solid var(--theme-list-divider); }
+.desktop-icon-editor-row input { min-width: 0; padding: 7px 9px; }
+.desktop-icon-editor-row .file-button, .desktop-icon-editor-row button { min-height: 34px; padding-inline: 9px; font-size: 11px; }
+.desktop-app-icon-glyph img { width: 32px; height: 32px; object-fit: contain; border-radius: inherit; }
+@media (max-width: 560px) { .desktop-icon-editor-row { grid-template-columns: 1fr auto; } .desktop-icon-editor-row .io-scope { grid-column: 1 / -1; } .desktop-icon-editor-row input { grid-column: 1 / -1; } }
 @media (max-width: 560px) { .theme-appearance-grid { grid-template-columns: 1fr; } }
 .provider-card label.checkbox-line { display: flex; align-items: center; gap: 8px; }
 .provider-card label.checkbox-line input { width: auto; flex: 0 0 auto; }

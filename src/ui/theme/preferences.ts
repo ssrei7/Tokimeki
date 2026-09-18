@@ -3,6 +3,7 @@ export const CUSTOM_CSS_STORAGE_KEY = 'tokimeki.custom-css';
 export const THEME_TEMPLATE_STORAGE_KEY = 'tokimeki.theme-template';
 export const THEME_APPEARANCE_STORAGE_KEY = 'tokimeki.theme-appearance';
 export const DESKTOP_TITLE_STORAGE_KEY = 'tokimeki.desktop-titles';
+export const DESKTOP_ICON_STORAGE_KEY = 'tokimeki.desktop-icons';
 export const THEME_MODES = ['system', 'light', 'dark'] as const;
 export const THEME_TEMPLATES = ['default', 'soft', 'compact'] as const;
 export type ThemeMode = typeof THEME_MODES[number];
@@ -33,6 +34,7 @@ export interface ThemeAppearanceConfig {
   mapGap: number;
 }
 export type DesktopTitleOverrides = Record<string, Record<string, string>>;
+export type DesktopIconOverrides = Record<string, Record<string, import('../../data/schema/save').AssetRef>>;
 
 export const DEFAULT_THEME_APPEARANCE: ThemeAppearanceConfig = {
   playerBubbleBg: 'var(--gray-600)', playerBubbleFg: 'var(--gray-0)', characterBubbleBg: 'var(--gray-0)', characterBubbleFg: 'var(--gray-800)',
@@ -98,6 +100,23 @@ export function readDesktopTitleOverrides(storage: Pick<Storage, 'getItem'>): De
 export function writeDesktopTitleOverrides(storage: Pick<Storage, 'setItem' | 'removeItem'>, value: DesktopTitleOverrides): void {
   const parsed = parseDesktopTitleOverrides(value);
   try { if (Object.keys(parsed).length) storage.setItem(DESKTOP_TITLE_STORAGE_KEY, JSON.stringify(parsed)); else storage.removeItem(DESKTOP_TITLE_STORAGE_KEY); } catch { /* local preference unavailable */ }
+}
+export function parseDesktopIconOverrides(value: unknown): DesktopIconOverrides {
+  if (!value || typeof value !== 'object') return {};
+  const result: DesktopIconOverrides = {};
+  for (const [launcherId, entries] of Object.entries(value as Record<string, unknown>)) {
+    if (!entries || typeof entries !== 'object') continue;
+    const valid = Object.fromEntries(Object.entries(entries as Record<string, unknown>).filter(([, item]) => item && typeof item === 'object' && ((item as { kind?: unknown }).kind === 'stored' && typeof (item as { assetId?: unknown }).assetId === 'string' || (item as { kind?: unknown }).kind === 'url' && typeof (item as { url?: unknown }).url === 'string' && /^https?:\/\//i.test((item as { url: string }).url))));
+    if (Object.keys(valid).length) result[launcherId] = valid as DesktopIconOverrides[string];
+  }
+  return result;
+}
+export function readDesktopIconOverrides(storage: Pick<Storage, 'getItem'>): DesktopIconOverrides {
+  try { const raw = storage.getItem(DESKTOP_ICON_STORAGE_KEY); return raw ? parseDesktopIconOverrides(JSON.parse(raw)) : {}; } catch { return {}; }
+}
+export function writeDesktopIconOverrides(storage: Pick<Storage, 'setItem' | 'removeItem'>, value: DesktopIconOverrides): void {
+  const parsed = parseDesktopIconOverrides(value);
+  try { if (Object.keys(parsed).length) storage.setItem(DESKTOP_ICON_STORAGE_KEY, JSON.stringify(parsed)); else storage.removeItem(DESKTOP_ICON_STORAGE_KEY); } catch { /* local preference unavailable */ }
 }
 export function readCustomCss(storage: Pick<Storage, 'getItem'>): string {
   try { return storage.getItem(CUSTOM_CSS_STORAGE_KEY) ?? ''; } catch { return ''; }
