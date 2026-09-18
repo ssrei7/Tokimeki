@@ -13,6 +13,8 @@ describe('built-in package authoring help', () => {
   it('renders question-mark triggers with explicit accessible labels', () => {
     expect(renderToStaticMarkup(createElement(PackageHelpButton, { kind: 'world' }))).toContain('aria-label="查看世界包制作教程"');
     expect(renderToStaticMarkup(createElement(PackageHelpButton, { kind: 'event' }))).toContain('aria-label="查看事件包制作教程"');
+    expect(renderToStaticMarkup(createElement(PackageHelpButton, { kind: 'world' }))).toContain('aria-label="下载世界包模板"');
+    expect(renderToStaticMarkup(createElement(PackageHelpButton, { kind: 'event' }))).toContain('aria-label="下载事件包模板"');
   });
 
   it('places world and event help at their import/export pages', () => {
@@ -30,6 +32,8 @@ describe('built-in package authoring help', () => {
     expect(helpSource).toContain('触发难度由什么决定');
     expect(helpSource).toContain('总是触发不了怎么办');
     expect(helpSource).toContain('完整可视化事件编辑器尚未提供');
+    expect(helpSource).toContain('下载世界包模板');
+    expect(helpSource).toContain('下载事件包模板');
     expect(helpSource).toContain('weight');
     expect(helpSource).toContain('charIds');
   });

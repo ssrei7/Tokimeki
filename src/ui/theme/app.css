@@ -542,6 +542,11 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .package-help-trigger { display: inline-grid; place-items: center; flex: 0 0 auto; width: 30px; min-height: 30px; padding: 5px; border: 1px solid var(--gray-200); border-radius: 50%; background: var(--gray-0); color: var(--gray-600); }
 .package-help-trigger:hover { background: var(--gray-50); color: var(--gray-800); }
 .package-help-trigger svg { width: 18px; height: 18px; }
+.package-template-trigger, .package-template-download { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.package-template-trigger { min-height: 30px; padding: 5px 9px; border: 1px solid var(--gray-200); background: var(--gray-0); color: var(--gray-600); font-size: 12px; }
+.package-template-trigger:hover { background: var(--gray-50); color: var(--gray-800); }
+.package-template-trigger svg, .package-template-download svg { width: 16px; height: 16px; }
+.package-template-download { justify-self: start; }
 .package-help-dialog { display: grid; gap: 14px; width: min(720px, calc(100vw - 24px)); max-width: 720px; max-height: min(86dvh, 900px); overflow-y: auto; border-color: var(--gray-200); background: var(--gray-0); color: var(--gray-800); }
 .package-help-content { display: grid; gap: 16px; font-size: 14px; line-height: 1.65; }
 .package-help-content section { display: grid; gap: 7px; }
