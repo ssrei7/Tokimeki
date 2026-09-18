@@ -615,3 +615,8 @@
 **决定**：不实现 Service Worker 单次生成请求代理、流式片段后台写入或 Background Sync 自动重放。Service Worker 跨域请求仍受 CORS 限制，移动系统可随时终止 Worker；自动重放还可能导致重复计费、重复文本和竞态。为恢复请求而保存 endpoint、鉴权 headers、API key 与完整 prompt 也会扩大敏感数据暴露面。
 
 **恢复边界**：继续采用前台直接请求、请求前保存 recovery、流式正文落盘、页面隐藏时标记中断、回到前台后由用户显式重试，以及 requestId / `opsApplied` 防重复应用。Service Worker 后续只可分别用于版本化静态壳或通知展示，不得读取 Provider 配置、持有 API key、发起生成或自动重试。SaveFile 保持 v41。
+
+## D114 移动端通知只做显式启用的本地完成提醒
+**决定**：数据与隐私页提供完成通知开关和测试按钮。只有用户点击启用时才请求权限并注册最小通知 Worker；面对面回复或终端回复完成且页面处于后台时，尽力显示固定通用文案。页面前台不通知，通知不包含角色名、台词、prompt、世界名或 API 信息。
+
+**平台与网络边界**：Worker 只处理通知点击，不注册 fetch、push、sync 或 periodic sync，不访问 IndexedDB，不持有 Provider 配置或 API key。系统冻结页面时完成回调可能不执行，因此不承诺产生通知；没有远程推送、定时唤醒、夜间来信后台提醒或自动生成。启用、测试和显示均不调用 Provider，设置保存在本机 localStorage，SaveFile 保持 v41。

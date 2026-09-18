@@ -65,6 +65,7 @@ import { buildNpcExpansionPrompt, buildPromoteNpcOp, characterCardFromPromotedCh
 import { formatStorageBytes, readStorageEstimate, requestPersistentStorage, storageUsagePercent, type StorageEstimate } from './ui/storage';
 import { notificationCapabilityLabel, readMobileCapabilities, serviceWorkerCapabilityLabel } from './ui/mobile-capabilities';
 import { PROVIDER_PROXY_ASSESSMENT, providerProxyAssessmentLabel } from './ui/service-worker-assessment';
+import { readLocalNotificationSettings, requestLocalNotificationPermission, showGenerationCompleteNotification, writeLocalNotificationSettings, type LocalNotificationSettings } from './ui/local-notifications';
 import { PLAYER_ACCENT_COLOR, resolveCharacterAccentColors, resolveSpeakerAccentColor } from './ui/character-color';
 import { Calendar, ChatCircle, DeviceMobile, GearSix, MapTrifold, type Icon as PhosphorIcon } from '@phosphor-icons/react';
 import { StorySceneReader } from './ui/story-scene';
@@ -1067,6 +1068,7 @@ export function App() {
         log: () => undefined,
       }, 1);
       commitSave(next);
+      void showGenerationCompleteNotification();
       if (reply.opsFailed) setFeedback({ tone: 'info', text: '回复已保存，但附带的转账提议格式无效，未创建待收款。' });
       else if (applied && (applied.rejected.length || applied.warnings.length || applied.truncated)) setFeedback({ tone: 'info', text: '回复已保存，但不符合白名单的终端操作已被拒绝。' });
       else if (applied?.applied) setFeedback({ tone: 'success', text: '回复已保存，并收到一项待确认转账。' });
@@ -2562,6 +2564,7 @@ export function App() {
         ? { ...reply, ops: reply.ops.filter((op) => !itemGainOps.includes(op)), warnings: [...reply.warnings, ...(itemGainOps.length ? ['出示收藏的回应中检测到 give_item，已忽略以避免把出示误记为再次获得物品。'] : [])] }
         : reply;
       if (applyReplyOps(safeReply, generationCharacterId, giftContext?.giftId, completed.length - 1, requestId)) updateChatRecovery(null);
+      void showGenerationCompleteNotification();
     } catch (error) {
       const message = errorMessage(error, '请求失败');
       const finished = splitter.finish();
@@ -4821,6 +4824,39 @@ function ImageSettingsView(props: { config: ImageConfig; providers: ProviderConf
   </section></div>;
 }
 
+function LocalNotificationSettingsPanel() {
+  const [settings, setSettings] = useState<LocalNotificationSettings>(() => readLocalNotificationSettings());
+  const [permission, setPermission] = useState(() => readMobileCapabilities().notificationPermission);
+  const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+  const enable = async () => {
+    setBusy(true); setStatus('');
+    try {
+      const nextPermission = await requestLocalNotificationPermission();
+      setPermission(nextPermission);
+      if (nextPermission !== 'granted') {
+        setStatus(nextPermission === 'denied' ? '通知权限已被拒绝；如需启用，请在浏览器或系统设置中修改权限。' : '当前环境不支持本地通知，或不是 HTTPS 安全上下文。');
+        return;
+      }
+      const next = { ...settings, enabled: true };
+      writeLocalNotificationSettings(next); setSettings(next); setStatus('完成通知已启用。只有回复在页面后台完成时才会提醒。');
+    } catch {
+      setStatus('通知启用失败；请检查浏览器权限、HTTPS 和 PWA 安装状态。');
+    } finally { setBusy(false); }
+  };
+  const disable = () => {
+    const next = { ...settings, enabled: false };
+    writeLocalNotificationSettings(next); setSettings(next); setStatus('完成通知已关闭。');
+  };
+  const test = async () => {
+    setBusy(true); setStatus('');
+    const result = await showGenerationCompleteNotification({ settings, force: true });
+    setStatus(result === 'shown' ? '测试通知已发送。' : result === 'not-granted' ? '浏览器尚未授予通知权限。' : result === 'unsupported' ? '当前环境不支持本地通知。' : '测试通知发送失败。');
+    setBusy(false);
+  };
+  return <><h3>本地完成通知</h3><p className="io-scope">仅在你显式生成的面对面回复或终端回复于页面后台完成时提醒。通知只显示通用文案，不包含角色名、台词、prompt 或 API 信息；不会远程推送、定时唤醒或后台生成。</p><div className="stat-list"><span>开关：{settings.enabled ? '已启用' : '已关闭'}</span><span>权限：{permission === 'granted' ? '已授权' : permission === 'denied' ? '已拒绝' : permission === 'default' ? '尚未请求' : '不支持'}</span></div><div className="button-row"><button type="button" className="secondary" disabled={busy || settings.enabled} onClick={() => void enable()}>{busy ? '处理中…' : '启用完成通知'}</button><button type="button" className="secondary" disabled={busy || !settings.enabled} onClick={() => void test()}>发送测试通知</button><button type="button" className="secondary" disabled={busy || !settings.enabled} onClick={disable}>关闭通知</button></div>{status && <p className="io-scope" role="status">{status}</p>}</>;
+}
+
 function SettingsView(props: {
   appName: string;
   desktopIcons: DesktopIconOverrides;
@@ -5129,6 +5165,7 @@ function SettingsView(props: {
       <h3>Provider 后台代理评估</h3>
       <p className="io-scope">{providerProxyAssessmentLabel(mobileCapabilities.serviceWorkerApi)}。Service Worker 仍受 CORS 和系统生命周期限制；Tokimeki 不会把 API key 或完整 prompt 复制进后台任务，也不会自动重放可能产生重复计费和重复 ops 的生成请求。</p>
       <details><summary>查看不启用原因</summary><ul>{PROVIDER_PROXY_ASSESSMENT.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></details>
+      <LocalNotificationSettingsPanel />
       <h3>图片资产</h3>
       <div className="stat-list"><span>{props.imageAssetStats.count} 个图片</span><span>{formatByteSize(props.imageAssetStats.totalBytes)}</span><span>{props.imageAssetStats.referenceCount} 处角色视觉 / 锁脸引用</span></div>
       <p className="io-scope">安全清理只删除完整引用扫描确认无人使用的图片，并移除已缺失的锁脸引用。头像、立绘、地图、贴图、快照和锁脸仍在使用的图片不会删除。</p>

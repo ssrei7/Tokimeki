@@ -583,6 +583,7 @@
 - `navigator.storage.persist()`
 - 评估 Android / iOS 安装形态的系统通知与受限后台任务；仅在移动端壳和系统权限允许时实现，不把 Service Worker 宣称为通用后台保活
 - Android / iOS 浏览器与 PWA 能力诊断已完成首切片：设置页可纯本地查看平台、运行形态、通知权限、Service Worker 控制、Media Session、存储和后台相关 API；能力矩阵与真机检查表见 `docs/08-mobile-platform-capabilities.md`。API 可见不视为后台可靠。
+- 本地完成通知已接入：仅由用户显式申请权限，面对面或终端回复在页面后台完成时显示不含敏感正文的通用提醒；最小 Worker 只处理通知点击，不代理请求、不接收 push、不执行同步或缓存。系统冻结页面时不承诺通知。
 - 评估 Service Worker 请求代理：后台期间代持单次 Provider 请求并把片段写入 IndexedDB，恢复前台后回放；若平台会终止任务则保留阶段 9 的中断恢复语义
 - Service Worker Provider 请求代理评估已完成，结论为不接入：无法绕过 CORS、无法保证后台生命周期，并会扩大密钥/prompt 暴露面及重复计费/ops 风险。继续使用阶段 9 的落盘、中断识别和显式重试；Service Worker 未来仅可分别评估离线静态壳与通知展示。
 - 音乐 App 平台补强：Media Session 控制与元数据、可选本地音频资产导入和离线缓存（先评估存储配额），Android / iOS 浏览器、PWA 与移动端壳真机验证
