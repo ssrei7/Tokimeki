@@ -579,6 +579,7 @@
 - 图像切片 4 已实现图像设置与锁脸配置的全局备份/旧备份迁移、非敏感设置迁移、图片资产统计与保守清理
 - 语音资产管理：在语音 API 接入稳定后，为已生成语音提供本地缓存复用、长按重新生成、单条导出下载和数据管理清除；重新生成失败时保留原音频
 - Tauri 桌面版（顺带解决 CORS 与存储配额）
+- Tauri 桌面骨架已接入：复用 Vite 静态产物，锁定 Tauri CLI/Rust 主依赖，使用现有 PWA 图标，并以最小 `core:default` 权限启动；当前开发机缺少 Rust/Cargo，原生安装包与 Cargo 锁文件仍待具备工具链后验证。普通 WebView `fetch` 不视为已解决 CORS，受权限约束的原生 HTTP 传输另开切片。
 - `navigator.storage.persist()`
 - 评估 Android / iOS 安装形态的系统通知与受限后台任务；仅在移动端壳和系统权限允许时实现，不把 Service Worker 宣称为通用后台保活
 - 评估 Service Worker 请求代理：后台期间代持单次 Provider 请求并把片段写入 IndexedDB，恢复前台后回放；若平台会终止任务则保留阶段 9 的中断恢复语义

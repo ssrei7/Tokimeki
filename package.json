@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
@@ -30,6 +33,7 @@
     "zod": "latest"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
     "@types/node": "^22.20.2",
     "@types/react": "latest",
     "@types/react-dom": "latest",
