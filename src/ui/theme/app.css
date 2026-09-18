@@ -83,6 +83,7 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .subpage-content[data-page='memories'] > *,
 .subpage-content[data-page='collection'] > *,
 .subpage-content[data-page='story'] > *,
+.subpage-content[data-page='event-packages'] > *,
 .subpage-content[data-page='characters'] > *,
 .subpage-content[data-page='worldbook'] > *,
 .subpage-content[data-page='presets'] > *,
@@ -93,16 +94,19 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .surface-card { border: 1px solid var(--gray-100); border-radius: var(--surface-radius); padding: 16px; background: var(--gray-0); box-shadow: var(--surface-shadow); }
 .empty-state { padding: 28px 12px; color: var(--gray-400); text-align: center; }
 .library-subpage-content .library-legacy-content > * { display: none; }
-.library-subpage-content[data-page='characters'] .library-legacy-content > :nth-child(-n+4) { display: block; }
+.subpage-content[data-page='event-packages'] .library-legacy-content > * { display: block; }
+.library-subpage-content[data-page='characters'] .library-legacy-content > :nth-child(-n+4),
+.library-subpage-content[data-page='characters'] .library-legacy-content > :nth-child(7) { display: block; }
 .library-subpage-content[data-page='worldbook'] .library-legacy-content > :nth-child(1),
 .library-subpage-content[data-page='worldbook'] .library-legacy-content > :nth-child(2),
-.library-subpage-content[data-page='worldbook'] .library-legacy-content > :nth-child(5),
+.library-subpage-content[data-page='worldbook'] .library-legacy-content > :nth-child(8),
 .library-subpage-content[data-page='presets'] .library-legacy-content > :nth-child(1),
-.library-subpage-content[data-page='presets'] .library-legacy-content > :nth-child(6),
+.library-subpage-content[data-page='presets'] .library-legacy-content > :nth-child(9),
 .library-subpage-content[data-page='inventory'] .library-legacy-content > :nth-child(1),
-.library-subpage-content[data-page='inventory'] .library-legacy-content > :nth-child(7),
+.library-subpage-content[data-page='inventory'] .library-legacy-content > :nth-child(10),
 .library-subpage-content[data-page='save'] .library-legacy-content > :nth-child(1),
-.library-subpage-content[data-page='save'] .library-legacy-content > :nth-child(8) { display: block; }
+.library-subpage-content[data-page='save'] .library-legacy-content > :nth-child(5),
+.library-subpage-content[data-page='save'] .library-legacy-content > :nth-child(11) { display: block; }
 @media (min-width: 700px) { :root { --desktop-grid-row-gap: 24px; --desktop-grid-column-gap: 14px; } .desktop-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
 @media (max-width: 399px) { :root { --desktop-icon-size: 50px; --desktop-grid-row-gap: 18px; --desktop-grid-column-gap: 6px; } .desktop-app-icon-label { font-size: 11px; } }
 .map-screen { position: relative; min-height: calc(100dvh - 150px); display: flex; flex-direction: column; gap: 14px; }

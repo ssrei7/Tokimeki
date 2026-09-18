@@ -7,6 +7,7 @@ import { PackageHelpButton } from '../src/components/package-help-dialog';
 const helpSource = readFileSync(new URL('../src/components/package-help-dialog.tsx', import.meta.url), 'utf8');
 const shellSource = readFileSync(new URL('../src/components/desktop-shell.tsx', import.meta.url), 'utf8');
 const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+const appCssSource = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
 
 describe('built-in package authoring help', () => {
   it('renders question-mark triggers with explicit accessible labels', () => {
@@ -15,10 +16,12 @@ describe('built-in package authoring help', () => {
   });
 
   it('places world and event help at their import/export pages', () => {
-    expect(shellSource).toContain("pageId === 'characters'");
+    expect(shellSource).toContain("pageId === 'save'");
     expect(shellSource).toContain('<PackageHelpPortal kind="world" targetSelector=".world-package-card > .list-heading" />');
-    expect(shellSource).toContain('<PackageHelpPortal kind="event" targetSelector=".event-package-card > .list-heading" />');
     expect(appSource).toContain('<PackageHelpButton kind="event" />');
+    expect(appCssSource).toContain(".subpage-content[data-page='event-packages'] > *");
+    expect(appCssSource).toContain(".subpage-content[data-page='event-packages'] .library-legacy-content > *");
+    expect(appCssSource).toContain(".library-subpage-content[data-page='save'] .library-legacy-content > :nth-child(5)");
   });
 
   it('documents package boundaries, event difficulty and recovery steps', () => {

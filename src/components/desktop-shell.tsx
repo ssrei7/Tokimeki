@@ -182,7 +182,7 @@ export function DesktopAppIcon({ entry, reorderMode, dragged, focused, onOpen, o
 }
 
 export function SubpageShell({ title, eyebrow = '设置', pageId, onBack, children }: { title: string; eyebrow?: string; pageId?: string; onBack: () => void; children: ReactNode }) {
-  const packageHelp = pageId === 'characters' ? <><PackageHelpPortal kind="world" targetSelector=".world-package-card > .list-heading" /><PackageHelpPortal kind="event" targetSelector=".event-package-card > .list-heading" /></> : undefined;
+  const packageHelp = pageId === 'save' ? <PackageHelpPortal kind="world" targetSelector=".world-package-card > .list-heading" /> : undefined;
   return <section className="subpage-shell">
     <PageHeader eyebrow={eyebrow} title={title} action={<div className="subpage-header-actions">{packageHelp}<button type="button" className="subpage-back" onClick={onBack}><ChevronLeft aria-hidden="true" />返回桌面</button></div>} />
     <div className="subpage-content" data-page={pageId}>{children}</div>
