@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MusicStateSchema, MusicTrackSchema } from '../src/data/content';
-import { addMusicTrack, createMusicState, moveMusicTrack, nextMusicTrack, normalizeMusicState, removeMusicTrack, setMusicMode, setMusicVolume, updateMusicTrack } from '../src/features/music/model';
+import { addMusicTrack, attachMusicOfflineAsset, createMusicState, detachMusicOfflineAsset, moveMusicTrack, nextMusicTrack, normalizeMusicState, removeMusicTrack, setMusicMode, setMusicVolume, updateMusicTrack } from '../src/features/music/model';
 
 const updatedAt = '2026-01-01T00:00:00.000Z';
 
@@ -52,6 +52,21 @@ describe('music model', () => {
     expect(edited.ok).toBe(true);
     expect(edited.state.tracks[0]).toMatchObject({ title: 'Renamed', artist: 'Artist', asset: { kind: 'stored', assetId: 'music-1' } });
     expect(MusicTrackSchema.safeParse({ id: 'cached', title: 'Cached', url: 'https://example.com/a.mp3', asset: { kind: 'stored', assetId: 'music-2' }, updatedAt }).success).toBe(true);
+  });
+
+  it('attaches and detaches offline assets only for URL tracks', () => {
+    const state = stateWithTracks();
+    const attached = attachMusicOfflineAsset(state, 'a', { kind: 'stored', assetId: 'cache-a' }, updatedAt);
+    expect(attached.ok).toBe(true);
+    expect(attached.state.tracks[0]).toMatchObject({ url: 'https://example.com/a.mp3', asset: { kind: 'stored', assetId: 'cache-a' } });
+    const detached = detachMusicOfflineAsset(attached.state, 'a', updatedAt);
+    expect(detached.ok).toBe(true);
+    expect(detached.state.tracks[0].url).toBe('https://example.com/a.mp3');
+    expect(detached.state.tracks[0].asset).toBeUndefined();
+
+    const local = addMusicTrack(createMusicState(updatedAt), { id: 'local', title: 'Local', asset: { kind: 'stored', assetId: 'local-a' } }, updatedAt).state;
+    expect(detachMusicOfflineAsset(local, 'local', updatedAt).ok).toBe(false);
+    expect(attachMusicOfflineAsset(local, 'local', { kind: 'stored', assetId: 'duplicate' }, updatedAt).ok).toBe(false);
   });
 
   it('advances sequence mode to the next track', () => {

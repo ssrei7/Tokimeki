@@ -66,6 +66,22 @@ export function updateMusicTrack(state: MusicState, trackId: string, input: Musi
   return { ok: true, state: withTimestamp({ ...state, tracks, lastError: undefined }, updatedAt), };
 }
 
+export function attachMusicOfflineAsset(state: MusicState, trackId: string, asset: Extract<AssetRef, { kind: 'stored' }>, updatedAt: string): MusicMutationResult {
+  const track = state.tracks.find((item) => item.id === trackId);
+  if (!track) return { ok: false, state, warning: '曲目不存在。' };
+  if (!track.url) return { ok: false, state, warning: '本地导入曲目不需要重复缓存。' };
+  if (track.asset) return { ok: false, state, warning: '该曲目已经有离线缓存。' };
+  return updateMusicTrack(state, trackId, { title: track.title, artist: track.artist, asset }, updatedAt);
+}
+
+export function detachMusicOfflineAsset(state: MusicState, trackId: string, updatedAt: string): MusicMutationResult {
+  const track = state.tracks.find((item) => item.id === trackId);
+  if (!track) return { ok: false, state, warning: '曲目不存在。' };
+  if (!track.url) return { ok: false, state, warning: '本地导入曲目不能只删除音频资产。' };
+  if (!track.asset) return { ok: false, state, warning: '该曲目没有离线缓存。' };
+  return updateMusicTrack(state, trackId, { title: track.title, artist: track.artist, asset: null }, updatedAt);
+}
+
 export function removeMusicTrack(state: MusicState, trackId: string, updatedAt: string): MusicMutationResult {
   const index = state.tracks.findIndex((track) => track.id === trackId);
   if (index < 0) return { ok: false, state, warning: '曲目不存在。' };

@@ -3,7 +3,9 @@ import { loadMusicState, saveMusicState } from '../../data/db/content';
 import { deleteAsset, loadAsset, saveAsset } from '../../data/db/assets';
 import {
   addMusicTrack,
+  attachMusicOfflineAsset,
   createMusicState,
+  detachMusicOfflineAsset,
   moveMusicTrack,
   nextMusicTrack,
   normalizeMusicState,
@@ -20,6 +22,7 @@ import {
 import type { MusicPlaybackMode, MusicState, MusicTrack } from '../../data/content';
 import { browserMediaSession, installMediaSessionHandlers, updateMediaSessionMetadata, updateMediaSessionPlaybackState, updateMediaSessionPosition } from './media-session';
 import { isMusicAssetReferenced, resolveLocalMusicFile } from './local-assets';
+import { downloadMusicAsset } from './offline-cache';
 
 export type MusicPlayerController = {
   audioRef: RefObject<HTMLAudioElement | null>;
@@ -29,8 +32,12 @@ export type MusicPlayerController = {
   isPlaying: boolean;
   currentTime: number;
   duration: number;
+  cacheBusyTrackId?: string;
   addTrack: (input: MusicTrackInput) => { ok: boolean; warning?: string };
   addLocalTrack: (file?: File, metadata?: { title?: string; artist?: string }) => Promise<{ ok: boolean; warning?: string }>;
+  cacheTrackOffline: (trackId: string) => Promise<{ ok: boolean; warning?: string }>;
+  removeTrackOfflineCache: (trackId: string) => Promise<{ ok: boolean; warning?: string }>;
+  clearOfflineCaches: () => Promise<{ ok: boolean; count: number; warning?: string }>;
   updateTrack: (trackId: string, input: MusicTrackInput) => { ok: boolean; warning?: string };
   removeTrack: (trackId: string) => Promise<void>;
   moveTrack: (trackId: string, direction: -1 | 1) => void;
@@ -54,8 +61,10 @@ export function useMusicPlayer(): MusicPlayerController {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [cacheBusyTrackId, setCacheBusyTrackId] = useState<string | undefined>(undefined);
   const stateRef = useRef(state);
   const playingRef = useRef(false);
+  const cacheBusyRef = useRef(false);
   const pendingAutoplayTrackIdRef = useRef<string | undefined>(undefined);
   const pendingPositionRef = useRef(0);
   const lastPositionSaveRef = useRef(0);
@@ -175,10 +184,19 @@ export function useMusicPlayer(): MusicPlayerController {
     if (track.asset?.kind === 'stored') {
       void loadAsset(track.asset.assetId).then((asset) => {
         if (cancelled) return;
+        if (!asset?.blob.size && track.url) {
+          commit(setMusicError(stateRef.current, '离线缓存缺失，已回退外链播放。', stamp()));
+          applySource(track.url);
+          return;
+        }
         if (!asset?.blob.size) { commit(setMusicError(stateRef.current, '本地音频资产缺失，请重新导入或移除该曲目。', stamp())); return; }
         objectUrl = URL.createObjectURL(asset.blob);
         applySource(objectUrl);
-      }).catch(() => { if (!cancelled) commit(setMusicError(stateRef.current, '本地音频读取失败。', stamp())); });
+      }).catch(() => {
+        if (cancelled) return;
+        if (track.url) { commit(setMusicError(stateRef.current, '离线缓存读取失败，已回退外链播放。', stamp())); applySource(track.url); }
+        else commit(setMusicError(stateRef.current, '本地音频读取失败。', stamp()));
+      });
     } else if (track.url) applySource(track.url);
     return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [commit, isReady, state.currentTrackId, currentTrack?.url, currentTrack?.asset?.assetId]);
@@ -196,7 +214,7 @@ export function useMusicPlayer(): MusicPlayerController {
   const select = useCallback((trackId: string, resume = false) => {
     const selected = selectMusicTrack(stateRef.current, trackId, stamp());
     if (!selected.ok) return;
-    if (resume) pendingAutoplayTrackIdRef.current = trackId;
+    pendingAutoplayTrackIdRef.current = resume ? trackId : undefined;
     commit(selected.state);
   }, [commit]);
 
@@ -280,9 +298,71 @@ export function useMusicPlayer(): MusicPlayerController {
     }
   }, [commit]);
   const updateTrack = useCallback((trackId: string, input: MusicTrackInput) => {
+    const previous = stateRef.current.tracks.find((track) => track.id === trackId);
+    const previousAssetId = previous?.asset?.assetId;
     const result = updateMusicTrack(stateRef.current, trackId, input, stamp());
-    if (result.ok) commit(result.state);
+    if (result.ok) {
+      const updated = result.state.tracks.find((track) => track.id === trackId);
+      const sourceChanged = previous?.url !== updated?.url || previousAssetId !== updated?.asset?.assetId;
+      if (sourceChanged && playingRef.current && stateRef.current.currentTrackId === trackId) pendingAutoplayTrackIdRef.current = trackId;
+      commit(result.state);
+      if (previousAssetId && !isMusicAssetReferenced(result.state.tracks, previousAssetId)) void loadAsset(previousAssetId).then((asset) => asset?.category === 'music' ? deleteAsset(previousAssetId) : undefined).catch(() => undefined);
+    }
     return { ok: result.ok, warning: result.warning };
+  }, [commit]);
+  const cacheTrackOffline = useCallback(async (trackId: string) => {
+    if (cacheBusyRef.current) return { ok: false, warning: '已有曲目正在缓存，请稍候。' };
+    const track = stateRef.current.tracks.find((item) => item.id === trackId);
+    if (!track?.url) return { ok: false, warning: track ? '本地导入曲目不需要重复缓存。' : '曲目不存在。' };
+    if (track.asset) return { ok: false, warning: '该曲目已经有离线缓存。' };
+    cacheBusyRef.current = true; setCacheBusyTrackId(trackId);
+    const assetId = `music-cache-${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`;
+    try {
+      const downloaded = await downloadMusicAsset(track.url);
+      await saveAsset({ id: assetId, blob: downloaded.blob, mimeType: downloaded.mimeType, category: 'music', createdAt: stamp() });
+      const attached = attachMusicOfflineAsset(stateRef.current, trackId, { kind: 'stored', assetId }, stamp());
+      if (!attached.ok) { await deleteAsset(assetId); return { ok: false, warning: attached.warning }; }
+      if (playingRef.current && stateRef.current.currentTrackId === trackId) pendingAutoplayTrackIdRef.current = trackId;
+      commit(attached.state);
+      return { ok: true };
+    } catch (error) {
+      await deleteAsset(assetId).catch(() => undefined);
+      return { ok: false, warning: error instanceof Error ? error.message : '离线缓存下载失败。' };
+    } finally { cacheBusyRef.current = false; setCacheBusyTrackId(undefined); }
+  }, [commit]);
+  const removeTrackOfflineCache = useCallback(async (trackId: string) => {
+    if (cacheBusyRef.current) return { ok: false, warning: '已有曲目正在缓存，请稍候。' };
+    const track = stateRef.current.tracks.find((item) => item.id === trackId);
+    const assetId = track?.asset?.assetId;
+    const detached = detachMusicOfflineAsset(stateRef.current, trackId, stamp());
+    if (!detached.ok || !assetId) return { ok: false, warning: detached.warning };
+    if (playingRef.current && stateRef.current.currentTrackId === trackId) pendingAutoplayTrackIdRef.current = trackId;
+    commit(detached.state);
+    if (!isMusicAssetReferenced(detached.state.tracks, assetId)) {
+      const asset = await loadAsset(assetId);
+      if (asset?.category === 'music') await deleteAsset(assetId);
+    }
+    return { ok: true };
+  }, [commit]);
+  const clearOfflineCaches = useCallback(async () => {
+    if (cacheBusyRef.current) return { ok: false, count: 0, warning: '已有曲目正在缓存，请稍候。' };
+    const cached = stateRef.current.tracks.filter((track) => track.url && track.asset);
+    if (!cached.length) return { ok: true, count: 0 };
+    const assetIds = new Set(cached.flatMap((track) => track.asset ? [track.asset.assetId] : []));
+    const stampValue = stamp();
+    let next = stateRef.current;
+    for (const track of cached) {
+      const detached = detachMusicOfflineAsset(next, track.id, stampValue);
+      if (!detached.ok) return { ok: false, count: 0, warning: detached.warning };
+      next = detached.state;
+    }
+    if (playingRef.current && cached.some((track) => track.id === stateRef.current.currentTrackId)) pendingAutoplayTrackIdRef.current = stateRef.current.currentTrackId;
+    commit(next);
+    for (const assetId of assetIds) if (!isMusicAssetReferenced(next.tracks, assetId)) {
+      const asset = await loadAsset(assetId);
+      if (asset?.category === 'music') await deleteAsset(assetId);
+    }
+    return { ok: true, count: cached.length };
   }, [commit]);
   const removeTrack = useCallback(async (trackId: string) => {
     const removed = stateRef.current.tracks.find((track) => track.id === trackId);
@@ -298,7 +378,7 @@ export function useMusicPlayer(): MusicPlayerController {
     if (result.ok) commit(result.state);
   }, [commit]);
 
-  return { audioRef, state, currentTrack, isReady, isPlaying, currentTime, duration, addTrack, addLocalTrack, updateTrack, removeTrack, moveTrack, selectTrack: (trackId) => select(trackId, false), playTrack, play, pause, next, previous, seek, setVolume, setMode };
+  return { audioRef, state, currentTrack, isReady, isPlaying, currentTime, duration, cacheBusyTrackId, addTrack, addLocalTrack, cacheTrackOffline, removeTrackOfflineCache, clearOfflineCaches, updateTrack, removeTrack, moveTrack, selectTrack: (trackId) => select(trackId, false), playTrack, play, pause, next, previous, seek, setVolume, setMode };
 }
 
 export function musicModeLabel(mode: MusicPlaybackMode): string {

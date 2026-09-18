@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import type { MusicTrack } from '../content';
 
 export interface StoredAsset {
   id: string;
@@ -18,6 +19,15 @@ export interface VoiceCacheStats {
   count: number;
   totalBytes: number;
   referenceCount: number;
+}
+
+export interface MusicAssetStats {
+  count: number;
+  totalBytes: number;
+  referenceCount: number;
+  importedCount: number;
+  offlineCacheCount: number;
+  orphanedCount: number;
 }
 
 export class AssetDatabase extends Dexie {
@@ -60,12 +70,32 @@ export async function listVoiceAssets(): Promise<StoredAsset[]> {
   return assetDb.assets.where('category').equals('voice').toArray();
 }
 
+export async function listMusicAssets(): Promise<StoredAsset[]> {
+  return assetDb.assets.where('category').equals('music').toArray();
+}
+
 export async function listAssets(): Promise<StoredAsset[]> {
   return assetDb.assets.toArray();
 }
 
 export function summarizeVoiceCache(assets: StoredAsset[], referenceCounts: ReadonlyMap<string, number>): VoiceCacheStats {
   return assets.reduce<VoiceCacheStats>((stats, asset) => ({ count: stats.count + 1, totalBytes: stats.totalBytes + asset.blob.size, referenceCount: stats.referenceCount + (referenceCounts.get(asset.id) ?? 0) }), { count: 0, totalBytes: 0, referenceCount: 0 });
+}
+
+export function summarizeMusicAssets(assets: readonly StoredAsset[], tracks: readonly MusicTrack[]): MusicAssetStats {
+  const musicAssets = assets.filter((asset) => asset.category === 'music');
+  const references = tracks.flatMap((track) => track.asset?.kind === 'stored' ? [{ assetId: track.asset.assetId, cached: Boolean(track.url) }] : []);
+  const referencedIds = new Set(references.map((reference) => reference.assetId));
+  const importedIds = new Set(references.filter((reference) => !reference.cached).map((reference) => reference.assetId));
+  const cachedIds = new Set(references.filter((reference) => reference.cached).map((reference) => reference.assetId));
+  return {
+    count: musicAssets.length,
+    totalBytes: musicAssets.reduce((total, asset) => total + asset.blob.size, 0),
+    referenceCount: references.length,
+    importedCount: importedIds.size,
+    offlineCacheCount: cachedIds.size,
+    orphanedCount: musicAssets.filter((asset) => !referencedIds.has(asset.id)).length,
+  };
 }
 
 export async function unmarkVoiceAsset(id: string): Promise<void> {
