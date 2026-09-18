@@ -1,12 +1,25 @@
 export const THEME_STORAGE_KEY = 'tokimeki.theme-mode';
 export const CUSTOM_CSS_STORAGE_KEY = 'tokimeki.custom-css';
+export const THEME_TEMPLATE_STORAGE_KEY = 'tokimeki.theme-template';
 export const THEME_MODES = ['system', 'light', 'dark'] as const;
+export const THEME_TEMPLATES = ['default', 'soft', 'compact'] as const;
 export type ThemeMode = typeof THEME_MODES[number];
+export type ThemeTemplate = typeof THEME_TEMPLATES[number];
 export type ResolvedTheme = Exclude<ThemeMode, 'system'>;
 
 export function parseThemeMode(value: unknown): ThemeMode {
   return typeof value === 'string' && (THEME_MODES as readonly string[]).includes(value) ? value as ThemeMode : 'system';
 }
+export function parseThemeTemplate(value: unknown): ThemeTemplate {
+  return typeof value === 'string' && (THEME_TEMPLATES as readonly string[]).includes(value) ? value as ThemeTemplate : 'default';
+}
+export function readThemeTemplate(storage: Pick<Storage, 'getItem'>): ThemeTemplate {
+  try { return parseThemeTemplate(storage.getItem(THEME_TEMPLATE_STORAGE_KEY)); } catch { return 'default'; }
+}
+export function writeThemeTemplate(storage: Pick<Storage, 'setItem'>, template: ThemeTemplate): void {
+  try { storage.setItem(THEME_TEMPLATE_STORAGE_KEY, template); } catch { /* local preference unavailable */ }
+}
+export function applyThemeTemplate(template: ThemeTemplate, root: Pick<HTMLElement, 'setAttribute'> = document.documentElement): void { root.setAttribute('data-theme-template', template); }
 export function readThemeMode(storage: Pick<Storage, 'getItem'>): ThemeMode {
   try { return parseThemeMode(storage.getItem(THEME_STORAGE_KEY)); } catch { return 'system'; }
 }

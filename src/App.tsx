@@ -76,7 +76,7 @@ import { DesktopLauncher, EmptyState, SubpageShell, type DesktopEntry } from './
 import { MusicApp } from './components/music-app';
 import { useMusicPlayer, type MusicPlayerController } from './features/music/player';
 import './ui/theme/app.css';
-import { applyCustomCss, applyTheme, readCustomCss, readThemeMode, resolveTheme, THEME_STORAGE_KEY, type ThemeMode, validateCustomCss, writeCustomCss } from './ui/theme/preferences';
+import { applyCustomCss, applyTheme, applyThemeTemplate, readCustomCss, readThemeMode, readThemeTemplate, resolveTheme, THEME_STORAGE_KEY, THEME_TEMPLATE_STORAGE_KEY, type ThemeMode, type ThemeTemplate, validateCustomCss, writeCustomCss } from './ui/theme/preferences';
 
 type Tab = 'map' | 'day' | 'chat' | 'library' | 'settings';
 export type SettingsPage = 'player' | 'provider' | 'vector-memory' | 'voice' | 'image' | 'routing' | 'migration' | 'display' | 'rules' | 'privacy' | 'debug' | 'dev-tools';
@@ -329,6 +329,7 @@ export function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => typeof window === 'undefined' ? 'system' : readThemeMode(window.localStorage));
   const [customCss, setCustomCss] = useState(() => typeof window === 'undefined' ? '' : readCustomCss(window.localStorage));
   const [customCssDraft, setCustomCssDraft] = useState(customCss);
+  const [themeTemplate, setThemeTemplate] = useState<ThemeTemplate>(() => typeof window === 'undefined' ? 'default' : readThemeTemplate(window.localStorage));
   const [tab, setTab] = useState<Tab>('map');
   const [appName, setAppName] = useState(readAppName);
   const [appNameDraft, setAppNameDraft] = useState(appName);
@@ -443,6 +444,7 @@ export function App() {
   }, [themeMode]);
 
   useEffect(() => { if (typeof document !== 'undefined') applyCustomCss(customCss); }, [customCss]);
+  useEffect(() => { applyThemeTemplate(themeTemplate); }, [themeTemplate]);
 
   function saveCustomCss(): string[] {
     const issues = validateCustomCss(customCssDraft);
@@ -457,6 +459,11 @@ export function App() {
     setCustomCssDraft('');
     writeCustomCss(window.localStorage, '');
     setCustomCss('');
+  }
+
+  function updateThemeTemplate(template: ThemeTemplate): void {
+    setThemeTemplate(template);
+    try { window.localStorage.setItem(THEME_TEMPLATE_STORAGE_KEY, template); window.dispatchEvent(new CustomEvent('tokimeki:theme-change')); } catch { /* local preference unavailable */ }
   }
 
   useEffect(() => {
@@ -4762,10 +4769,16 @@ function SettingsView(props: {
   onRestoreGlobalBackup: (backup: ImportedGlobalBackup) => Promise<void>;
 }) {
   const [settingsThemeMode, setSettingsThemeMode] = useState<ThemeMode>(() => typeof window === 'undefined' ? 'system' : readThemeMode(window.localStorage));
+  const [settingsThemeTemplate, setSettingsThemeTemplate] = useState<ThemeTemplate>(() => typeof window === 'undefined' ? 'default' : readThemeTemplate(window.localStorage));
   const settingsResolvedTheme = resolveTheme(settingsThemeMode, typeof window !== 'undefined' && (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false));
   const changeSettingsTheme = (mode: ThemeMode) => {
     setSettingsThemeMode(mode);
     try { window.localStorage.setItem(THEME_STORAGE_KEY, mode); window.dispatchEvent(new CustomEvent('tokimeki:theme-change')); } catch { /* local preference unavailable */ }
+  };
+  const changeSettingsThemeTemplate = (template: ThemeTemplate) => {
+    setSettingsThemeTemplate(template);
+    applyThemeTemplate(template);
+    try { window.localStorage.setItem(THEME_TEMPLATE_STORAGE_KEY, template); window.dispatchEvent(new CustomEvent('tokimeki:theme-change')); } catch { /* local preference unavailable */ }
   };
   const isSaved = props.providers.some((item) => item.id === props.provider.id);
   const energy = getEnergyState(props.save.world);
@@ -4845,6 +4858,8 @@ function SettingsView(props: {
       <h3>主题</h3>
       <label>主题模式<select aria-label="主题模式" value={settingsThemeMode} onChange={(event) => changeSettingsTheme(event.target.value as ThemeMode)}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>
       <p className="io-scope">当前显示：{settingsResolvedTheme === 'dark' ? '深色' : '浅色'}。主题偏好只保存在本机浏览器，并会包含在全局备份的界面偏好中。</p>
+      <label>组件模板<select aria-label="组件模板" value={settingsThemeTemplate} onChange={(event) => changeSettingsThemeTemplate(event.target.value as ThemeTemplate)}><option value="default">默认灰阶</option><option value="soft">柔和圆角</option><option value="compact">紧凑直角</option></select></label>
+      <p className="io-scope">模板会统一调整消息气泡、地图卡片和终端消息的圆角与间距，不改变内容或布局结构。</p>
       <h3>自定义 CSS</h3>
       <textarea aria-label="自定义 CSS" spellCheck={false} value={props.customCssDraft} onChange={(event) => props.setCustomCssDraft(event.target.value)} placeholder="例如：.message { border-radius: 16px; }" />
       <div className="button-row"><button type="button" onClick={() => { const issues = props.onSaveCustomCss(); if (issues.length) window.alert(issues.join('\n')); }}>应用自定义 CSS</button><button type="button" className="secondary" onClick={props.onResetCustomCss}>恢复默认</button></div>

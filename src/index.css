@@ -50,7 +50,13 @@
   --chat-bottom-nav-space: calc(var(--bottom-nav-height) + var(--safe-area-bottom));
   --app-bottom-nav-space: calc(92px + var(--safe-area-bottom));
   --radius: 0.5rem;
+  --theme-message-radius: 8px;
+  --theme-card-radius: 8px;
+  --theme-gap: 8px;
 }
+
+:root[data-theme-template='soft'] { --theme-message-radius: 16px; --theme-card-radius: 14px; --theme-gap: 10px; }
+:root[data-theme-template='compact'] { --theme-message-radius: 3px; --theme-card-radius: 4px; --theme-gap: 5px; }
 
 :root[data-theme='dark'] {
   --gray-0: #171717;
