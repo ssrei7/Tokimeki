@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { loadMusicState, saveMusicState } from '../../data/db/content';
+import { deleteAsset, loadAsset, saveAsset } from '../../data/db/assets';
 import {
   addMusicTrack,
   createMusicState,
@@ -18,6 +19,7 @@ import {
 } from './model';
 import type { MusicPlaybackMode, MusicState, MusicTrack } from '../../data/content';
 import { browserMediaSession, installMediaSessionHandlers, updateMediaSessionMetadata, updateMediaSessionPlaybackState, updateMediaSessionPosition } from './media-session';
+import { isMusicAssetReferenced, resolveLocalMusicFile } from './local-assets';
 
 export type MusicPlayerController = {
   audioRef: RefObject<HTMLAudioElement | null>;
@@ -28,10 +30,12 @@ export type MusicPlayerController = {
   currentTime: number;
   duration: number;
   addTrack: (input: MusicTrackInput) => { ok: boolean; warning?: string };
+  addLocalTrack: (file?: File, metadata?: { title?: string; artist?: string }) => Promise<{ ok: boolean; warning?: string }>;
   updateTrack: (trackId: string, input: MusicTrackInput) => { ok: boolean; warning?: string };
-  removeTrack: (trackId: string) => void;
+  removeTrack: (trackId: string) => Promise<void>;
   moveTrack: (trackId: string, direction: -1 | 1) => void;
   selectTrack: (trackId: string) => void;
+  playTrack: (trackId: string) => void;
   play: () => Promise<void>;
   pause: () => void;
   next: () => void;
@@ -52,8 +56,7 @@ export function useMusicPlayer(): MusicPlayerController {
   const [duration, setDuration] = useState(0);
   const stateRef = useRef(state);
   const playingRef = useRef(false);
-  const loadedTrackIdRef = useRef<string | undefined>(undefined);
-  const loadedUrlRef = useRef<string | undefined>(undefined);
+  const pendingAutoplayTrackIdRef = useRef<string | undefined>(undefined);
   const pendingPositionRef = useRef(0);
   const lastPositionSaveRef = useRef(0);
   const suppressPausePersistRef = useRef(false);
@@ -112,8 +115,14 @@ export function useMusicPlayer(): MusicPlayerController {
       if (!next.trackId) return;
       const selected = selectMusicTrack({ ...next.state, currentTrackId: current.currentTrackId }, next.trackId, stamp());
       if (!selected.ok) return;
+      if (next.trackId === current.currentTrackId) {
+        commit(selected.state);
+        audio.currentTime = 0;
+        void audio.play().catch(() => undefined);
+        return;
+      }
+      pendingAutoplayTrackIdRef.current = next.trackId;
       commit(selected.state);
-      window.setTimeout(() => { void audio.play().catch(() => undefined); }, 0);
     };
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
@@ -139,9 +148,8 @@ export function useMusicPlayer(): MusicPlayerController {
     const audio = audioRef.current;
     if (!audio || !isReady) return;
     const track = stateRef.current.tracks.find((item) => item.id === stateRef.current.currentTrackId);
-    if (loadedTrackIdRef.current === stateRef.current.currentTrackId && loadedUrlRef.current === track?.url) return;
-    loadedTrackIdRef.current = stateRef.current.currentTrackId;
-    loadedUrlRef.current = track?.url;
+    let cancelled = false;
+    let objectUrl: string | undefined;
     pendingPositionRef.current = stateRef.current.positionSeconds;
     suppressPausePersistRef.current = !audio.paused;
     audio.pause();
@@ -152,12 +160,28 @@ export function useMusicPlayer(): MusicPlayerController {
     if (!track) {
       audio.removeAttribute('src');
       audio.load();
-      return;
+      return () => { cancelled = true; };
     }
-    audio.src = track.url;
-    audio.volume = stateRef.current.volume;
-    audio.load();
-  }, [isReady, state.currentTrackId, currentTrack?.url]);
+    const applySource = (source: string) => {
+      if (cancelled) return;
+      audio.src = source;
+      audio.volume = stateRef.current.volume;
+      audio.load();
+      if (pendingAutoplayTrackIdRef.current === track.id) {
+        pendingAutoplayTrackIdRef.current = undefined;
+        window.setTimeout(() => { void audio.play().catch(() => undefined); }, 0);
+      }
+    };
+    if (track.asset?.kind === 'stored') {
+      void loadAsset(track.asset.assetId).then((asset) => {
+        if (cancelled) return;
+        if (!asset?.blob.size) { commit(setMusicError(stateRef.current, '本地音频资产缺失，请重新导入或移除该曲目。', stamp())); return; }
+        objectUrl = URL.createObjectURL(asset.blob);
+        applySource(objectUrl);
+      }).catch(() => { if (!cancelled) commit(setMusicError(stateRef.current, '本地音频读取失败。', stamp())); });
+    } else if (track.url) applySource(track.url);
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [commit, isReady, state.currentTrackId, currentTrack?.url, currentTrack?.asset?.assetId]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -172,8 +196,8 @@ export function useMusicPlayer(): MusicPlayerController {
   const select = useCallback((trackId: string, resume = false) => {
     const selected = selectMusicTrack(stateRef.current, trackId, stamp());
     if (!selected.ok) return;
+    if (resume) pendingAutoplayTrackIdRef.current = trackId;
     commit(selected.state);
-    if (resume) window.setTimeout(() => { void audioRef.current?.play().catch(() => undefined); }, 0);
   }, [commit]);
 
   const play = useCallback(async (): Promise<void> => {
@@ -183,6 +207,14 @@ export function useMusicPlayer(): MusicPlayerController {
     if (next !== stateRef.current) commit(next);
     try { await audio.play(); } catch (error) { commit(setMusicError(stateRef.current, error instanceof Error ? `无法开始播放：${error.message}` : '无法开始播放。', stamp())); }
   }, [commit]);
+
+  const playTrack = useCallback((trackId: string): void => {
+    if (stateRef.current.currentTrackId === trackId) {
+      void play();
+      return;
+    }
+    select(trackId, true);
+  }, [play, select]);
 
   const pause = useCallback(() => { audioRef.current?.pause(); }, []);
   const next = useCallback(() => {
@@ -231,21 +263,42 @@ export function useMusicPlayer(): MusicPlayerController {
     if (result.ok) commit(result.state);
     return { ok: result.ok, warning: result.warning };
   }, [commit]);
+  const addLocalTrack = useCallback(async (file?: File, metadata: { title?: string; artist?: string } = {}) => {
+    const resolved = resolveLocalMusicFile(file);
+    if (!resolved.ok) return resolved;
+    const assetId = `music-audio-${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`;
+    try {
+      await saveAsset({ id: assetId, blob: file!, mimeType: resolved.mimeType, category: 'music', createdAt: stamp() });
+      const title = metadata.title?.trim() || resolved.fallbackTitle;
+      const result = addMusicTrack(stateRef.current, { title, artist: metadata.artist, asset: { kind: 'stored', assetId } }, stamp());
+      if (!result.ok) { await deleteAsset(assetId); return { ok: false, warning: result.warning }; }
+      commit(result.state);
+      return { ok: true };
+    } catch (error) {
+      await deleteAsset(assetId).catch(() => undefined);
+      return { ok: false, warning: error instanceof Error ? `本地音频保存失败：${error.message}` : '本地音频保存失败。' };
+    }
+  }, [commit]);
   const updateTrack = useCallback((trackId: string, input: MusicTrackInput) => {
     const result = updateMusicTrack(stateRef.current, trackId, input, stamp());
     if (result.ok) commit(result.state);
     return { ok: result.ok, warning: result.warning };
   }, [commit]);
-  const removeTrack = useCallback((trackId: string) => {
+  const removeTrack = useCallback(async (trackId: string) => {
+    const removed = stateRef.current.tracks.find((track) => track.id === trackId);
     const result = removeMusicTrack(stateRef.current, trackId, stamp());
     if (result.ok) commit(result.state);
+    const assetId = removed?.asset?.assetId;
+    if (!result.ok || !assetId || isMusicAssetReferenced(result.state.tracks, assetId)) return;
+    const asset = await loadAsset(assetId);
+    if (asset?.category === 'music') await deleteAsset(assetId);
   }, [commit]);
   const moveTrack = useCallback((trackId: string, direction: -1 | 1) => {
     const result = moveMusicTrack(stateRef.current, trackId, direction, stamp());
     if (result.ok) commit(result.state);
   }, [commit]);
 
-  return { audioRef, state, currentTrack, isReady, isPlaying, currentTime, duration, addTrack, updateTrack, removeTrack, moveTrack, selectTrack: (trackId) => select(trackId, false), play, pause, next, previous, seek, setVolume, setMode };
+  return { audioRef, state, currentTrack, isReady, isPlaying, currentTime, duration, addTrack, addLocalTrack, updateTrack, removeTrack, moveTrack, selectTrack: (trackId) => select(trackId, false), playTrack, play, pause, next, previous, seek, setVolume, setMode };
 }
 
 export function musicModeLabel(mode: MusicPlaybackMode): string {

@@ -849,13 +849,14 @@ export function App() {
   }
 
   async function loadImageAssetReferenceRoots() {
-    const [characterCards, chats, savedSnapshots, stickers, characterImageConfigs, userImageConfigs, imageConfigs] = await Promise.all([contentDb.characters.toArray(), contentDb.chats.toArray(), listSnapshots(), listTerminalStickers(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray()]);
+    const [characterCards, chats, savedSnapshots, stickers, musicStates, characterImageConfigs, userImageConfigs, imageConfigs] = await Promise.all([contentDb.characters.toArray(), contentDb.chats.toArray(), listSnapshots(), listTerminalStickers(), contentDb.musicStates.toArray(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray()]);
     return [
       { label: '当前世界', value: saveRef.current },
       ...characterCards.map((card) => ({ label: `角色库/${card.id}`, value: card })),
       ...savedSnapshots.map((snapshot) => ({ label: `快照/${snapshot.id}`, value: snapshot.save })),
       ...chats.map((record) => ({ label: `聊天/${record.characterId}`, value: record })),
       ...stickers.map((sticker) => ({ label: `贴图库/${sticker.id}`, value: sticker })),
+      ...musicStates.map((musicState) => ({ label: `音乐/${musicState.id}`, value: musicState })),
       ...characterImageConfigs.map((config) => ({ label: `角色锁脸/${config.id}`, value: config })),
       ...userImageConfigs.map((config) => ({ label: `用户锁脸/${config.id}`, value: config })),
       ...imageConfigs.map((config) => ({ label: `独立生成/${config.id}`, value: config.lastGenerated })),
@@ -3398,7 +3399,7 @@ export function App() {
   async function downloadSave() {
     if (selectedCharacterId) await saveChat({ characterId: selectedCharacterId, messages, updatedAt: now() });
     const extras: Record<string, unknown> = { characters, worldbooks, presets, presetBundles };
-    const assetMeta: Record<string, { mimeType: string; width?: number; height?: number; category?: 'voice' | 'image'; cacheFingerprint?: string; audioFormat?: string; durationMs?: number; voiceRequestId?: string }> = {};
+    const assetMeta: Record<string, { mimeType: string; width?: number; height?: number; category?: 'voice' | 'image' | 'music'; cacheFingerprint?: string; audioFormat?: string; durationMs?: number; voiceRequestId?: string }> = {};
     const exportedChats = includeChatsOnExport ? await contentDb.chats.toArray() : [];
     if (includeChatsOnExport) extras.chats = exportedChats;
     const assets: Record<string, Uint8Array> = {};

@@ -4,7 +4,7 @@ export interface StoredAsset {
   id: string;
   blob: Blob;
   mimeType: string;
-  category?: 'voice' | 'image';
+  category?: 'voice' | 'image' | 'music';
   cacheFingerprint?: string;
   audioFormat?: string;
   durationMs?: number;

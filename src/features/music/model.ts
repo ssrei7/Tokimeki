@@ -1,11 +1,13 @@
 import { MusicPlaybackModeSchema, MusicStateSchema, MusicTrackSchema, type MusicPlaybackMode, type MusicState, type MusicTrack } from '../../data/content';
+import type { AssetRef } from '../../data/schema/save';
 
 export const MUSIC_STATE_ID = 'default' as const;
 
 export interface MusicTrackInput {
   title: string;
   artist?: string;
-  url: string;
+  url?: string;
+  asset?: Extract<AssetRef, { kind: 'stored' }> | null;
   id?: string;
 }
 
@@ -38,10 +40,11 @@ function validUrl(url: string): boolean {
 
 export function addMusicTrack(state: MusicState, input: MusicTrackInput, updatedAt: string): MusicMutationResult {
   const title = input.title.trim();
-  const url = input.url.trim();
+  const url = input.url?.trim() || undefined;
   if (!title) return { ok: false, state, warning: '曲目标题不能为空。' };
-  if (!validUrl(url)) return { ok: false, state, warning: '音频地址必须是有效的 http(s) URL。' };
-  const track = MusicTrackSchema.safeParse({ id: input.id?.trim() || `music-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title, artist: input.artist?.trim() ?? '', url, updatedAt });
+  if (url && !validUrl(url)) return { ok: false, state, warning: '音频地址必须是有效的 http(s) URL。' };
+  if (!url && !input.asset) return { ok: false, state, warning: '请选择本地音频或填写有效的 http(s) URL。' };
+  const track = MusicTrackSchema.safeParse({ id: input.id?.trim() || `music-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title, artist: input.artist?.trim() ?? '', ...(url ? { url } : {}), ...(input.asset ? { asset: input.asset } : {}), updatedAt });
   if (!track.success) return { ok: false, state, warning: '曲目信息无效。' };
   const next = withTimestamp({ ...state, tracks: [...state.tracks, track.data], currentTrackId: state.currentTrackId ?? track.data.id, lastError: undefined }, updatedAt);
   return { ok: true, state: next };
@@ -50,11 +53,14 @@ export function addMusicTrack(state: MusicState, input: MusicTrackInput, updated
 export function updateMusicTrack(state: MusicState, trackId: string, input: MusicTrackInput, updatedAt: string): MusicMutationResult {
   const index = state.tracks.findIndex((track) => track.id === trackId);
   if (index < 0) return { ok: false, state, warning: '曲目不存在。' };
+  const existing = state.tracks[index];
   const title = input.title.trim();
-  const url = input.url.trim();
+  const url = input.url === undefined ? existing.url : input.url.trim() || undefined;
+  const asset = input.asset === null ? undefined : input.asset ?? (input.url !== undefined && url !== existing.url ? undefined : existing.asset);
   if (!title) return { ok: false, state, warning: '曲目标题不能为空。' };
-  if (!validUrl(url)) return { ok: false, state, warning: '音频地址必须是有效的 http(s) URL。' };
-  const parsed = MusicTrackSchema.safeParse({ id: trackId, title, artist: input.artist?.trim() ?? '', url, updatedAt });
+  if (url && !validUrl(url)) return { ok: false, state, warning: '音频地址必须是有效的 http(s) URL。' };
+  if (!url && !asset) return { ok: false, state, warning: '请选择本地音频或填写有效的 http(s) URL。' };
+  const parsed = MusicTrackSchema.safeParse({ id: trackId, title, artist: input.artist?.trim() ?? '', ...(url ? { url } : {}), ...(asset ? { asset } : {}), updatedAt });
   if (!parsed.success) return { ok: false, state, warning: '曲目信息无效。' };
   const tracks = state.tracks.slice(); tracks[index] = parsed.data;
   return { ok: true, state: withTimestamp({ ...state, tracks, lastError: undefined }, updatedAt), };

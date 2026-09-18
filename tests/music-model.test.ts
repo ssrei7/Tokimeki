@@ -17,6 +17,8 @@ function stateWithTracks() {
 describe('music model', () => {
   it('validates http(s) tracks and state defaults', () => {
     expect(MusicTrackSchema.safeParse({ id: 'a', title: 'A', url: 'file:///tmp/a.mp3', updatedAt }).success).toBe(false);
+    expect(MusicTrackSchema.safeParse({ id: 'local', title: 'Local', asset: { kind: 'stored', assetId: 'music-1' }, updatedAt }).success).toBe(true);
+    expect(MusicTrackSchema.safeParse({ id: 'missing', title: 'Missing', updatedAt }).success).toBe(false);
     const state = MusicStateSchema.parse({ id: 'default', tracks: [], updatedAt });
     expect(state.mode).toBe('sequence');
     expect(state.volume).toBe(0.8);
@@ -41,6 +43,15 @@ describe('music model', () => {
     const result = addMusicTrack(state, { title: 'Nope', url: 'javascript:alert(1)' }, updatedAt);
     expect(result.ok).toBe(false);
     expect(result.state).toEqual(state);
+  });
+
+  it('keeps a local asset while editing metadata and allows a URL plus cached asset', () => {
+    const initial = addMusicTrack(createMusicState(updatedAt), { id: 'local', title: 'Local', asset: { kind: 'stored', assetId: 'music-1' } }, updatedAt);
+    expect(initial.ok).toBe(true);
+    const edited = updateMusicTrack(initial.state, 'local', { title: 'Renamed', artist: 'Artist' }, updatedAt);
+    expect(edited.ok).toBe(true);
+    expect(edited.state.tracks[0]).toMatchObject({ title: 'Renamed', artist: 'Artist', asset: { kind: 'stored', assetId: 'music-1' } });
+    expect(MusicTrackSchema.safeParse({ id: 'cached', title: 'Cached', url: 'https://example.com/a.mp3', asset: { kind: 'stored', assetId: 'music-2' }, updatedAt }).success).toBe(true);
   });
 
   it('advances sequence mode to the next track', () => {

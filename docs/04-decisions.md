@@ -620,3 +620,8 @@
 **决定**：数据与隐私页提供完成通知开关和测试按钮。只有用户点击启用时才请求权限并注册最小通知 Worker；面对面回复或终端回复完成且页面处于后台时，尽力显示固定通用文案。页面前台不通知，通知不包含角色名、台词、prompt、世界名或 API 信息。
 
 **平台与网络边界**：Worker 只处理通知点击，不注册 fetch、push、sync 或 periodic sync，不访问 IndexedDB，不持有 Provider 配置或 API key。系统冻结页面时完成回调可能不执行，因此不承诺产生通知；没有远程推送、定时唤醒、夜间来信后台提醒或自动生成。启用、测试和显示均不调用 Provider，设置保存在本机 localStorage，SaveFile 保持 v41。
+
+## D115 本地音乐使用 Content 引用与 Assets 二进制分离
+**决定**：音乐曲目兼容原有 http(s) URL，并可改为保存本地 `stored AssetRef`；用户显式导入的音频 Blob 只写入 Assets IndexedDB，分类为 `music`，曲目与播放现场继续保存在 Content IndexedDB。导入、播放、编辑和删除均不上传文件、不调用 Provider，也不写入世界 SaveFile，因此 SaveFile 保持 v41。
+
+**回收与兼容边界**：删除本地曲目时，仅在没有其他音乐曲目引用同一资产且资产分类确为 `music` 时回收二进制。通用资产完整性审计把 MusicState 纳入引用根；全局备份 v4 可携带音乐曲目、二进制及 `music` 元数据，旧备份继续可读。支持 MP3、M4A、AAC、OGG、WAV、WebM 与 FLAC 文件选择，但实际解码能力仍由浏览器和系统决定。外链曲目的显式离线缓存、占用统计与批量清理放在下一垂直切片。

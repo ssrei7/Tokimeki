@@ -138,9 +138,10 @@ export const MusicTrackSchema = z.object({
   id: Id,
   title: z.string().min(1).max(200),
   artist: z.string().max(200).default(''),
-  url: z.string().url().refine((value) => /^https?:\/\//i.test(value), '音频地址必须是 http(s) URL'),
+  url: z.string().url().refine((value) => /^https?:\/\//i.test(value), '音频地址必须是 http(s) URL').optional(),
+  asset: z.object({ kind: z.literal('stored'), assetId: Id }).optional(),
   updatedAt: z.string().datetime(),
-});
+}).refine((track) => Boolean(track.url || track.asset), { message: '曲目必须包含外链或本地音频资产。' });
 export type MusicTrack = z.infer<typeof MusicTrackSchema>;
 
 export const MusicStateSchema = z.object({

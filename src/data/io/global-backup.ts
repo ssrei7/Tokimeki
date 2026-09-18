@@ -8,7 +8,7 @@ import type { SaveSnapshot } from '../db/save';
 import type { StoredAsset } from '../db/assets';
 import { DEFAULT_THEME_APPEARANCE, parseDesktopIconOverrides, parseDesktopTitleOverrides, parseThemeAppearance, parseThemeMode, parseThemeTemplate, readCustomCss, type DesktopIconOverrides, type DesktopTitleOverrides, type ThemeAppearanceConfig, type ThemeMode, type ThemeTemplate } from '../../ui/theme/preferences';
 
-export const GLOBAL_BACKUP_VERSION = 3;
+export const GLOBAL_BACKUP_VERSION = 4;
 export interface ThemeBackupData {
   mode: ThemeMode;
   template: ThemeTemplate;
@@ -115,7 +115,7 @@ export async function importGlobalBackup(input: Blob | ArrayBuffer | Uint8Array)
 
 function stripSecretHeaders(headers?: Record<string, string>): Record<string, string> | undefined { const kept = Object.entries(headers ?? {}).filter(([key]) => !/^(authorization|proxy-authorization|api-key|x-api-key|cookie|set-cookie)$/i.test(key)); return kept.length ? Object.fromEntries(kept) : undefined; }
 
-const AssetMetadataRecordSchema = z.record(z.string().min(1), z.object({ mimeType: z.string().min(1), category: z.enum(['voice', 'image']).optional(), cacheFingerprint: z.string().optional(), audioFormat: z.string().optional(), durationMs: z.number().nonnegative().optional(), voiceRequestId: z.string().optional(), width: z.number().nonnegative().optional(), height: z.number().nonnegative().optional(), createdAt: z.string().datetime() }));
+const AssetMetadataRecordSchema = z.record(z.string().min(1), z.object({ mimeType: z.string().min(1), category: z.enum(['voice', 'image', 'music']).optional(), cacheFingerprint: z.string().optional(), audioFormat: z.string().optional(), durationMs: z.number().nonnegative().optional(), voiceRequestId: z.string().optional(), width: z.number().nonnegative().optional(), height: z.number().nonnegative().optional(), createdAt: z.string().datetime() }));
 
 function parseGlobalBackupData(value: unknown): GlobalBackupData {
   const raw = z.object({

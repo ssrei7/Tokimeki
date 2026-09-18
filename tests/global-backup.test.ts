@@ -38,6 +38,16 @@ describe('global backup IO', () => {
     expect(imported.assetMeta.face.category).toBe('image');
   });
 
+  it('round trips local music references and music asset metadata', async () => {
+    const updatedAt = '2026-09-19T00:00:00.000Z';
+    const musicState = { id: 'default' as const, tracks: [{ id: 'local', title: 'Local', artist: '', asset: { kind: 'stored' as const, assetId: 'music-1' }, updatedAt }], currentTrackId: 'local', mode: 'sequence' as const, volume: 0.8, positionSeconds: 0, shuffleQueue: [], updatedAt };
+    const blob = await exportGlobalBackup({ ...base, content: { ...base.content, musicStates: [musicState] } }, [{ id: 'music-1', blob: new Blob(['audio'], { type: 'audio/mpeg' }), mimeType: 'audio/mpeg', category: 'music', createdAt: updatedAt }]);
+    const imported = await importGlobalBackup(blob);
+    expect(imported.data.content.musicStates[0].tracks[0].asset).toEqual({ kind: 'stored', assetId: 'music-1' });
+    expect(imported.assetMeta['music-1'].category).toBe('music');
+    expect(imported.assets.has('music-1')).toBe(true);
+  });
+
   it('exports only Tokimeki preferences and removes stale keys on restore', () => {
     const values = new Map([['tokimeki.appName', '旧名称'], ['tokimeki.stale', '删除'], ['other.app', '保留']]);
     const storage = { get length() { return values.size; }, key: (index: number) => [...values.keys()][index] ?? null, getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); } };
