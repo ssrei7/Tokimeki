@@ -76,6 +76,7 @@ import { DesktopLauncher, EmptyState, SubpageShell, type DesktopEntry } from './
 import { MusicApp } from './components/music-app';
 import { useMusicPlayer, type MusicPlayerController } from './features/music/player';
 import './ui/theme/app.css';
+import { applyTheme, readThemeMode, resolveTheme, THEME_STORAGE_KEY, type ThemeMode } from './ui/theme/preferences';
 
 type Tab = 'map' | 'day' | 'chat' | 'library' | 'settings';
 export type SettingsPage = 'player' | 'provider' | 'vector-memory' | 'voice' | 'image' | 'routing' | 'migration' | 'display' | 'rules' | 'privacy' | 'debug' | 'dev-tools';
@@ -325,6 +326,7 @@ const defaultSave: SaveFile = SaveFileSchema.parse({
 
 export function App() {
   const musicPlayer = useMusicPlayer();
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => typeof window === 'undefined' ? 'system' : readThemeMode(window.localStorage));
   const [tab, setTab] = useState<Tab>('map');
   const [appName, setAppName] = useState(readAppName);
   const [appNameDraft, setAppNameDraft] = useState(appName);
@@ -427,6 +429,16 @@ export function App() {
   const [devToolSeed, setDevToolSeed] = useState('42');
   const [devToolDays, setDevToolDays] = useState('30');
   const [devToolReport, setDevToolReport] = useState<DevToolReport>(null);
+
+  useEffect(() => {
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+    const update = () => { applyTheme(themeMode, media?.matches ?? false); };
+    update();
+    const onThemeChange = () => setThemeMode(readThemeMode(window.localStorage));
+    window.addEventListener('tokimeki:theme-change', onThemeChange);
+    media?.addEventListener?.('change', update);
+    return () => { window.removeEventListener('tokimeki:theme-change', onThemeChange); media?.removeEventListener?.('change', update); };
+  }, [themeMode]);
 
   useEffect(() => {
     void listTerminalStickers().then(setTerminalStickers).catch(() => setTerminalStickers([]));
@@ -4726,6 +4738,12 @@ function SettingsView(props: {
   globalBackupPreview: ImportedGlobalBackup | null;
   onRestoreGlobalBackup: (backup: ImportedGlobalBackup) => Promise<void>;
 }) {
+  const [settingsThemeMode, setSettingsThemeMode] = useState<ThemeMode>(() => typeof window === 'undefined' ? 'system' : readThemeMode(window.localStorage));
+  const settingsResolvedTheme = resolveTheme(settingsThemeMode, typeof window !== 'undefined' && (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false));
+  const changeSettingsTheme = (mode: ThemeMode) => {
+    setSettingsThemeMode(mode);
+    try { window.localStorage.setItem(THEME_STORAGE_KEY, mode); window.dispatchEvent(new CustomEvent('tokimeki:theme-change')); } catch { /* local preference unavailable */ }
+  };
   const isSaved = props.providers.some((item) => item.id === props.provider.id);
   const energy = getEnergyState(props.save.world);
   const entries: readonly DesktopEntry[] = SETTINGS_PAGE_DEFINITIONS;
@@ -4801,6 +4819,9 @@ function SettingsView(props: {
       <div className="stat-list">{Object.entries(props.save.world.player.stats).map(([key, value]) => <span key={key}>{key}: {value}</span>)}</div>
     </div></div></details>
     <details className="fold-card" open><summary>显示选项</summary><div className="fold-body"><div className="provider-card">
+      <h3>主题</h3>
+      <label>主题模式<select aria-label="主题模式" value={settingsThemeMode} onChange={(event) => changeSettingsTheme(event.target.value as ThemeMode)}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>
+      <p className="io-scope">当前显示：{settingsResolvedTheme === 'dark' ? '深色' : '浅色'}。主题偏好只保存在本机浏览器，并会包含在全局备份的界面偏好中。</p>
       <h3>生活资源</h3>
       <label className="checkbox-line"><input type="checkbox" checked={energy?.enabled ?? false} disabled={!energy} onChange={(event) => props.onEnergyEnabledChange(event.target.checked)} />启用体力消耗</label>
       <p className="io-scope">体力作为通用 stat 保存。关闭后行动不扣体力，当前数值仍保留；重新开启后继续使用。</p>
