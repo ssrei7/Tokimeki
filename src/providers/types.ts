@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AssetRefSchema } from '../data/schema/save';
 
 export const TASK_IDS = [
   'narrate_main', 'narrate_daily', 'topic_tree', 'world_morning', 'world_gen',
@@ -79,7 +80,7 @@ export const ImageVisualConfigSchema = z.object({
   characterId: z.string().min(1),
   appearancePrompt: z.string().default(''),
   lockFaceEnabled: z.boolean().default(false),
-  referenceImage: StoredImageAssetRefSchema.optional(),
+  referenceImage: AssetRefSchema.optional(),
   updatedAt: z.string().datetime(),
 });
 export type ImageVisualConfig = z.infer<typeof ImageVisualConfigSchema>;
@@ -91,7 +92,7 @@ export const ImageUserVisualConfigSchema = z.object({
   identityKind: z.enum(['player', 'persona']),
   appearancePrompt: z.string().default(''),
   lockFaceEnabled: z.boolean().default(false),
-  referenceImage: StoredImageAssetRefSchema.optional(),
+  referenceImage: AssetRefSchema.optional(),
   updatedAt: z.string().datetime(),
 });
 export type ImageUserVisualConfig = z.infer<typeof ImageUserVisualConfigSchema>;

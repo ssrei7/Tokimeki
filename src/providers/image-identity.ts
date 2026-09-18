@@ -18,9 +18,9 @@ export function imageUserConfigId(saveId: string, identity: ImageIdentity): stri
 }
 
 export function imageReferenceAssetIds(characterConfigs: readonly ImageVisualConfig[], userConfigs: readonly ImageUserVisualConfig[]): Set<string> {
-  return new Set([...characterConfigs, ...userConfigs].flatMap((config) => config.referenceImage ? [config.referenceImage.assetId] : []));
+  return new Set([...characterConfigs, ...userConfigs].flatMap((config) => config.referenceImage?.kind === 'stored' ? [config.referenceImage.assetId] : []));
 }
 
 export function faceReferenceAssetIdForGeneration(config: ImageVisualConfig | undefined, referenceMode: 'none' | 'openai-edits'): string | undefined {
-  return config?.lockFaceEnabled && referenceMode === 'openai-edits' ? config.referenceImage?.assetId : undefined;
+  return config?.lockFaceEnabled && referenceMode === 'openai-edits' && config.referenceImage?.kind === 'stored' ? config.referenceImage.assetId : undefined;
 }

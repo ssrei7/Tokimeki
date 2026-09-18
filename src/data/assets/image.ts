@@ -1,8 +1,20 @@
+import type { AssetRef } from '../schema/save';
+
 export interface DownsampledImage {
   blob: Blob;
   width: number;
   height: number;
   mimeType: 'image/webp';
+}
+
+export function externalImageAssetRef(input: string): AssetRef {
+  const value = input.trim();
+  if (!value) throw new Error('请输入图片外链。');
+  let url: URL;
+  try { url = new URL(value); }
+  catch { throw new Error('图片外链必须是有效 URL。'); }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('图片外链只支持 http(s) URL。');
+  return { kind: 'url', url: url.toString() };
 }
 
 export async function downsampleImage(input: Blob, maxHeight = 1600, quality = 0.85): Promise<DownsampledImage> {
