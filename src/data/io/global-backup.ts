@@ -104,7 +104,7 @@ export async function importGlobalBackup(input: Blob | ArrayBuffer | Uint8Array)
   const zip = await JSZip.loadAsync(source); const manifestFile = zip.file('manifest.json'); const dataFile = zip.file('data.json');
   if (!manifestFile || !dataFile) throw new Error('全局备份缺少 manifest.json 或 data.json。');
   const manifest = JSON.parse(await manifestFile.async('text')) as { type?: string; schemaVersion?: number; includeSecrets?: boolean };
-  if (manifest.type !== 'global-backup') throw new Error('这不是 Tokimeki 全局备份。');
+  if (manifest.type !== 'global-backup') throw new Error('这不是小小地图全局备份。');
   if (typeof manifest.schemaVersion !== 'number' || manifest.schemaVersion < 1 || manifest.schemaVersion > GLOBAL_BACKUP_VERSION) throw new Error(`全局备份版本不受支持：v${manifest.schemaVersion ?? '未知'}。`);
   const data = parseGlobalBackupData(JSON.parse(await dataFile.async('text')));
   const assets = new Map<string, Uint8Array>(); for (const [name, entry] of Object.entries(zip.files)) if (name.startsWith('assets/') && !entry.dir) assets.set(name.slice(7), await entry.async('uint8array'));

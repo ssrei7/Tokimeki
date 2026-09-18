@@ -52,7 +52,7 @@ export async function importCharacterPackage(input: Blob | ArrayBuffer | Uint8Ar
   if (!manifestFile || !characterFile) throw new Error('Character package must contain manifest.json and character.json.');
   const manifest = JSON.parse(await manifestFile.async('text')) as ZipManifest;
   if (manifest.type !== 'character') throw new Error('This zip is not a character package.');
-  if (manifest.schemaVersion > CURRENT_CHARACTER_PACKAGE_SCHEMA_VERSION) throw new Error(`角色包 schema v${manifest.schemaVersion} 高于当前支持版本 v${CURRENT_CHARACTER_PACKAGE_SCHEMA_VERSION}，请升级 Tokimeki。`);
+  if (manifest.schemaVersion > CURRENT_CHARACTER_PACKAGE_SCHEMA_VERSION) throw new Error(`角色包 schema v${manifest.schemaVersion} 高于当前支持版本 v${CURRENT_CHARACTER_PACKAGE_SCHEMA_VERSION}，请升级小小地图。`);
   const card = CharacterCardSchema.parse(JSON.parse(await characterFile.async('text')));
   const assets = new Map<string, Uint8Array>();
   for (const [name, entry] of Object.entries(zip.files)) if (name.startsWith('assets/') && !entry.dir) assets.set(name.slice('assets/'.length), await entry.async('uint8array'));
@@ -79,7 +79,7 @@ export async function importWorldPackage(input: Blob | ArrayBuffer | Uint8Array)
   if (!manifestFile || !worldFile) throw new Error('World package must contain manifest.json and world.json.');
   const manifest = JSON.parse(await manifestFile.async('text')) as ZipManifest;
   if (manifest.type !== 'world') throw new Error('This zip is not a world package.');
-  if (manifest.schemaVersion > CURRENT_WORLD_PACKAGE_SCHEMA_VERSION) throw new Error(`世界包 schema v${manifest.schemaVersion} 高于当前支持版本 v${CURRENT_WORLD_PACKAGE_SCHEMA_VERSION}，请升级 Tokimeki。`);
+  if (manifest.schemaVersion > CURRENT_WORLD_PACKAGE_SCHEMA_VERSION) throw new Error(`世界包 schema v${manifest.schemaVersion} 高于当前支持版本 v${CURRENT_WORLD_PACKAGE_SCHEMA_VERSION}，请升级小小地图。`);
   const pack = WorldPackageSchema.parse(JSON.parse(await worldFile.async('text')));
   const assets = new Map<string, Uint8Array>();
   for (const [name, entry] of Object.entries(zip.files)) if (name.startsWith('assets/') && !entry.dir) assets.set(name.slice('assets/'.length), await entry.async('uint8array'));
@@ -130,7 +130,7 @@ export async function importEventPackage(input: Blob | ArrayBuffer | Uint8Array)
   const manifest = JSON.parse(await manifestFile.async('text')) as ZipManifest;
   if (manifest.type !== 'events') throw new Error('This zip is not an event package.');
   const schemaVersion = typeof manifest.schemaVersion === 'number' ? manifest.schemaVersion : CURRENT_SCHEMA_VERSION;
-  if (schemaVersion > CURRENT_SCHEMA_VERSION) throw new Error(`事件包 schema v${schemaVersion} 高于当前支持版本 v${CURRENT_SCHEMA_VERSION}，请升级 Tokimeki。`);
+  if (schemaVersion > CURRENT_SCHEMA_VERSION) throw new Error(`事件包 schema v${schemaVersion} 高于当前支持版本 v${CURRENT_SCHEMA_VERSION}，请升级小小地图。`);
   const pack = EventPackageSchema.parse(JSON.parse(await eventsFile.async('text')));
   return { manifest, pack };
 }

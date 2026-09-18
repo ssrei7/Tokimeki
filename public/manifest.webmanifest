@@ -1,7 +1,7 @@
 {
-  "name": "Tokimeki",
-  "short_name": "Tokimeki",
-  "description": "A local-first open-world narrative game.",
+  "name": "小小地图",
+  "short_name": "小小地图",
+  "description": "本地优先的开放世界叙事游戏。",
   "lang": "zh-CN",
   "start_url": "./",
   "scope": "./",

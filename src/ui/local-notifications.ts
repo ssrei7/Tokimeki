@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from './branding';
+
 export const LOCAL_NOTIFICATION_STORAGE_KEY = 'tokimeki.localNotifications.v1';
 
 export type LocalNotificationSettings = {
@@ -21,7 +23,7 @@ export type LocalNotificationRuntime = {
 export type NotificationDelivery = 'shown' | 'disabled' | 'visible' | 'unsupported' | 'not-granted' | 'failed';
 
 export const DEFAULT_LOCAL_NOTIFICATION_SETTINGS: LocalNotificationSettings = Object.freeze({ enabled: false, generationComplete: true });
-export const GENERATION_COMPLETE_NOTIFICATION = Object.freeze({ title: 'Tokimeki', body: '回复已经生成，返回应用查看。' });
+export const GENERATION_COMPLETE_NOTIFICATION = Object.freeze({ title: PRODUCT_NAME, body: '回复已经生成，返回应用查看。' });
 
 export function readLocalNotificationSettings(storage?: Pick<Storage, 'getItem'>): LocalNotificationSettings {
   if (!storage) {

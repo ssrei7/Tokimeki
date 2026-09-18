@@ -6,7 +6,7 @@
 
 ### `custom-reputation` 是什么？
 
-它不是 Tokimeki 已经定义好的正式属性，只是阶段 1 的演示 stat 名称，用来证明 `stats` 可以使用任意数字字段。当前 Mock 的 `perfect` fixture 会同时提出：
+它不是小小地图已经定义好的正式属性，只是阶段 1 的演示 stat 名称，用来证明 `stats` 可以使用任意数字字段。当前 Mock 的 `perfect` fixture 会同时提出：
 
 - `give_item`：给玩家一朵 `white-flower`
 - `add_stat`：把玩家的 `custom-reputation` 从 0 增加到 2

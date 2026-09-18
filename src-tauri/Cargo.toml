@@ -1,8 +1,8 @@
 [package]
 name = "tokimeki"
 version = "0.0.1"
-description = "Tokimeki desktop shell"
-authors = ["Tokimeki contributors"]
+description = "小小地图 desktop shell"
+authors = ["小小地图 contributors"]
 license = "LicenseRef-PolyForm-Noncommercial-1.0.0"
 repository = ""
 edition = "2021"

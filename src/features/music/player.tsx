@@ -23,6 +23,7 @@ import type { MusicPlaybackMode, MusicState, MusicTrack } from '../../data/conte
 import { browserMediaSession, installMediaSessionHandlers, updateMediaSessionMetadata, updateMediaSessionPlaybackState, updateMediaSessionPosition } from './media-session';
 import { isMusicAssetReferenced, resolveLocalMusicFile } from './local-assets';
 import { downloadMusicAsset } from './offline-cache';
+import { PRODUCT_NAME } from '../../ui/branding';
 
 export type MusicPlayerController = {
   audioRef: RefObject<HTMLAudioElement | null>;
@@ -263,7 +264,7 @@ export function useMusicPlayer(): MusicPlayerController {
     const session = browserMediaSession();
     if (!session) return;
     const assetBaseUrl = typeof document === 'undefined' ? undefined : new URL(import.meta.env.BASE_URL, document.baseURI).href;
-    updateMediaSessionMetadata(session, currentTrack, 'Tokimeki', assetBaseUrl);
+    updateMediaSessionMetadata(session, currentTrack, PRODUCT_NAME, assetBaseUrl);
   }, [currentTrack?.artist, currentTrack?.id, currentTrack?.title]);
 
   useEffect(() => {

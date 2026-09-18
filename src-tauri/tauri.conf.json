@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Tokimeki",
+  "productName": "小小地图",
   "version": "0.0.1",
   "identifier": "app.tokimeki.desktop",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Tokimeki",
+        "title": "小小地图",
         "width": 430,
         "height": 860,
         "minWidth": 360,

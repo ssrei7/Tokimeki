@@ -34,6 +34,10 @@ describe('Media Session adapter', () => {
     });
   });
 
+  it('uses the product display name by default', () => {
+    expect(buildMusicMediaMetadata(track).album).toBe('小小地图');
+  });
+
   it('binds supported controls, skips unsupported actions and cleans up', () => {
     const { session, handlers } = fakeSession(['previoustrack']);
     const controls = { play: vi.fn(), pause: vi.fn(), previous: vi.fn(), next: vi.fn() };

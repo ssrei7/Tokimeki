@@ -226,6 +226,6 @@ describe('event package IO', () => {
     const future = new JSZip();
     future.file('manifest.json', JSON.stringify({ type: 'events', appVersion: '9.9.9', schemaVersion: 999 }));
     future.file('events.json', JSON.stringify({ id: 'future', name: '未来', events: [{ id: 'future', title: '未来事件', trigger: {}, content: '未来。' }] }));
-    await expect(importEventPackage(await future.generateAsync({ type: 'uint8array' }))).rejects.toThrow('请升级 Tokimeki');
+    await expect(importEventPackage(await future.generateAsync({ type: 'uint8array' }))).rejects.toThrow('请升级小小地图');
   });
 });

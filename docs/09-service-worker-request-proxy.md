@@ -2,7 +2,7 @@
 
 ## 结论
 
-Tokimeki 不实现 Service Worker Provider 请求代理。继续采用“页面前台直连 Provider、切后台前落盘、返回前台识别中断、用户显式重试、requestId 防止重复 ops”的恢复方案。
+小小地图不实现 Service Worker Provider 请求代理。继续采用“页面前台直连 Provider、切后台前落盘、返回前台识别中断、用户显式重试、requestId 防止重复 ops”的恢复方案。
 
 这个结论不排除 Service Worker 用于两个独立用途：离线应用壳缓存、已获得权限后的通知展示。它们不得接管 Provider 鉴权或生成请求。
 
@@ -29,7 +29,7 @@ Service Worker 发起的跨域 `fetch` 与页面请求一样受浏览器 CORS、
 - 页面与后台同时完成，产生竞态。
 - 同一响应中的 ops 被重复解析或应用。
 
-Tokimeki 的 `requestId` 可以防止本地重复应用已知 ops，但不能撤销 Provider 侧重复计费，也不能证明两次生成属于同一响应。因此禁止后台自动重放。
+小小地图的 `requestId` 可以防止本地重复应用已知 ops，但不能撤销 Provider 侧重复计费，也不能证明两次生成属于同一响应。因此禁止后台自动重放。
 
 ### 4. 扩大敏感数据范围
 

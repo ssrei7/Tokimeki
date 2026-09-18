@@ -5,24 +5,24 @@ import { exportEventPackage, exportWorldPackage } from './zip';
 
 const TEMPLATE_TIMESTAMP = '2000-01-01T00:00:00.000Z';
 
-const WORLD_TEMPLATE_README = `# Tokimeki 世界包模板
+const WORLD_TEMPLATE_README = `# 小小地图世界包模板
 
 1. 编辑根目录的 world.json，不要修改 manifest.json 中的 type 和 schemaVersion。
 2. JSON 不支持注释、尾逗号或未加双引号的字段名。
 3. id 是引用键。修改地点、角色、物品或事件 id 时，要同步修改所有引用它的字段。
 4. 修改完成后，把 manifest.json、world.json 和 README.md 直接压在 zip 根目录；不要在外面多套一层文件夹。
-5. 回到 Tokimeki 的“终端 → 存档 → 世界包”，选择“导入并合并世界包”进行检查。
+5. 回到小小地图的“终端 → 存档 → 世界包”，选择“导入并合并世界包”进行检查。
 
 模板包含一个地点、一个正式角色、一个物品、一个世界书条目和一个事件。可以删除不需要的示例，但不能留下指向已删除 id 的引用。
 图片请使用 AssetRef 外链 URL，或先在应用中配置后导出含图片的世界包。不要把 base64、API key 或 Provider 配置写进 world.json。
 `;
 
-const EVENT_TEMPLATE_README = `# Tokimeki 事件包模板
+const EVENT_TEMPLATE_README = `# 小小地图事件包模板
 
 1. 编辑根目录的 events.json，不要修改 manifest.json 中的 type 和 schemaVersion。
 2. JSON 不支持注释、尾逗号或未加双引号的字段名。
 3. 修改完成后，把 manifest.json、events.json 和 README.md 直接压在 zip 根目录；不要在外面多套一层文件夹。
-4. 回到 Tokimeki 的“终端 → 事件包”，选择“导入事件包”进行检查。
+4. 回到小小地图的“终端 → 事件包”，选择“导入事件包”进行检查。
 
 模板事件的 trigger 为空，因此不依赖特定地点或角色。需要限制触发条件时，可加入：
 - nodeIds：地点 id 数组

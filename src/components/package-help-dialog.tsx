@@ -52,7 +52,7 @@ export function PackageHelpButton({ kind }: { kind: PackageHelpKind }) {
 function WorldPackageGuide() {
   return <div className="package-help-content">
     <section><h3>世界包与世界存档有什么区别？</h3><p>世界包是“可复用设定模板”，世界存档是“一次实际游玩现场”。世界包包含地图、正式角色、NPC、NPC 模板、物品定义、事件定义，以及本机资料库中的世界书和角色卡；不会带走玩家时间、当前位置、关系进度、库存、终端消息、预约、事件历史或 API 配置。</p></section>
-    <section><h3>推荐制作流程</h3><ol><li>点击“下载世界包模板”，解压后先阅读 README.md，再编辑 world.json；也可以先在一个专门用于制作的世界中完成内容后导出。</li><li>检查稳定 ID。地点、角色、物品和事件之间的引用必须使用实际 ID；发布后尽量不要随意改 ID。</li><li>配置头像、立绘和场景背景。需要让接收者离线获得图片时，导出前勾选“含本地图片”。外链图片只保留 URL。</li><li>重新压缩模板，或点击“导出当前世界包”得到 zip。在另一个测试世界中导入一次，检查地图连接、角色、事件和图片。</li><li>确认无误后再分享 zip。建议同时写明适用的 Tokimeki 版本和包内容简介。</li></ol></section>
+    <section><h3>推荐制作流程</h3><ol><li>点击“下载世界包模板”，解压后先阅读 README.md，再编辑 world.json；也可以先在一个专门用于制作的世界中完成内容后导出。</li><li>检查稳定 ID。地点、角色、物品和事件之间的引用必须使用实际 ID；发布后尽量不要随意改 ID。</li><li>配置头像、立绘和场景背景。需要让接收者离线获得图片时，导出前勾选“含本地图片”。外链图片只保留 URL。</li><li>重新压缩模板，或点击“导出当前世界包”得到 zip。在另一个测试世界中导入一次，检查地图连接、角色、事件和图片。</li><li>确认无误后再分享 zip。建议同时写明适用的小小地图版本和包内容简介。</li></ol></section>
     <section><h3>导入会发生什么？</h3><ul><li>世界包会合并到当前世界，不会新建账号或上传数据。</li><li>同 ID 的地图节点、角色、NPC、物品或事件会先要求确认，确认后只覆盖这些静态定义。</li><li>玩家已有进度会保留。导入前仍建议先做一次世界存档或全局备份。</li><li>包内本地图片会写入 Assets IndexedDB，并改成当前浏览器自己的资产 ID。</li></ul></section>
     <section><h3>高级作者：zip 结构</h3><pre className="package-help-code">{`manifest.json       type 必须为 "world"，世界包 schema 当前为 1\nworld.json          世界包主体\ndata/asset-meta.json  可选，本地图片元数据\nassets/<assetId>    可选，本地图片二进制`}</pre><p>最稳妥的做法是先从应用导出模板，再编辑副本。不要把 API key、Provider 配置、存档进度或 base64 图片手工写进 world.json。</p></section>
     <section><h3>发布前检查</h3><ul><li>地图边是否都指向存在的节点。</li><li>角色住所、事件地点和参与角色 ID 是否存在。</li><li>事件引用的物品是否已经包含在物品定义中。</li><li>“仅保留引用”模式下，接收者是否能访问外链图片。</li></ul></section>

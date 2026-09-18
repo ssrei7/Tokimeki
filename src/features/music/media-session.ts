@@ -1,4 +1,5 @@
 import type { MusicTrack } from '../../data/content';
+import { PRODUCT_NAME } from '../../ui/branding';
 
 export interface MediaSessionControls {
   play: () => void | Promise<void>;
@@ -14,7 +15,7 @@ export function browserMediaSession(): MediaSession | undefined {
   return navigator.mediaSession;
 }
 
-export function buildMusicMediaMetadata(track: MusicTrack, appName = 'Tokimeki', assetBaseUrl?: string): MediaMetadataInit {
+export function buildMusicMediaMetadata(track: MusicTrack, appName = PRODUCT_NAME, assetBaseUrl?: string): MediaMetadataInit {
   const artwork = assetBaseUrl ? [
     { src: new URL('icons/icon-192.png', assetBaseUrl).href, sizes: '192x192', type: 'image/png' },
     { src: new URL('icons/icon-512.png', assetBaseUrl).href, sizes: '512x512', type: 'image/png' },
@@ -55,7 +56,7 @@ export function installMediaSessionHandlers(session: MediaSession, controls: Med
   };
 }
 
-export function updateMediaSessionMetadata(session: MediaSession, track: MusicTrack | undefined, appName = 'Tokimeki', assetBaseUrl?: string, factory?: MediaMetadataFactory): boolean {
+export function updateMediaSessionMetadata(session: MediaSession, track: MusicTrack | undefined, appName = PRODUCT_NAME, assetBaseUrl?: string, factory?: MediaMetadataFactory): boolean {
   if (!track) {
     try { session.metadata = null; return true; } catch { return false; }
   }

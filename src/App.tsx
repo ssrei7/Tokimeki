@@ -82,6 +82,7 @@ import { PackageHelpButton } from './components/package-help-dialog';
 import { useMusicPlayer, type MusicPlayerController } from './features/music/player';
 import './ui/theme/app.css';
 import { applyCustomCss, applyTheme, applyThemeAppearance, applyThemeTemplate, DEFAULT_THEME_APPEARANCE, parseDesktopIconOverrides, parseDesktopTitleOverrides, parseThemeAppearance, readCustomCss, readDesktopIconOverrides, readDesktopTitleOverrides, readThemeAppearance, readThemeMode, readThemeTemplate, resolveTheme, THEME_APPEARANCE_STORAGE_KEY, THEME_STORAGE_KEY, THEME_TEMPLATE_STORAGE_KEY, type DesktopIconOverrides, type DesktopTitleOverrides, type ThemeAppearanceConfig, type ThemeMode, type ThemeTemplate, validateCustomCss, writeCustomCss, writeDesktopIconOverrides, writeDesktopTitleOverrides, writeThemeAppearance } from './ui/theme/preferences';
+import { DEFAULT_APP_NAME, PRODUCT_NAME, resolveAppDisplayName } from './ui/branding';
 
 type Tab = 'map' | 'day' | 'chat' | 'library' | 'settings';
 export type SettingsPage = 'player' | 'provider' | 'vector-memory' | 'voice' | 'image' | 'routing' | 'migration' | 'display' | 'rules' | 'privacy' | 'debug' | 'dev-tools';
@@ -170,13 +171,10 @@ const ENCOUNTER_CHAT_SESSION_KEY = 'tokimeki.encounter-chat-session';
 const APP_NAME_STORAGE_KEY = 'tokimeki.appName';
 const TERMINAL_SELECTED_CONTACT_KEY = 'tokimeki.terminal.selectedContact';
 const TERMINAL_DRAFTS_KEY = 'tokimeki.terminal.drafts.v1';
-const DEFAULT_APP_NAME = 'Tokimeki';
-
 function readAppName(): string {
   if (typeof window === 'undefined') return DEFAULT_APP_NAME;
   try {
-    const stored = window.localStorage.getItem(APP_NAME_STORAGE_KEY)?.trim();
-    return stored ? stored.slice(0, 32) : DEFAULT_APP_NAME;
+    return resolveAppDisplayName(window.localStorage.getItem(APP_NAME_STORAGE_KEY));
   } catch { return DEFAULT_APP_NAME; }
 }
 
@@ -2848,7 +2846,7 @@ export function App() {
     try {
       config = parseEditedEmbeddingConfig();
       if (!config.endpoint.trim() || !config.model.trim()) throw new Error('请填写 embedding 请求端点和模型。');
-      const vectors = await createEmbeddings({ endpoint: config.endpoint, model: config.model, apiKey: config.apiKey, headers: config.headers, texts: ['Tokimeki 向量记忆连接测试'] });
+      const vectors = await createEmbeddings({ endpoint: config.endpoint, model: config.model, apiKey: config.apiKey, headers: config.headers, texts: [`${PRODUCT_NAME}向量记忆连接测试`] });
       await persistEmbeddingResult(config, true);
       setFeedback({ tone: 'success', text: `Embedding 连接成功，返回 ${vectors[0]?.length ?? 0} 维向量。` });
     } catch (error) {
@@ -2949,7 +2947,7 @@ export function App() {
     try {
       config = parseEditedTtsConfig();
       if (!config.endpoint.trim() || !config.model.trim() || !config.voice.trim()) throw new Error('请填写语音端点、模型和 voice。');
-      const result = await synthesizeSpeech({ ...config, enabled: true }, 'Tokimeki 语音连接测试');
+      const result = await synthesizeSpeech({ ...config, enabled: true }, `${PRODUCT_NAME}语音连接测试`);
       await persistTtsResult(config, 'success');
       setFeedback({ tone: 'success', text: `语音连接成功，收到 ${result.format} 音频。` });
     } catch (error) {
@@ -2990,7 +2988,7 @@ export function App() {
     const requesting = ImageConfigSchema.parse({ ...config, lastStatus: 'requesting', lastError: undefined, lastCalledAt: now(), updatedAt: now() });
     imageConfigRef.current = requesting; setImageConfig(requesting); await providerDb.imageConfigs.put(requesting);
     try {
-      await generateImage(selectedProvider, 'Tokimeki 图像连接测试', { size: config.size, quality: config.quality, style: config.style, responseFormat: config.responseFormat, referenceMode: 'none' });
+      await generateImage(selectedProvider, `${PRODUCT_NAME}图像连接测试`, { size: config.size, quality: config.quality, style: config.style, responseFormat: config.responseFormat, referenceMode: 'none' });
       const success = ImageConfigSchema.parse({ ...requesting, lastStatus: 'success', requestCount: requesting.requestCount + 1, updatedAt: now() });
       imageConfigRef.current = success; setImageConfig(success); await providerDb.imageConfigs.put(success);
       setFeedback({ tone: 'success', text: `图像 Provider 连接成功（${Date.now() - startedAt} ms）。` });
@@ -5192,9 +5190,9 @@ function SettingsView(props: {
       <h3>移动端与 PWA 能力</h3>
       <div className="stat-list"><span>平台：{mobileCapabilities.platformFamily === 'ios' ? 'iOS / iPadOS' : mobileCapabilities.platformFamily === 'android' ? 'Android' : '其他 / 无法确定'}</span><span>运行方式：{mobileCapabilities.displayMode === 'standalone' ? '主屏幕 / standalone' : '浏览器标签页'}</span><span>通知：{notificationCapabilityLabel(mobileCapabilities)}</span><span>Service Worker：{serviceWorkerCapabilityLabel(mobileCapabilities)}</span><span>Media Session：{mobileCapabilities.mediaSessionApi ? 'API 可用' : '不可用'}</span><span>持久化存储：{mobileCapabilities.storagePersistApi ? '可申请' : '不可申请'}</span></div>
       <details><summary>后台相关 API 诊断</summary><div className="stat-list"><span>Push：{mobileCapabilities.pushManagerApi ? 'API 可见' : '不可用'}</span><span>Background Sync：{mobileCapabilities.backgroundSyncApi ? 'API 可见' : '不可用'}</span><span>Periodic Sync：{mobileCapabilities.periodicSyncApi ? 'API 可见' : '不可用'}</span><span>Wake Lock：{mobileCapabilities.wakeLockApi ? 'API 可见' : '不可用'}</span><span>安全上下文：{mobileCapabilities.secureContext ? '是' : '否'}</span></div></details>
-      <p className="io-scope">“API 可用”只表示当前浏览器暴露了接口，不代表后台请求、通知、锁屏播放或定时任务一定持续运行。系统仍可能冻结页面、终止 Service Worker 或回收进程；Tokimeki 继续以落盘恢复和手动重试作为可靠降级。</p>
+      <p className="io-scope">“API 可用”只表示当前浏览器暴露了接口，不代表后台请求、通知、锁屏播放或定时任务一定持续运行。系统仍可能冻结页面、终止 Service Worker 或回收进程；{PRODUCT_NAME}继续以落盘恢复和手动重试作为可靠降级。</p>
       <h3>Provider 后台代理评估</h3>
-      <p className="io-scope">{providerProxyAssessmentLabel(mobileCapabilities.serviceWorkerApi)}。Service Worker 仍受 CORS 和系统生命周期限制；Tokimeki 不会把 API key 或完整 prompt 复制进后台任务，也不会自动重放可能产生重复计费和重复 ops 的生成请求。</p>
+      <p className="io-scope">{providerProxyAssessmentLabel(mobileCapabilities.serviceWorkerApi)}。Service Worker 仍受 CORS 和系统生命周期限制；{PRODUCT_NAME}不会把 API key 或完整 prompt 复制进后台任务，也不会自动重放可能产生重复计费和重复 ops 的生成请求。</p>
       <details><summary>查看不启用原因</summary><ul>{PROVIDER_PROXY_ASSESSMENT.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></details>
       <LocalNotificationSettingsPanel />
       <h3>图片资产</h3>

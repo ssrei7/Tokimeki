@@ -8,6 +8,7 @@ import { clearDesktopOrder, clearDesktopPages, moveIdBefore, moveIdToPageEnd, re
 import { readDesktopIconOverrides, readDesktopTitleOverrides } from '@/ui/theme/preferences';
 import { loadAsset } from '@/data/db/assets';
 import type { AssetRef } from '@/data/schema/save';
+import { DEFAULT_APP_NAME } from '@/ui/branding';
 import { PackageHelpPortal } from './package-help-dialog';
 
 export type DesktopEntry = {
@@ -19,7 +20,7 @@ export type DesktopEntry = {
 
 const DESKTOP_PAGE_ROWS = 6;
 
-export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperUrl, appName = 'Tokimeki' }: { launcherId: string; title: string; entries: readonly DesktopEntry[]; onOpen: (id: string) => void; wallpaperUrl?: string; appName?: string }) {
+export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperUrl, appName = DEFAULT_APP_NAME }: { launcherId: string; title: string; entries: readonly DesktopEntry[]; onOpen: (id: string) => void; wallpaperUrl?: string; appName?: string }) {
   const [contrast, setContrast] = useState<DesktopIconContrast | null>(null);
   const [columns, setColumns] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 700px)').matches ? 6 : 4);
   const [page, setPage] = useState(0);

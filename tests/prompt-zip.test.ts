@@ -291,7 +291,7 @@ describe('save zip IO', () => {
     zip.file('save.json', JSON.stringify({ schemaVersion: 999 }));
     const importing = importSaveZip(await zip.generateAsync({ type: 'uint8array' }));
     await expect(importing).rejects.toBeInstanceOf(UnsupportedSchemaVersionError);
-    await expect(importing).rejects.toThrow('请升级 Tokimeki');
+    await expect(importing).rejects.toThrow('请升级小小地图');
   });
 });
 

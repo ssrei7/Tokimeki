@@ -1,6 +1,6 @@
 # Tauri 桌面构建
 
-Tokimeki 的桌面壳使用 Tauri 2。它复用同一套 React 静态前端、IndexedDB 数据和本地偏好，不增加后端或账号系统，也不改变 SaveFile schema。
+小小地图的桌面壳使用 Tauri 2。它复用同一套 React 静态前端、IndexedDB 数据和本地偏好，不增加后端或账号系统，也不改变 SaveFile schema。
 
 ## 当前范围
 
