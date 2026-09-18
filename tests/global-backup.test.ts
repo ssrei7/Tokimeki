@@ -1,8 +1,8 @@
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { collectTokimekiPreferences, exportGlobalBackup, importGlobalBackup, restoreTokimekiPreferences, type GlobalBackupData } from '../src/data/io/global-backup';
+import { collectThemeBackup, collectTokimekiPreferences, exportGlobalBackup, importGlobalBackup, restoreTokimekiPreferences, themeBackupPreferences, type GlobalBackupData } from '../src/data/io/global-backup';
 
-const base = { snapshots: [], content: { characters: [], personas: [], worldbooks: [], presets: [], presetBundles: [], storyScenePresets: [], chats: [], chatRecovery: [], memoryVectors: [], musicStates: [], terminalStickers: [] }, providers: [], ttsConfigs: [], bindings: [], characterBindings: [], imageConfigs: [], imageVisualConfigs: [], imageUserVisualConfigs: [], settings: [], localStorage: {} } satisfies Omit<GlobalBackupData, 'currentSave'>;
+const base = { snapshots: [], content: { characters: [], personas: [], worldbooks: [], presets: [], presetBundles: [], storyScenePresets: [], chats: [], chatRecovery: [], memoryVectors: [], musicStates: [], terminalStickers: [] }, providers: [], ttsConfigs: [], bindings: [], characterBindings: [], imageConfigs: [], imageVisualConfigs: [], imageUserVisualConfigs: [], settings: [], localStorage: {}, theme: collectThemeBackup({ getItem: () => null }) } satisfies Omit<GlobalBackupData, 'currentSave'>;
 
 describe('global backup IO', () => {
   it('round trips assets and strips secrets by default', async () => {
@@ -46,5 +46,15 @@ describe('global backup IO', () => {
     expect(values.get('tokimeki.appName')).toBe('新名称');
     expect(values.has('tokimeki.stale')).toBe(false);
     expect(values.get('other.app')).toBe('保留');
+  });
+
+  it('round trips explicit theme data and lets it override legacy preference keys', async () => {
+    const theme = { ...base.theme, mode: 'dark' as const, template: 'soft' as const, customCss: '.demo { color: red; }', desktopTitles: { settings: { migration: '备份迁移' } }, desktopIcons: { settings: { migration: { kind: 'url' as const, url: 'https://example.com/icon.png' } } } };
+    const blob = await exportGlobalBackup({ ...base, theme, localStorage: { 'tokimeki.theme-mode': 'light' } }, []);
+    const imported = await importGlobalBackup(blob);
+    expect(imported.data.theme.mode).toBe('dark');
+    expect(imported.data.theme.template).toBe('soft');
+    expect(imported.data.theme.desktopTitles.settings.migration).toBe('备份迁移');
+    expect(themeBackupPreferences(imported.data.theme)['tokimeki.theme-mode']).toBe('dark');
   });
 });

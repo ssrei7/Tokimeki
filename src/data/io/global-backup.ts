@@ -6,8 +6,17 @@ import { migrateSave } from '../migrations';
 import { SaveFileSchema, type SaveFile } from '../schema/save';
 import type { SaveSnapshot } from '../db/save';
 import type { StoredAsset } from '../db/assets';
+import { DEFAULT_THEME_APPEARANCE, parseDesktopIconOverrides, parseDesktopTitleOverrides, parseThemeAppearance, parseThemeMode, parseThemeTemplate, readCustomCss, type DesktopIconOverrides, type DesktopTitleOverrides, type ThemeAppearanceConfig, type ThemeMode, type ThemeTemplate } from '../../ui/theme/preferences';
 
-export const GLOBAL_BACKUP_VERSION = 2;
+export const GLOBAL_BACKUP_VERSION = 3;
+export interface ThemeBackupData {
+  mode: ThemeMode;
+  template: ThemeTemplate;
+  appearance: ThemeAppearanceConfig;
+  customCss: string;
+  desktopTitles: DesktopTitleOverrides;
+  desktopIcons: DesktopIconOverrides;
+}
 export interface GlobalBackupData {
   currentSave?: SaveFile;
   snapshots: SaveSnapshot[];
@@ -21,6 +30,7 @@ export interface GlobalBackupData {
   imageUserVisualConfigs: ImageUserVisualConfig[];
   settings: Array<{ key: 'defaultProviderId' | 'defaultTtsProviderId' | 'chatPlayerLabel'; value: string }>;
   localStorage: Record<string, string>;
+  theme: ThemeBackupData;
 }
 export interface ImportedGlobalBackup { data: GlobalBackupData; assets: Map<string, Uint8Array>; assetMeta: Record<string, Omit<StoredAsset, 'blob' | 'id'>>; hasSecrets: boolean }
 export interface GlobalBackupRestoreSelection { world: boolean; content: boolean; providers: boolean; assets: boolean; preferences: boolean }
@@ -34,6 +44,35 @@ export function collectTokimekiPreferences(storage: Pick<Storage, 'length' | 'ke
     if (value !== null) result[key] = value;
   }
   return result;
+}
+
+export function collectThemeBackup(storage: Pick<Storage, 'getItem'>): ThemeBackupData {
+  const get = (key: string) => { try { return storage.getItem(key); } catch { return null; } };
+  let appearance = { ...DEFAULT_THEME_APPEARANCE };
+  try { const raw = get('tokimeki.theme-appearance'); if (raw) appearance = parseThemeAppearance(JSON.parse(raw)); } catch { /* use defaults */ }
+  let desktopTitles: DesktopTitleOverrides = {};
+  let desktopIcons: DesktopIconOverrides = {};
+  try { const raw = get('tokimeki.desktop-titles'); if (raw) desktopTitles = parseDesktopTitleOverrides(JSON.parse(raw)); } catch { /* use defaults */ }
+  try { const raw = get('tokimeki.desktop-icons'); if (raw) desktopIcons = parseDesktopIconOverrides(JSON.parse(raw)); } catch { /* use defaults */ }
+  return {
+    mode: parseThemeMode(get('tokimeki.theme-mode')),
+    template: parseThemeTemplate(get('tokimeki.theme-template')),
+    appearance,
+    customCss: readCustomCss({ getItem: get }),
+    desktopTitles,
+    desktopIcons,
+  };
+}
+
+export function themeBackupPreferences(theme: ThemeBackupData): Record<string, string> {
+  return {
+    'tokimeki.theme-mode': theme.mode,
+    'tokimeki.theme-template': theme.template,
+    'tokimeki.theme-appearance': JSON.stringify(parseThemeAppearance(theme.appearance)),
+    'tokimeki.custom-css': theme.customCss,
+    'tokimeki.desktop-titles': JSON.stringify(parseDesktopTitleOverrides(theme.desktopTitles)),
+    'tokimeki.desktop-icons': JSON.stringify(parseDesktopIconOverrides(theme.desktopIcons)),
+  };
 }
 
 export function restoreTokimekiPreferences(storage: Pick<Storage, 'length' | 'key' | 'getItem' | 'setItem' | 'removeItem'>, preferences: Record<string, string>): void {
@@ -82,7 +121,11 @@ function parseGlobalBackupData(value: unknown): GlobalBackupData {
   const raw = z.object({
     currentSave: z.unknown().optional(), snapshots: z.array(z.object({ id: z.string().min(1), day: z.number().int().positive(), createdAt: z.string().datetime(), save: z.unknown() })),
     content: z.object({ characters: z.array(CharacterCardSchema), personas: z.array(PersonaSchema), worldbooks: z.array(WorldbookEntrySchema), presets: z.array(PresetSchema), presetBundles: z.array(PresetBundleSchema), storyScenePresets: z.array(StoryScenePresetSchema), chats: z.array(ChatRecordSchema), chatRecovery: z.array(ChatRecoveryRecordSchema), memoryVectors: z.array(MemoryVectorRecordSchema), musicStates: z.array(MusicStateSchema), terminalStickers: z.array(TerminalStickerRecordSchema) }),
-    providers: z.array(ProviderConfigSchema), ttsConfigs: z.array(TtsConfigSchema), bindings: z.array(ProviderBindingSchema), characterBindings: z.array(CharacterProviderBindingSchema), imageConfigs: z.array(ImageConfigSchema).default([]), imageVisualConfigs: z.array(ImageVisualConfigSchema).default([]), imageUserVisualConfigs: z.array(ImageUserVisualConfigSchema).default([]), settings: z.array(ProviderSettingSchema), localStorage: z.record(z.string(), z.string()),
+    providers: z.array(ProviderConfigSchema), ttsConfigs: z.array(TtsConfigSchema), bindings: z.array(ProviderBindingSchema), characterBindings: z.array(CharacterProviderBindingSchema), imageConfigs: z.array(ImageConfigSchema).default([]), imageVisualConfigs: z.array(ImageVisualConfigSchema).default([]), imageUserVisualConfigs: z.array(ImageUserVisualConfigSchema).default([]), settings: z.array(ProviderSettingSchema), localStorage: z.record(z.string(), z.string()), theme: z.object({ mode: z.enum(['system', 'light', 'dark']), template: z.enum(['default', 'soft', 'compact']), appearance: z.record(z.string(), z.unknown()), customCss: z.string(), desktopTitles: z.record(z.string(), z.record(z.string(), z.string())), desktopIcons: z.record(z.string(), z.record(z.string(), z.unknown())) }).optional(),
   }).parse(value);
-  return { ...raw, currentSave: raw.currentSave === undefined ? undefined : SaveFileSchema.parse(migrateSave(raw.currentSave)), snapshots: raw.snapshots.map((snapshot) => ({ ...snapshot, save: SaveFileSchema.parse(migrateSave(snapshot.save)) })) };
+  const fallbackTheme = collectThemeBackup({ getItem: (key) => raw.localStorage[key] ?? null });
+  const theme = raw.theme ? {
+    mode: parseThemeMode(raw.theme.mode), template: parseThemeTemplate(raw.theme.template), appearance: parseThemeAppearance(raw.theme.appearance), customCss: raw.theme.customCss.slice(0, 20000), desktopTitles: parseDesktopTitleOverrides(raw.theme.desktopTitles), desktopIcons: parseDesktopIconOverrides(raw.theme.desktopIcons),
+  } : fallbackTheme;
+  return { ...raw, theme, currentSave: raw.currentSave === undefined ? undefined : SaveFileSchema.parse(migrateSave(raw.currentSave)), snapshots: raw.snapshots.map((snapshot) => ({ ...snapshot, save: SaveFileSchema.parse(migrateSave(snapshot.save)) })) };
 }
