@@ -42,6 +42,11 @@ describe('settings desktop', () => {
     expect(ROUTING_TASK_IDS).not.toContain('image');
   });
 
+  it('keeps the standalone image settings content visible', () => {
+    const css = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
+    expect(css).toContain(".subpage-content[data-page='image'] > :nth-child(1)");
+  });
+
   it('renders every launcher as a named button', () => {
     const html = renderToStaticMarkup(createElement(DesktopLauncher, { launcherId: 'settings', title: '设置', entries: SETTINGS_PAGE_DEFINITIONS, onOpen: () => undefined }));
     for (const entry of SETTINGS_PAGE_DEFINITIONS) {

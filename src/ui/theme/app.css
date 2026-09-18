@@ -65,6 +65,7 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .subpage-content[data-page='routing'] > :nth-child(5),
 .subpage-content[data-page='rules'] > :nth-child(6),
 .subpage-content[data-page='display'] > :nth-child(7),
+.subpage-content[data-page='image'] > :nth-child(1),
 .subpage-content[data-page='privacy'] > :nth-child(8),
 .subpage-content[data-page='debug'] > :nth-child(9),
 .subpage-content[data-page='dev-tools'] > :nth-child(10),
