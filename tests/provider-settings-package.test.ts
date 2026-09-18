@@ -37,4 +37,19 @@ describe('provider settings migration package', () => {
     expect(imported.providers[0].apiKey).toBe('secret');
     expect(imported.providers[0].headers?.Authorization).toBe('Bearer secret');
   });
+
+  it('migrates non-sensitive image options without transient request state', async () => {
+    const updatedAt = '2026-09-18T00:00:00.000Z';
+    const pack = createProviderSettingsPackage({ providers: [provider], ttsConfigs: [], bindings: [], characterBindings: [], imageConfig: { id: 'image', providerId: 'chat', size: '1024x1024', stylePrompt: '柔和水彩', responseFormat: 'b64_json', referenceMode: 'none', requestCount: 8, failureCount: 2, lastStatus: 'error', lastError: 'private error', updatedAt }, saveId: 'world' }, { providerIds: ['chat'], ttsIds: [], includeBindings: false });
+    const imported = await importProviderSettingsPackage(exportProviderSettingsPackage(pack));
+    expect(imported.imageConfig).toMatchObject({ providerId: 'chat', stylePrompt: '柔和水彩', requestCount: 0, failureCount: 0, lastStatus: 'idle' });
+    expect(imported.imageConfig).not.toHaveProperty('lastError');
+  });
+
+  it('accepts legacy version 1 packages without image options', async () => {
+    const legacy = { type: 'tokimeki-provider-settings', schemaVersion: 1, exportedAt: new Date().toISOString(), providers: [], ttsConfigs: [], bindings: [], characterBindings: [] };
+    const imported = await importProviderSettingsPackage(JSON.stringify(legacy));
+    expect(imported).toMatchObject({ schemaVersion: 2, providers: [] });
+    expect(imported.imageConfig).toBeUndefined();
+  });
 });

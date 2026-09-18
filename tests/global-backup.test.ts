@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { collectTokimekiPreferences, exportGlobalBackup, importGlobalBackup, restoreTokimekiPreferences, type GlobalBackupData } from '../src/data/io/global-backup';
 
-const base = { snapshots: [], content: { characters: [], personas: [], worldbooks: [], presets: [], presetBundles: [], storyScenePresets: [], chats: [], chatRecovery: [], memoryVectors: [], musicStates: [], terminalStickers: [] }, providers: [], ttsConfigs: [], bindings: [], characterBindings: [], settings: [], localStorage: {} } satisfies Omit<GlobalBackupData, 'currentSave'>;
+const base = { snapshots: [], content: { characters: [], personas: [], worldbooks: [], presets: [], presetBundles: [], storyScenePresets: [], chats: [], chatRecovery: [], memoryVectors: [], musicStates: [], terminalStickers: [] }, providers: [], ttsConfigs: [], bindings: [], characterBindings: [], imageConfigs: [], imageVisualConfigs: [], imageUserVisualConfigs: [], settings: [], localStorage: {} } satisfies Omit<GlobalBackupData, 'currentSave'>;
 
 describe('global backup IO', () => {
   it('round trips assets and strips secrets by default', async () => {
@@ -16,6 +16,26 @@ describe('global backup IO', () => {
   it('rejects malformed backup data before import', async () => {
     const zip = new JSZip(); zip.file('manifest.json', JSON.stringify({ type: 'global-backup', schemaVersion: 1 })); zip.file('data.json', JSON.stringify({ snapshots: [] }));
     await expect(importGlobalBackup(await zip.generateAsync({ type: 'uint8array' }))).rejects.toThrow();
+  });
+
+  it('imports version 1 backups with empty image configuration defaults', async () => {
+    const zip = new JSZip();
+    zip.file('manifest.json', JSON.stringify({ type: 'global-backup', schemaVersion: 1 }));
+    const { imageConfigs: _imageConfigs, imageVisualConfigs: _imageVisualConfigs, imageUserVisualConfigs: _imageUserVisualConfigs, ...legacy } = base;
+    zip.file('data.json', JSON.stringify(legacy));
+    const imported = await importGlobalBackup(await zip.generateAsync({ type: 'uint8array' }));
+    expect(imported.data).toMatchObject({ imageConfigs: [], imageVisualConfigs: [], imageUserVisualConfigs: [] });
+  });
+
+  it('round trips image settings and lock references with their assets', async () => {
+    const updatedAt = '2026-09-18T00:00:00.000Z';
+    const data: GlobalBackupData = { ...base, imageConfigs: [{ id: 'image', size: '1024x1024', stylePrompt: '水彩', responseFormat: 'b64_json', referenceMode: 'openai-edits', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt }], imageVisualConfigs: [{ id: 'world:rin', saveId: 'world', characterId: 'rin', appearancePrompt: '黑发', lockFaceEnabled: true, referenceImage: { kind: 'stored', assetId: 'face' }, updatedAt }], imageUserVisualConfigs: [] };
+    const blob = await exportGlobalBackup(data, [{ id: 'face', blob: new Blob(['image'], { type: 'image/png' }), mimeType: 'image/png', category: 'image', createdAt: updatedAt }]);
+    const imported = await importGlobalBackup(blob);
+    expect(imported.data.imageConfigs[0].stylePrompt).toBe('水彩');
+    expect(imported.data.imageVisualConfigs[0].referenceImage?.assetId).toBe('face');
+    expect(imported.assets.has('face')).toBe(true);
+    expect(imported.assetMeta.face.category).toBe('image');
   });
 
   it('exports only Tokimeki preferences and removes stale keys on restore', () => {

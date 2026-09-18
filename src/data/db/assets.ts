@@ -4,7 +4,7 @@ export interface StoredAsset {
   id: string;
   blob: Blob;
   mimeType: string;
-  category?: 'voice';
+  category?: 'voice' | 'image';
   cacheFingerprint?: string;
   audioFormat?: string;
   durationMs?: number;
@@ -29,13 +29,20 @@ export class AssetDatabase extends Dexie {
     this.version(2).stores({ assets: 'id, createdAt, category, cacheFingerprint' }).upgrade((transaction) => transaction.table('assets').toCollection().modify((asset: StoredAsset) => {
       if ((asset.id.startsWith('terminal-voice-') || asset.id.startsWith('chat-voice-')) && asset.mimeType.startsWith('audio/')) asset.category = 'voice';
     }));
+    this.version(3).stores({ assets: 'id, createdAt, category, cacheFingerprint' }).upgrade((transaction) => transaction.table('assets').toCollection().modify((asset: StoredAsset) => {
+      if (!asset.category && asset.mimeType.startsWith('image/')) asset.category = 'image';
+    }));
   }
 }
 
 export const assetDb = new AssetDatabase();
 
 export async function saveAsset(asset: StoredAsset): Promise<StoredAsset> {
-  const normalized = !asset.category && (asset.id.startsWith('terminal-voice-') || asset.id.startsWith('chat-voice-')) && asset.mimeType.startsWith('audio/') ? { ...asset, category: 'voice' as const } : asset;
+  const normalized = !asset.category && asset.mimeType.startsWith('image/')
+    ? { ...asset, category: 'image' as const }
+    : !asset.category && (asset.id.startsWith('terminal-voice-') || asset.id.startsWith('chat-voice-')) && asset.mimeType.startsWith('audio/')
+      ? { ...asset, category: 'voice' as const }
+      : asset;
   await assetDb.assets.put(normalized);
   return normalized;
 }
