@@ -582,6 +582,7 @@
 - Tauri 桌面骨架已接入：复用 Vite 静态产物，锁定 Tauri CLI/Rust 主依赖，使用现有 PWA 图标，并以最小 `core:default` 权限启动；当前开发机缺少 Rust/Cargo，原生安装包与 Cargo 锁文件仍待具备工具链后验证。普通 WebView `fetch` 不视为已解决 CORS，受权限约束的原生 HTTP 传输另开切片。
 - `navigator.storage.persist()`
 - 评估 Android / iOS 安装形态的系统通知与受限后台任务；仅在移动端壳和系统权限允许时实现，不把 Service Worker 宣称为通用后台保活
+- Android / iOS 浏览器与 PWA 能力诊断已完成首切片：设置页可纯本地查看平台、运行形态、通知权限、Service Worker 控制、Media Session、存储和后台相关 API；能力矩阵与真机检查表见 `docs/08-mobile-platform-capabilities.md`。API 可见不视为后台可靠。
 - 评估 Service Worker 请求代理：后台期间代持单次 Provider 请求并把片段写入 IndexedDB，恢复前台后回放；若平台会终止任务则保留阶段 9 的中断恢复语义
 - 音乐 App 平台补强：Media Session 控制与元数据、可选本地音频资产导入和离线缓存（先评估存储配额），Android / iOS 浏览器、PWA 与移动端壳真机验证
 

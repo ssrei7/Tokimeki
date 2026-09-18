@@ -605,3 +605,8 @@
 **决定**：桌面版采用 Tauri 2，复用现有 React/Vite 静态产物、IndexedDB 数据边界和 PWA 图标。首个切片只建立可复现的桌面工程、开发/构建命令、窗口与 CSP 配置；默认 capability 仅包含 `core:default`，不开放文件系统、Shell、通知或原生网络权限。Tauri CLI 与 Rust 主依赖使用精确版本，首次具备 Rust 工具链并成功构建后补交 `Cargo.lock`。
 
 **CORS 与验证边界**：普通 Tauri WebView 中的浏览器 `fetch` 不等于原生 HTTP，也不能宣称自动绕过 Provider CORS。后续必须通过独立传输层接入受权限约束的 Tauri HTTP 插件，且只允许请求用户显式配置的端点；网页版继续使用浏览器 `fetch`。当前开发机没有 Rust/Cargo，因此本切片只验证前端构建、配置、CLI 与自动测试，不宣称原生安装包已构建或运行。SaveFile 保持 v41。
+
+## D112 移动端能力诊断区分 API、接入状态与可靠性
+**决定**：数据与隐私页纯本地显示当前平台族、浏览器/standalone 形态、通知权限、Service Worker 是否受控、Media Session、持久化存储及后台相关 API 可见性。诊断不申请权限、不注册 Service Worker、不调用 Provider，也不根据 User-Agent 宣称具体系统版本必然支持某项能力。
+
+**平台边界**：API 存在只表示浏览器暴露接口，不代表 Android/iOS 会允许后台请求、通知、媒体控制或同步任务持续运行。当前没有 Service Worker 和通知入口；后台可靠降级继续采用页面隐藏前落盘、返回前台识别中断、用户显式重试和防止重复 ops。真机结果按设备、系统、浏览器与安装形态记录，不能泛化为跨平台承诺。SaveFile 保持 v41。
