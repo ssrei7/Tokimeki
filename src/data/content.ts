@@ -68,6 +68,16 @@ export const VoiceAttachmentSchema = z.object({
   cacheFingerprint: z.string().min(1),
 });
 export type VoiceAttachment = z.infer<typeof VoiceAttachmentSchema>;
+export const ChatCgAttachmentSchema = z.object({
+  asset: AssetRefSchema,
+  prompt: z.string().min(1),
+  requestId: Id,
+  characterIds: z.array(Id).min(1).max(3),
+  includesPlayer: z.boolean(),
+  generatedAt: z.string().datetime(),
+  revisedPrompt: z.string().optional(),
+});
+export type ChatCgAttachment = z.infer<typeof ChatCgAttachmentSchema>;
 export const ChatMessageSchema = z.object({
   id: Id.optional(),
   role: z.enum(['system', 'user', 'assistant']),
@@ -75,6 +85,7 @@ export const ChatMessageSchema = z.object({
   kind: DialogueKindSchema.optional(),
   speakerId: Id.optional(),
   voice: VoiceAttachmentSchema.optional(),
+  cg: ChatCgAttachmentSchema.optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export const ChatRecordSchema = z.object({ characterId: Id, messages: z.array(ChatMessageSchema), updatedAt: z.string().datetime() });

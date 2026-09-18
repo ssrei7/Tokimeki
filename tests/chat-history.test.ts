@@ -40,6 +40,13 @@ describe('chat history editing', () => {
     expect(edited[0]).not.toHaveProperty('voice');
   });
 
+  it('removes a stale CG attachment when its message text changes', () => {
+    const message: ChatMessage = { id: 'reply-cg', role: 'assistant', content: '旧文本', kind: 'dialogue', speakerId: 'formal', cg: { asset: { kind: 'stored', assetId: 'cg-1' }, prompt: '旧画面', requestId: 'request-cg', characterIds: ['formal'], includesPlayer: false, generatedAt: new Date().toISOString() } };
+    const edited = updateChatMessage([message], 0, '新文本');
+    expect(edited[0]).toMatchObject({ id: 'reply-cg', content: '新文本' });
+    expect(edited[0]).not.toHaveProperty('cg');
+  });
+
   it('adds stable IDs to legacy chat messages without replacing existing IDs', () => {
     const legacy: ChatMessage[] = [user('你好'), { id: 'existing', role: 'assistant', content: '你好', kind: 'dialogue', speakerId: 'formal' }];
     const first = normalizeChatMessages('formal', legacy);

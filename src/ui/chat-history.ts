@@ -14,8 +14,8 @@ export function updateChatMessage(messages: ChatMessage[], index: number, conten
   if (!nextContent || !messages[index] || !isEditableChatMessage(messages[index])) return messages;
   return messages.map((message, messageIndex) => {
     if (messageIndex !== index) return message;
-    const { voice: _voice, ...withoutVoice } = message;
-    return { ...withoutVoice, content: nextContent };
+    const { voice: _voice, cg: _cg, ...withoutGeneratedMedia } = message;
+    return { ...withoutGeneratedMedia, content: nextContent };
   });
 }
 

@@ -14,7 +14,7 @@ import { attachTerminalVoiceToMessage, buildTerminalReplyPrompt, confirmTerminal
 import { createDefaultOpRegistry, OpsStreamSplitter, parseReply } from './core/ops';
 import type { ApplyOpsResult, ParsedReply } from './core/ops';
 import { advanceAction, availableSlots, endDay, updateDiaryEntry } from './core/time';
-import { PresetBundleSchema, PresetSchema, normalizeChatMessages, type CharacterCard, type ChatMessage, type ChatRecord, type ChatRecoveryRecord, type Persona, type Preset, type PresetBundle, type TerminalStickerRecord, type VoiceAttachment, type WorldbookEntry } from './data/content';
+import { PresetBundleSchema, PresetSchema, normalizeChatMessages, type CharacterCard, type ChatCgAttachment, type ChatMessage, type ChatRecord, type ChatRecoveryRecord, type Persona, type Preset, type PresetBundle, type TerminalStickerRecord, type VoiceAttachment, type WorldbookEntry } from './data/content';
 import { clearChatRecovery, clearChats, clearMemoryVectors, contentDb, deleteCharacter, deletePersona, deletePreset, deletePresetBundle, deleteStoryScenePreset, deleteTerminalSticker, deleteWorldbook, listTerminalStickers, loadChat, loadChatRecovery, loadMemoryVectors, saveCharacter, saveChat, saveChatRecovery, saveMemoryVectors, savePersona, savePreset, savePresetBundle, saveStoryScenePreset, saveTerminalSticker, saveWorldbook } from './data/db/content';
 import { BUILTIN_NARRATION_PRESET_BUNDLE_ID, createBuiltinNarrationPresetBundle, mergeBuiltinNarrationPresetBundle } from './data/presets/builtins';
 import { assetDb, deleteAsset, findVoiceAssetByFingerprint, listAssets, listVoiceAssets, loadAsset, saveAsset, saveVoiceAsset, summarizeVoiceCache, unmarkVoiceAsset, type StoredAsset, type VoiceCacheStats } from './data/db/assets';
@@ -35,7 +35,7 @@ import { listProviderModels } from './providers/models';
 import { resolveProviderForCharacter, resolveProviderForTask, resolveProviderForTaskGroup, resolveTtsProviderForCharacter } from './providers/router';
 import { streamChat, type StreamStatus } from './providers/stream';
 import { generateImage } from './providers/image';
-import { buildCharacterImagePrompt } from './providers/image-prompt';
+import { buildCharacterImagePrompt, buildChatCgPrompt } from './providers/image-prompt';
 import { currentImageIdentity, faceReferenceAssetIdForGeneration, imageCharacterConfigId, imageReferenceAssetIds, imageUserConfigId } from './providers/image-identity';
 import { createEmbeddings } from './providers/embedding';
 import { queryVectorMemories, rebuildVectorMemoryRecords } from './providers/vector-memory';
@@ -231,7 +231,7 @@ const slug = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9\u4e
 const newProvider = (): ProviderConfig => ({ id: `provider-${Date.now()}`, name: '新 Provider', kind: 'openai-compatible', endpoint: '', model: '', contextWindow: 8192, maxOutputTokens: 1024, temperature: 0.7 });
 const newEmbeddingConfig = (): EmbeddingConfig => ({ id: 'embedding', enabled: false, endpoint: '', model: '', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
 const newTtsConfig = (): TtsConfig => ({ id: `tts-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: '新语音配置', enabled: false, endpoint: '', model: '', voice: 'alloy', format: 'mp3', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
-const newImageConfig = (): ImageConfig => ({ id: 'image', size: '1024x1024', stylePrompt: '', responseFormat: 'b64_json', referenceMode: 'none', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
+const newImageConfig = (): ImageConfig => ({ id: 'image', size: '1024x1024', stylePrompt: '', responseFormat: 'b64_json', referenceMode: 'none', multiReferenceEnabled: false, requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
 const newChatMessageId = (characterId: string) => `${characterId}-chat-${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`;
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 function imageBase64ToBlob(base64: string, mimeType = 'image/png'): Blob {
@@ -760,9 +760,10 @@ export function App() {
   }
 
   async function deleteImageAssetIfUnreferenced(assetId: string): Promise<void> {
-    const [chats, savedSnapshots, stickers, characterImageConfigs, userImageConfigs] = await Promise.all([contentDb.chats.toArray(), listSnapshots(), listTerminalStickers(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray()]);
+    const [chats, savedSnapshots, stickers, characterImageConfigs, userImageConfigs, imageConfigs] = await Promise.all([contentDb.chats.toArray(), listSnapshots(), listTerminalStickers(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray()]);
     const referenced = collectStoredAssetIds([saveRef.current, ...savedSnapshots.map((snapshot) => snapshot.save), chats, stickers]);
     for (const id of imageReferenceAssetIds(characterImageConfigs, userImageConfigs)) referenced.add(id);
+    for (const config of imageConfigs) if (config.lastGenerated?.asset.assetId) referenced.add(config.lastGenerated.asset.assetId);
     if (!referenced.has(assetId)) await deleteAsset(assetId);
   }
 
@@ -773,7 +774,7 @@ export function App() {
   }
 
   async function loadImageAssetReferenceRoots() {
-    const [characterCards, chats, savedSnapshots, stickers, characterImageConfigs, userImageConfigs] = await Promise.all([contentDb.characters.toArray(), contentDb.chats.toArray(), listSnapshots(), listTerminalStickers(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray()]);
+    const [characterCards, chats, savedSnapshots, stickers, characterImageConfigs, userImageConfigs, imageConfigs] = await Promise.all([contentDb.characters.toArray(), contentDb.chats.toArray(), listSnapshots(), listTerminalStickers(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray()]);
     return [
       { label: '当前世界', value: saveRef.current },
       ...characterCards.map((card) => ({ label: `角色库/${card.id}`, value: card })),
@@ -782,17 +783,20 @@ export function App() {
       ...stickers.map((sticker) => ({ label: `贴图库/${sticker.id}`, value: sticker })),
       ...characterImageConfigs.map((config) => ({ label: `角色锁脸/${config.id}`, value: config })),
       ...userImageConfigs.map((config) => ({ label: `用户锁脸/${config.id}`, value: config })),
+      ...imageConfigs.map((config) => ({ label: `独立生成/${config.id}`, value: config.lastGenerated })),
     ];
   }
 
   async function refreshImageAssetStats(): Promise<void> {
-    const [assets, characterCards, savedSnapshots, characterImageConfigs, userImageConfigs] = await Promise.all([listAssets(), contentDb.characters.toArray(), listSnapshots(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray()]);
+    const [assets, characterCards, chats, savedSnapshots, characterImageConfigs, userImageConfigs, imageConfigs] = await Promise.all([listAssets(), contentDb.characters.toArray(), contentDb.chats.toArray(), listSnapshots(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray()]);
     const roots = [
       ...Object.values(saveRef.current.world.characters).map((character) => ({ label: `当前角色/${character.id}`, value: character.visuals })),
       ...characterCards.map((card) => ({ label: `角色库/${card.id}`, value: card.packageProfile?.visuals })),
       ...savedSnapshots.flatMap((snapshot) => Object.values(snapshot.save.world.characters).map((character) => ({ label: `快照/${snapshot.id}/角色/${character.id}`, value: character.visuals }))),
       ...characterImageConfigs.map((config) => ({ label: `角色锁脸/${config.id}`, value: config.referenceImage })),
       ...userImageConfigs.map((config) => ({ label: `用户锁脸/${config.id}`, value: config.referenceImage })),
+      ...chats.map((record) => ({ label: `聊天 CG/${record.characterId}`, value: record.messages.map((message) => message.cg) })),
+      ...imageConfigs.map((config) => ({ label: `独立生成/${config.id}`, value: config.lastGenerated })),
     ];
     setImageAssetStats(summarizeImageAssets(assets.map((asset) => ({ id: asset.id, size: asset.blob.size, mimeType: asset.mimeType, category: asset.category })), roots));
   }
@@ -810,6 +814,21 @@ export function App() {
     anchor.click();
     URL.revokeObjectURL(url);
     setFeedback({ tone: 'success', text: '语音已下载；此操作未调用 API。' });
+  }
+
+  async function downloadImageAsset(reference: AssetRef | undefined, name: string): Promise<void> {
+    const assetId = storedAssetId(reference);
+    if (!assetId) { setFeedback({ tone: 'error', text: '图片资产不可用。' }); return; }
+    const asset = await loadAsset(assetId);
+    if (!asset) { setFeedback({ tone: 'error', text: '图片资产已不存在。' }); return; }
+    const extension = asset.mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+    const url = URL.createObjectURL(asset.blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${slug(name)}.${extension}`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setFeedback({ tone: 'success', text: '图片已下载；此操作未调用 API。' });
   }
 
   async function sendTerminalVoice(characterId: string, messageId: string, retryRequestId?: string): Promise<void> {
@@ -2167,6 +2186,7 @@ export function App() {
   async function editChatHistoryMessage(index: number, content: string): Promise<void> {
     if (!selectedCharacterId || !messages[index] || !isEditableChatMessage(messages[index])) return;
     const previousAssetId = storedAssetId(messages[index].voice?.asset);
+    const previousCgAssetId = storedAssetId(messages[index].cg?.asset);
     const next = updateChatMessage(messages, index, content);
     if (next === messages) return;
     const nextSave = structuredClone(saveRef.current);
@@ -2178,11 +2198,13 @@ export function App() {
     setFeedback({ tone: 'success', text: `台词已修改。${removedMemories ? `已移除 ${removedMemories} 条由原聊天产生的旧记忆；` : ''}下一次生成会使用编辑后的上下文，不会回滚其他状态变化。` });
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
     if (previousAssetId) await deleteVoiceAssetIfUnreferenced(previousAssetId);
+    if (previousCgAssetId) await deleteImageAssetIfUnreferenced(previousCgAssetId);
   }
 
   async function deleteChatHistoryMessage(index: number): Promise<void> {
     if (!selectedCharacterId || !messages[index] || !isEditableChatMessage(messages[index])) return;
     const previousAssetId = storedAssetId(messages[index].voice?.asset);
+    const previousCgAssetId = storedAssetId(messages[index].cg?.asset);
     const next = deleteChatMessage(messages, index);
     if (next === messages) return;
     const nextSave = structuredClone(saveRef.current);
@@ -2194,6 +2216,7 @@ export function App() {
     setFeedback({ tone: 'success', text: `台词已从聊天记录中删除。${removedMemories ? `已移除 ${removedMemories} 条受影响的旧记忆；` : ''}不会回滚其他状态变化。` });
     await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
     if (previousAssetId) await deleteVoiceAssetIfUnreferenced(previousAssetId);
+    if (previousCgAssetId) await deleteImageAssetIfUnreferenced(previousCgAssetId);
   }
 
   async function generateChatVoice(index: number, retryRequestId?: string): Promise<void> {
@@ -2249,6 +2272,109 @@ export function App() {
       if (requestAttempted) await persistTtsResult(config, 'error', messageText, { requestId, characterId: speakerId, text: message.content.trim() }).catch(() => undefined);
       setFeedback({ tone: 'error', text: `${messageText} 原有语音保持不变。` });
     } finally { ttsBusyRef.current = false; setTtsBusy(false); }
+  }
+
+  async function generateChatCg(index: number, scenePrompt: string, characterIds: string[], includesPlayer: boolean): Promise<void> {
+    if (imageBusyRef.current) return;
+    const message = messages[index];
+    if (!selectedCharacterId || !message || message.role !== 'assistant' || !message.id) { setFeedback({ tone: 'error', text: '只能为已保存的角色回复生成 CG。' }); return; }
+    const selectedIds = [...new Set(characterIds)].filter((id) => Boolean(saveRef.current.world.characters[id])).slice(0, 3);
+    if (!selectedIds.length) { setFeedback({ tone: 'error', text: '请至少选择一位入镜角色。' }); return; }
+    let config: ImageConfig;
+    try { config = ImageConfigSchema.parse(imageConfigRef.current); }
+    catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '图像设置无效。') }); return; }
+    const provider = providers.find((item) => item.id === config.providerId && item.kind === 'openai-compatible');
+    if (!provider) { setFeedback({ tone: 'error', text: '请先在设置的“图像”中选择 OpenAI-compatible Provider。' }); return; }
+    const characterVisuals = selectedIds.map((characterId) => ({
+      character: saveRef.current.world.characters[characterId],
+      config: imageVisualConfigs.find((item) => item.saveId === saveRef.current.meta.id && item.characterId === characterId),
+    }));
+    const identity = currentImageIdentity(saveRef.current.world.player.personaId);
+    const userVisual = imageUserVisualConfigs.find((item) => item.id === imageUserConfigId(saveRef.current.meta.id, identity));
+    const playerName = activePersona?.displayName ?? saveRef.current.world.player.name;
+    let prompt: string;
+    try {
+      prompt = buildChatCgPrompt({
+        scenePrompt,
+        locationName: saveRef.current.world.map.nodes[saveRef.current.world.player.nodeId]?.name,
+        stylePrompt: config.stylePrompt,
+        characters: characterVisuals.map((entry) => ({ name: entry.character.name, appearancePrompt: entry.config?.appearancePrompt })),
+        ...(includesPlayer ? { player: { name: playerName, appearancePrompt: userVisual?.appearancePrompt } } : {}),
+      });
+    } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, 'CG 画面描述无效。') }); return; }
+
+    if (includesPlayer) {
+      const missingCharacter = characterVisuals.find((entry) => !entry.config?.lockFaceEnabled || !entry.config.referenceImage);
+      if (missingCharacter) { setFeedback({ tone: 'error', text: `互动 CG 需要同时锁脸：请先为${missingCharacter.character.name}上传并启用角色参考图。` }); return; }
+      if (!userVisual?.lockFaceEnabled || !userVisual.referenceImage) { setFeedback({ tone: 'error', text: '互动 CG 需要同时锁脸：请先为当前玩家或面具身份上传并启用用户参考图。' }); return; }
+      if (config.referenceMode !== 'openai-edits') { setFeedback({ tone: 'error', text: '互动 CG 不能降级为纯提示词。请先在图像设置中启用 images/edits。' }); return; }
+      if (!config.multiReferenceEnabled) { setFeedback({ tone: 'error', text: '当前图像配置未声明支持多参考图，无法同时锁定用户与角色。请在图像设置中确认 Provider 能力后启用。' }); return; }
+    }
+
+    const referenceAssetIds = characterVisuals.flatMap((entry) => entry.config?.lockFaceEnabled && entry.config.referenceImage ? [entry.config.referenceImage.assetId] : []);
+    if (includesPlayer && userVisual?.referenceImage) referenceAssetIds.push(userVisual.referenceImage.assetId);
+    if (referenceAssetIds.length > 1 && !config.multiReferenceEnabled) { setFeedback({ tone: 'error', text: '本次 CG 需要多张锁脸参考图，但当前图像配置只允许单参考图。' }); return; }
+    const referenceImages: Blob[] = [];
+    if (config.referenceMode === 'openai-edits') {
+      try {
+        for (const assetId of referenceAssetIds) {
+          const stored = await loadAsset(assetId);
+          if (!stored?.blob.size) throw new Error(`锁脸参考图 ${assetId} 不存在，请重新上传。`);
+          referenceImages.push(stored.blob);
+        }
+      } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '锁脸参考图读取失败。') }); return; }
+    }
+
+    const chatCharacterId = selectedCharacterId;
+    const requestId = `chat-cg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const previousAssetId = storedAssetId(message.cg?.asset);
+    imageBusyRef.current = true; setImageBusy(true); setFeedback(null);
+    const requesting = ImageConfigSchema.parse({ ...config, lastStatus: 'requesting', lastCalledAt: now(), updatedAt: now() });
+    imageConfigRef.current = requesting; setImageConfig(requesting); await providerDb.imageConfigs.put(requesting);
+    let generatedAssetId: string | undefined;
+    try {
+      const result = await generateImage(provider, prompt, { size: config.size, quality: config.quality, style: config.style, responseFormat: config.responseFormat, referenceMode: config.referenceMode, editEndpoint: config.editEndpoint, referenceImages });
+      const blob = await generatedImageToBlob(result);
+      generatedAssetId = requestId;
+      await saveAsset({ id: generatedAssetId, blob, mimeType: blob.type || 'image/png', category: 'image', createdAt: now() });
+      const attachment: ChatCgAttachment = { asset: { kind: 'stored', assetId: generatedAssetId }, prompt, requestId, characterIds: selectedIds, includesPlayer, generatedAt: now(), ...(result.revisedPrompt ? { revisedPrompt: result.revisedPrompt } : {}) };
+      const latestRecord = await loadChat(chatCharacterId);
+      const latestMessages = latestRecord?.messages ?? messages;
+      const targetIndex = latestMessages.findIndex((item) => item.id === message.id);
+      const latestTarget = latestMessages[targetIndex];
+      if (!latestTarget || latestTarget.content !== message.content) throw new Error('消息已变化，CG 未附加。');
+      const next = latestMessages.map((item, messageIndex) => messageIndex === targetIndex ? { ...item, cg: attachment } : item);
+      await saveChat({ characterId: chatCharacterId, messages: next, updatedAt: now() });
+      if (selectedCharacterIdRef.current === chatCharacterId) setMessages(next);
+      const success = ImageConfigSchema.parse({ ...requesting, lastStatus: 'success', requestCount: requesting.requestCount + 1, updatedAt: now() });
+      imageConfigRef.current = success; setImageConfig(success); await providerDb.imageConfigs.put(success);
+      if (previousAssetId && previousAssetId !== generatedAssetId) await deleteImageAssetIfUnreferenced(previousAssetId);
+      await refreshImageAssetStats();
+      const promptOnly = referenceAssetIds.length > 0 && config.referenceMode !== 'openai-edits';
+      setFeedback({ tone: promptOnly ? 'info' : 'success', text: promptOnly ? 'CG 已生成并附加；当前 Provider 未启用 edits，本次只使用固定外貌提示词。' : 'CG 已生成并附加到原角色回复，没有替换头像或立绘。' });
+    } catch (error) {
+      if (generatedAssetId) await deleteImageAssetIfUnreferenced(generatedAssetId).catch(() => undefined);
+      const messageText = errorMessage(error, 'CG 生成失败。');
+      const failed = ImageConfigSchema.parse({ ...requesting, lastStatus: 'error', requestCount: requesting.requestCount + 1, failureCount: requesting.failureCount + 1, lastError: messageText, updatedAt: now() });
+      imageConfigRef.current = failed; setImageConfig(failed); await providerDb.imageConfigs.put(failed);
+      setFeedback({ tone: 'error', text: `${messageText} 原有 CG 保持不变。` });
+    } finally { imageBusyRef.current = false; setImageBusy(false); }
+  }
+
+  async function deleteChatCg(index: number): Promise<void> {
+    const message = messages[index];
+    const assetId = storedAssetId(message?.cg?.asset);
+    if (!selectedCharacterId || !message?.cg || !assetId) return;
+    const next = messages.map((item, messageIndex) => {
+      if (messageIndex !== index) return item;
+      const { cg: _cg, ...withoutCg } = item;
+      return withoutCg;
+    });
+    await saveChat({ characterId: selectedCharacterId, messages: next, updatedAt: now() });
+    setMessages(next);
+    await deleteImageAssetIfUnreferenced(assetId);
+    await refreshImageAssetStats();
+    setFeedback({ tone: 'success', text: 'CG 图片已删除，原有台词和旁白已保留。' });
   }
 
   async function generateReply(giftContext?: GiftGenerationContext, providedMessages?: ChatMessage[], suppressItemGains = false, collectionContext?: CollectionGenerationContext) {
@@ -2863,30 +2989,31 @@ export function App() {
     try {
       const result = await generateImage(provider, prompt, { size: config.size, quality: config.quality, style: config.style, responseFormat: config.responseFormat, referenceMode: config.referenceMode, editEndpoint: config.editEndpoint, referenceImage });
       const blob = await generatedImageToBlob(result);
-      generatedAssetId = `character-generated-${target}-${characterId}-${Date.now()}`;
+      generatedAssetId = `image-result-${target}-${characterId}-${Date.now()}`;
       await saveAsset({ id: generatedAssetId, blob, mimeType: blob.type || 'image/png', width: undefined, height: undefined, createdAt: now() });
-      const next = structuredClone(saveRef.current);
-      const visuals = next.world.characters[characterId].visuals;
-      const previousRefs = target === 'avatar' ? (visuals.avatar ? [visuals.avatar] : []) : visuals.portraits.map((portrait) => portrait.image);
-      if (target === 'avatar') visuals.avatar = { kind: 'stored', assetId: generatedAssetId };
-      else {
-        const portraitId = visuals.portraits[0]?.id ?? `portrait-${characterId}`;
-        const transform = visuals.portraits[0]?.transform;
-        visuals.portraits = [{ id: portraitId, name: '立绘', image: { kind: 'stored', assetId: generatedAssetId }, ...(transform ? { transform } : {}) }];
-        visuals.activePortraitId = portraitId;
-      }
-      commitSave(next);
-      for (const reference of previousRefs) if (reference.kind === 'stored' && reference.assetId !== generatedAssetId) await deleteImageAssetIfUnreferenced(reference.assetId).catch(() => undefined);
-      const success = ImageConfigSchema.parse({ ...requesting, lastStatus: 'success', requestCount: requesting.requestCount + 1, updatedAt: now() });
+      const previousAssetId = requesting.lastGenerated?.asset.assetId;
+      const success = ImageConfigSchema.parse({ ...requesting, lastStatus: 'success', requestCount: requesting.requestCount + 1, lastGenerated: { asset: { kind: 'stored', assetId: generatedAssetId }, prompt, label: `${character.name} · ${target === 'avatar' ? '头像构图' : '立绘构图'}`, generatedAt: now() }, updatedAt: now() });
       imageConfigRef.current = success; setImageConfig(success); await providerDb.imageConfigs.put(success);
-      setFeedback({ tone: 'success', text: `${character.name}的${target === 'avatar' ? '头像' : '立绘'}已生成并保存。` });
+      if (previousAssetId && previousAssetId !== generatedAssetId) await deleteImageAssetIfUnreferenced(previousAssetId).catch(() => undefined);
+      setFeedback({ tone: 'success', text: `${character.name}的${target === 'avatar' ? '头像构图' : '立绘构图'}已生成；没有替换角色视觉，可预览或下载后自行上传。` });
     } catch (error) {
       if (generatedAssetId) await deleteAsset(generatedAssetId).catch(() => undefined);
       const message = errorMessage(error, '图像生成失败。');
       const failed = ImageConfigSchema.parse({ ...requesting, lastStatus: 'error', requestCount: requesting.requestCount + 1, failureCount: requesting.failureCount + 1, lastError: message, updatedAt: now() });
       imageConfigRef.current = failed; setImageConfig(failed); await providerDb.imageConfigs.put(failed);
-      setFeedback({ tone: 'error', text: `${message} 原有角色视觉保持不变。` });
+      setFeedback({ tone: 'error', text: `${message} 原有独立生成结果与角色视觉均保持不变。` });
     } finally { imageBusyRef.current = false; setImageBusy(false); }
+  }
+
+  async function deleteStandaloneGeneratedImage(): Promise<void> {
+    const previousAssetId = imageConfigRef.current.lastGenerated?.asset.assetId;
+    if (!previousAssetId) return;
+    const { lastGenerated: _lastGenerated, ...rest } = imageConfigRef.current;
+    const next = ImageConfigSchema.parse({ ...rest, updatedAt: now() });
+    imageConfigRef.current = next; setImageConfig(next); await providerDb.imageConfigs.put(next);
+    await deleteImageAssetIfUnreferenced(previousAssetId);
+    await refreshImageAssetStats();
+    setFeedback({ tone: 'success', text: '独立生成图片已删除，角色头像和立绘没有变化。' });
   }
 
   async function saveProviderConfig() {
@@ -3114,7 +3241,7 @@ export function App() {
       ...Object.values(saveRef.current.world.characters).flatMap((character) => [character.visuals.avatar, ...character.visuals.portraits.map((portrait) => portrait.image)]),
       ...Object.values(saveRef.current.world.npcs).flatMap((npc) => [npc.visuals?.avatar]),
       ...Object.values(saveRef.current.world.terminal.messageThreads).flatMap((thread) => thread.map((message) => message.asset)),
-      ...exportedChats.flatMap((record) => record.messages.map((message) => message.voice?.asset)),
+      ...exportedChats.flatMap((record) => record.messages.flatMap((message) => [message.voice?.asset, message.cg?.asset])),
       ...(await listTerminalStickers()).map((sticker) => sticker.asset),
     ].filter((ref): ref is AssetRef => Boolean(ref));
     for (const ref of assetRefs) if (ref.kind === 'stored' && !assets[ref.assetId]) {
@@ -3131,9 +3258,11 @@ export function App() {
   async function clearAllChats(): Promise<void> {
     if (!window.confirm('确定清除全部聊天记录吗？此操作不可撤销。')) return;
     const voiceAssetIds = [...new Set((await contentDb.chats.toArray()).flatMap((record) => record.messages.map((message) => storedAssetId(message.voice?.asset)).filter((id): id is string => Boolean(id))))];
+    const cgAssetIds = [...new Set((await contentDb.chats.toArray()).flatMap((record) => record.messages.map((message) => storedAssetId(message.cg?.asset)).filter((id): id is string => Boolean(id))))];
     await clearChats();
     setMessages([]); setLoadedChatCharacterId(selectedCharacterId);
     for (const assetId of voiceAssetIds) await deleteVoiceAssetIfUnreferenced(assetId);
+    for (const assetId of cgAssetIds) await deleteImageAssetIfUnreferenced(assetId);
     setFeedback({ tone: 'success', text: '全部聊天记录已清除；角色卡、世界状态和其他资料未受影响。' });
   }
 
@@ -3429,6 +3558,30 @@ export function App() {
     }
   }
 
+  async function clearChatCgImages(): Promise<void> {
+    try {
+      if (selectedCharacterId) await saveChat({ characterId: selectedCharacterId, messages, updatedAt: now() });
+      const chats = await contentDb.chats.toArray();
+      const assetIds = [...new Set(chats.flatMap((record) => record.messages.map((message) => storedAssetId(message.cg?.asset)).filter((id): id is string => Boolean(id))))];
+      if (!assetIds.length) { setFeedback({ tone: 'info', text: '当前没有聊天 CG 可清理。' }); return; }
+      if (!window.confirm(`确定清理 ${assetIds.length} 张聊天 CG 吗？角色台词、旁白、头像和立绘都会保留。`)) return;
+      const cleaned = chats.map((record) => ({ ...record, messages: record.messages.map((message) => {
+        if (!message.cg) return message;
+        const { cg: _cg, ...withoutCg } = message;
+        return withoutCg;
+      }), updatedAt: now() }));
+      for (const record of cleaned) await saveChat(record);
+      const active = cleaned.find((record) => record.characterId === selectedCharacterId);
+      if (active) setMessages(active.messages);
+      for (const assetId of assetIds) await deleteImageAssetIfUnreferenced(assetId);
+      await refreshImageAssetStats();
+      setAssetIntegrityReport(null);
+      setFeedback({ tone: 'success', text: `已清理 ${assetIds.length} 张聊天 CG；文字记录、角色头像和立绘均已保留。` });
+    } catch (error) {
+      setFeedback({ tone: 'error', text: errorMessage(error, '聊天 CG 清理失败。') });
+    }
+  }
+
   async function persistLocalStorage(): Promise<void> {
     const persisted = await requestPersistentStorage();
     if (persisted === undefined) setFeedback({ tone: 'info', text: '当前浏览器不支持持久化存储申请。' });
@@ -3569,14 +3722,14 @@ export function App() {
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onImportSceneBackground={importSceneBackground} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView {...dayViewProps} activePage={dayPage} onOpenPage={setDayPage} onBack={() => setDayPage(null)} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} onGenerateVoice={generateChatVoice} onDownloadVoice={(index) => downloadVoiceAsset(messages[index]?.voice?.asset, `chat-${messages[index]?.id ?? index}`)} voiceAvailableCharacterIds={Object.keys(save.world.characters).filter((characterId) => Boolean(resolveTtsProviderForCharacter(ttsConfigs, characterBindings, save.meta.id, characterId, defaultTtsConfigId)?.enabled))} ttsBusy={ttsBusy} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} interrupted={Boolean(chatRecovery && (chatRecovery.status === 'interrupted' || chatRecovery.status === 'error'))} onRetryInterrupted={retryInterruptedReply} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
+      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} onGenerateVoice={generateChatVoice} onDownloadVoice={(index) => downloadVoiceAsset(messages[index]?.voice?.asset, `chat-${messages[index]?.id ?? index}`)} onGenerateCg={generateChatCg} onDownloadCg={(index) => downloadImageAsset(messages[index]?.cg?.asset, `chat-cg-${messages[index]?.id ?? index}`)} onDeleteCg={deleteChatCg} imageBusy={imageBusy} imageConfigured={Boolean(imageConfig.providerId && providers.some((item) => item.id === imageConfig.providerId && item.kind === 'openai-compatible'))} voiceAvailableCharacterIds={Object.keys(save.world.characters).filter((characterId) => Boolean(resolveTtsProviderForCharacter(ttsConfigs, characterBindings, save.meta.id, characterId, defaultTtsConfigId)?.enabled))} ttsBusy={ttsBusy} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} interrupted={Boolean(chatRecovery && (chatRecovery.status === 'interrupted' || chatRecovery.status === 'error'))} onRetryInterrupted={retryInterruptedReply} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
       {tab === 'library' && libraryDayPage && <DayView {...dayViewProps} activePage={libraryDayPage} onOpenPage={() => undefined} onBack={() => setLibraryPage(null)} shellEyebrow="终端" />}
       {/* @ts-expect-error legacy unused sticker callbacks remain accepted by LibraryView */}
       {tab === 'library' && !libraryDayPage && !(['story', 'memories', 'collection'] as LibraryPage[]).includes(libraryPage ?? 'messages') && <LibraryNavigationContext.Provider value={{ activePage: libraryPage, onOpenPage: setLibraryPage, onBack: () => setLibraryPage(null) }}><LibraryView appName={appName} characters={characters} worldbooks={worldbooks} providers={providers} ttsConfigs={ttsConfigs} characterBindings={characterBindings} onCharacterProviderBindingChange={updateCharacterProviderBinding} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onImportText={importTextContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} onExportCharacterPackage={downloadCharacterPackage} onImportCharacterPackage={loadCharacterPackage} onExportWorldPackage={downloadWorldPackage} onImportWorldPackage={loadWorldPackage} onExportEventPackage={downloadEventPackage} onImportEventPackage={loadEventPackage} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} onOpenImageSettings={() => { setTab('settings'); setSettingsPage('image'); }} onRequestFriend={requestTerminalFriend} onResolveFriend={resolveTerminalFriend} onPromoteNpc={promoteNpcFromContacts} onExpandNpcPromotionDraft={expandNpcPromotionDraft} onSendTerminalText={sendTerminalText} onSendStickerAsset={sendTerminalStickerAsset} stickers={terminalStickers} onImportStickerFile={importTerminalStickerFile} onImportStickerUrl={importTerminalStickerUrl} onDeleteSticker={removeTerminalSticker} onRejoin={requestTerminalRejoin} onEditTerminalMessage={editTerminalText} onDeleteTerminalMessage={deleteTerminalText} onGenerateTerminalReply={generateTerminalReply} onSendVoice={sendTerminalVoice} onDownloadVoice={(characterId, messageId) => { const message = listTerminalMessages(saveRef.current.world, characterId).find((item) => item.id === messageId); return downloadVoiceAsset(message?.asset, `message-${messageId}`); }} isVoiceAvailable={(characterId) => Boolean(resolveTtsProviderForCharacter(ttsConfigs, characterBindings, save.meta.id, characterId, defaultTtsConfigId)?.enabled)} ttsConfig={ttsConfig} ttsBusy={ttsBusy} onSendPlayerTransfer={sendPlayerTerminalTransfer} onResolveIncomingTransfer={resolveIncomingTransfer} onCreateTerminalAppointment={createTerminalAppointment} onSimulateIncomingAppointment={(characterId, input) => createTerminalAppointment(characterId, input, 'incoming')} onResolveTerminalAppointment={resolveTerminalAppointment} onSimulateAppointmentAcceptance={simulateTerminalAppointmentAcceptanceForUi} onConfirmTerminalAppointment={confirmTerminalAppointmentForUi} terminalCall={terminalCall} onStartCall={startTerminalCall} onSimulateIncomingCall={simulateIncomingTerminalCall} onAnswerCall={answerTerminalCall} onSimulateCallAnswer={simulateTerminalCallAnswer} onEndCall={endTerminalCall} terminalBusy={terminalBusy} musicPlayer={musicPlayer} /></LibraryNavigationContext.Provider>}
       {tab === 'library' && libraryPage === 'story' && <SubpageShell eyebrow="终端" title="多人剧情" pageId="story" onBack={() => setLibraryPage(null)}><StorySceneLibraryView save={save} storyScenePresets={storyScenePresets} onSavePreset={saveStoryScenePresetCopy} onUpdatePreset={updateStoryScenePreset} onDeletePreset={removeStoryScenePreset} onCreateDraft={createStorySceneDraftFromInput} onEditDraft={editStorySceneDraft} onDeleteDraft={removeStorySceneDraft} onConfirmDraft={confirmStorySceneDraft} onAdvanceStage={advanceStoryScene} onSetStatus={setStorySceneStatus} onReadStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'read')} onSelectStage={(sceneId, stageId) => updateStorySceneReading(sceneId, stageId, 'select')} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'memories' && <SubpageShell eyebrow="终端" title="记忆库" pageId="memories" onBack={() => setLibraryPage(null)}><MemoryLibraryView save={save} onArchiveMemory={deleteMemory} onRestoreMemory={restoreMemory} onDeleteMemory={permanentlyDeleteMemory} onEditMemory={editMemory} onToggleInjection={toggleMemoryInjection} /></SubpageShell>}
       {tab === 'library' && libraryPage === 'collection' && <SubpageShell eyebrow="终端" title="收藏" pageId="collection" onBack={() => setLibraryPage(null)}><CollectionLibraryView save={save} onUpdate={updateCollectionEntry} onDelete={deleteCollectionEntry} /></SubpageShell>}
-      {tab === 'settings' && <SettingsView appName={appName} activePage={settingsPage} onOpenPage={setSettingsPage} onBack={() => setSettingsPage(null)} provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} ttsConfigs={ttsConfigs} defaultTtsConfigId={defaultTtsConfigId} ttsConfig={ttsConfig} setTtsConfig={(next) => { setTtsConfig(next); ttsConfigRef.current = next; setTtsConfigs((items) => items.some((item) => item.id === next.id) ? items.map((item) => item.id === next.id ? next : item) : items); }} ttsHeadersDraft={ttsHeadersDraft} setTtsHeadersDraft={setTtsHeadersDraft} onSelectTtsConfig={selectTtsConfig} onNewTtsConfig={createTtsConfigDraft} onDeleteTtsConfig={deleteTtsConfig} onDefaultTtsChange={updateDefaultTtsConfig} ttsBusy={ttsBusy} onSaveTts={saveTtsSettings} onTestTts={testTtsConnection} imageConfig={imageConfig} setImageConfig={(next) => { const parsed = ImageConfigSchema.parse(next); imageConfigRef.current = parsed; setImageConfig(parsed); }} imageBusy={imageBusy} onSaveImage={saveImageSettings} onTestImage={testImageConnection} onOpenProvider={() => setSettingsPage('provider')} save={save} imageVisualConfigs={imageVisualConfigs} imageUserVisualConfigs={imageUserVisualConfigs} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} imagePrompt={imagePrompt} setImagePrompt={setImagePrompt} imageTarget={imageTarget} setImageTarget={setImageTarget} onSaveImageVisualConfig={saveImageVisualConfig} onSetCharacterFaceLock={setCharacterFaceLock} onImportCharacterFaceReference={importCharacterFaceReference} onRemoveCharacterFaceReference={removeCharacterFaceReference} onSaveUserImageVisualConfig={saveUserImageVisualConfig} onSetUserFaceLock={setUserFaceLock} onImportUserFaceReference={importUserFaceReference} onRemoveUserFaceReference={removeUserFaceReference} onGenerateCharacterImage={generateCharacterImage} voiceCacheStats={voiceCacheStats} onClearVoiceCache={clearVoiceCache} imageAssetStats={imageAssetStats} onClearUnusedImageAssets={clearUnusedImageAssets} storageEstimate={storageEstimate} onPersistStorage={persistLocalStorage} assetIntegrityReport={assetIntegrityReport} assetIntegrityBusy={assetIntegrityBusy} onCheckAssetIntegrity={checkAssetIntegrity} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} onExportProviderSettings={downloadProviderSettings} onImportProviderSettings={applyProviderSettings} onExportGlobalBackup={downloadGlobalBackup} onImportGlobalBackup={previewGlobalBackup} globalBackupPreview={globalBackupPreview} onRestoreGlobalBackup={restoreGlobalBackup} />}
+      {tab === 'settings' && <SettingsView appName={appName} activePage={settingsPage} onOpenPage={setSettingsPage} onBack={() => setSettingsPage(null)} provider={provider} setProvider={setProvider} providers={providers} bindings={bindings} defaultProviderId={defaultProviderId} headersDraft={headersDraft} setHeadersDraft={setHeadersDraft} models={models} embeddingConfig={embeddingConfig} setEmbeddingConfig={setEmbeddingConfig} embeddingHeadersDraft={embeddingHeadersDraft} setEmbeddingHeadersDraft={setEmbeddingHeadersDraft} embeddingBusy={embeddingBusy} onSaveEmbedding={saveEmbeddingSettings} onTestEmbedding={testEmbeddingConnection} onRebuildEmbedding={rebuildEmbeddingIndex} ttsConfigs={ttsConfigs} defaultTtsConfigId={defaultTtsConfigId} ttsConfig={ttsConfig} setTtsConfig={(next) => { setTtsConfig(next); ttsConfigRef.current = next; setTtsConfigs((items) => items.some((item) => item.id === next.id) ? items.map((item) => item.id === next.id ? next : item) : items); }} ttsHeadersDraft={ttsHeadersDraft} setTtsHeadersDraft={setTtsHeadersDraft} onSelectTtsConfig={selectTtsConfig} onNewTtsConfig={createTtsConfigDraft} onDeleteTtsConfig={deleteTtsConfig} onDefaultTtsChange={updateDefaultTtsConfig} ttsBusy={ttsBusy} onSaveTts={saveTtsSettings} onTestTts={testTtsConnection} imageConfig={imageConfig} setImageConfig={(next) => { const parsed = ImageConfigSchema.parse(next); imageConfigRef.current = parsed; setImageConfig(parsed); }} imageBusy={imageBusy} onSaveImage={saveImageSettings} onTestImage={testImageConnection} onOpenProvider={() => setSettingsPage('provider')} save={save} imageVisualConfigs={imageVisualConfigs} imageUserVisualConfigs={imageUserVisualConfigs} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} imagePrompt={imagePrompt} setImagePrompt={setImagePrompt} imageTarget={imageTarget} setImageTarget={setImageTarget} onSaveImageVisualConfig={saveImageVisualConfig} onSetCharacterFaceLock={setCharacterFaceLock} onImportCharacterFaceReference={importCharacterFaceReference} onRemoveCharacterFaceReference={removeCharacterFaceReference} onSaveUserImageVisualConfig={saveUserImageVisualConfig} onSetUserFaceLock={setUserFaceLock} onImportUserFaceReference={importUserFaceReference} onRemoveUserFaceReference={removeUserFaceReference} onGenerateCharacterImage={generateCharacterImage} voiceCacheStats={voiceCacheStats} onClearVoiceCache={clearVoiceCache} imageAssetStats={imageAssetStats} onClearUnusedImageAssets={clearUnusedImageAssets} onClearChatCgImages={clearChatCgImages} storageEstimate={storageEstimate} onPersistStorage={persistLocalStorage} assetIntegrityReport={assetIntegrityReport} assetIntegrityBusy={assetIntegrityBusy} onCheckAssetIntegrity={checkAssetIntegrity} requestStatus={requestStatus} onNewProvider={() => { setProvider(newProvider()); setModels([]); }} onSaveProvider={saveProviderConfig} onDeleteProvider={deleteProviderConfig} onDiscoverModels={discoverModels} onTestConnection={testConnection} onDefaultProviderChange={updateDefaultProvider} onBindingChange={updateTaskBinding} debug={debug} debugTab={debugTab} setDebugTab={setDebugTab} onShowNumbersChange={setShowNumbers} onEnergyEnabledChange={setEnergyEnabled} onMorningStyleChange={setMorningStyle} personas={personas} personaId={save.world.player.personaId ?? ''} personaEditingId={personaEditingId} setPersonaEditingId={setPersonaEditingId} personaName={personaName} setPersonaName={setPersonaName} personaDisplayName={personaDisplayName} setPersonaDisplayName={setPersonaDisplayName} personaDescription={personaDescription} setPersonaDescription={setPersonaDescription} onSavePersona={savePersonaDraft} onBindPersona={bindPersona} onDeletePersona={removePersona} statKey={statKey} setStatKey={setStatKey} statValue={statValue} setStatValue={setStatValue} onAddStat={addCustomStat} mockFixtureId={mockFixtureId} setMockFixtureId={setMockFixtureId} onLoadStage4Fixture={loadStage4EncounterFixture} devToolSeed={devToolSeed} setDevToolSeed={setDevToolSeed} devToolDays={devToolDays} setDevToolDays={setDevToolDays} devToolReport={devToolReport} onRunDevTool={runDevTool} onExportProviderSettings={downloadProviderSettings} onImportProviderSettings={applyProviderSettings} onExportGlobalBackup={downloadGlobalBackup} onImportGlobalBackup={previewGlobalBackup} globalBackupPreview={globalBackupPreview} onRestoreGlobalBackup={restoreGlobalBackup} />}
     </main>
     <nav className="bottom-nav" aria-label="主导航">{BOTTOM_NAV_ITEMS.map(([id, label, Icon]) => <button key={id} type="button" className={tab === id ? 'selected' : ''} aria-label={label} title={label} onClick={() => setTab(id)}><Icon size={25} weight="fill" aria-hidden="true" /><span className="bottom-nav-label">{label}</span></button>)}</nav>
   </div>;
@@ -4062,8 +4215,13 @@ function ChatView(props: {
   onDeleteMessage: (index: number) => Promise<void>;
   onGenerateVoice: (index: number, requestId?: string) => Promise<void>;
   onDownloadVoice: (index: number) => Promise<void>;
+  onGenerateCg: (index: number, scenePrompt: string, characterIds: string[], includesPlayer: boolean) => Promise<void>;
+  onDownloadCg: (index: number) => Promise<void>;
+  onDeleteCg: (index: number) => Promise<void>;
   voiceAvailableCharacterIds: string[];
   ttsBusy: boolean;
+  imageBusy: boolean;
+  imageConfigured: boolean;
   regenerateInput: string;
   setRegenerateInput: (value: string) => void;
   onRegenerate: () => Promise<void>;
@@ -4105,6 +4263,10 @@ function ChatView(props: {
   const [messageMenuIndex, setMessageMenuIndex] = useState<number | null>(null);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [editingMessageText, setEditingMessageText] = useState('');
+  const [cgDraftIndex, setCgDraftIndex] = useState<number | null>(null);
+  const [cgDraftText, setCgDraftText] = useState('');
+  const [cgCharacterIds, setCgCharacterIds] = useState<string[]>([]);
+  const [cgIncludesPlayer, setCgIncludesPlayer] = useState(false);
   const [revealedLineCount, setRevealedLineCount] = useState(1);
   const [revealedAssistantKey, setRevealedAssistantKey] = useState('');
   const messagePressTimerRef = useRef<number | null>(null);
@@ -4301,8 +4463,22 @@ function ChatView(props: {
     setEditingMessageIndex(index);
     setEditingMessageText(message.content);
   };
+  const startCgDraft = (index: number) => {
+    const message = props.messages[index];
+    if (!message || message.role !== 'assistant') return;
+    const speakerId = message.speakerId && props.worldCharacters[message.speakerId] ? message.speakerId : props.selectedCharacterId;
+    setCgDraftIndex(index);
+    setCgDraftText(message.content);
+    setCgCharacterIds(speakerId ? [speakerId] : participantIds.slice(0, 1));
+    setCgIncludesPlayer(false);
+    setMessageMenuIndex(null);
+    setEditingMessageIndex(null);
+  };
+  const toggleCgCharacter = (characterId: string, checked: boolean) => {
+    setCgCharacterIds((current) => checked ? [...new Set([...current, characterId])].slice(0, 3) : current.filter((id) => id !== characterId));
+  };
   const messageVoiceSpeakerId = (message: ChatMessage) => message.speakerId && message.speakerId !== 'player' ? message.speakerId : props.selectedCharacterId;
-  const cancelMessageMenu = () => { setMessageMenuIndex(null); setEditingMessageIndex(null); setEditingMessageText(''); };
+  const cancelMessageMenu = () => { setMessageMenuIndex(null); setEditingMessageIndex(null); setEditingMessageText(''); setCgDraftIndex(null); setCgDraftText(''); setCgCharacterIds([]); setCgIncludesPlayer(false); };
 
   return <section className="chat-screen vn-chat-screen">
     {props.topicMode === 'manual' && !props.participantsLocked && <div className="character-picker"><div className="participant-picker" aria-label="本次对话角色">{props.characters.length > 1 && <span className="participant-label">本次对话</span>}{props.characters.map((item) => <label key={item.id} className="participant-option"><input type="checkbox" checked={participantIds.includes(item.id)} onChange={() => toggleParticipant(item.id)} /><span>{item.name}</span></label>)}</div><select aria-label="主要聊天角色" value={props.selectedCharacterId} onChange={(event) => props.setSelectedCharacterId(event.target.value)}><option value="">当前地点无人</option>{participantCharacters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>}
@@ -4312,7 +4488,7 @@ function ChatView(props: {
       </div>
       <div className="vn-dialogue-box" style={{ height: `${dialogueBoxHeight}px` }}>
         <div className="vn-dialogue-resize-handle" role="separator" tabIndex={0} aria-label="调整对话框高度" aria-orientation="horizontal" aria-valuemin={80} aria-valuemax={dialogueMaxHeight} aria-valuenow={dialogueBoxHeight} onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); setDialogueBoxHeight((height) => Math.min(dialogueMaxHeight, Math.max(80, height + (event.key === 'ArrowUp' ? 10 : -10)))); } }} onPointerDown={beginDialogueResize} onPointerMove={moveDialogueResize} onPointerUp={endDialogueResize} onPointerCancel={endDialogueResize} />
-        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.map((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, speakerLabelsById); const isLatestCollapsible = latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, effectiveRevealedLineCount)) : lines; const editable = isEditableChatMessage(message); const menuOpen = messageMenuIndex === messageIndex; const editing = editingMessageIndex === messageIndex; return <div className={`vn-message-group ${message.role}`} key={message.id ?? `${message.role}-${messageIndex}`} onPointerDown={(event) => beginMessagePress(event, messageIndex)} onPointerUp={clearMessagePress} onPointerCancel={clearMessagePress} onPointerLeave={clearMessagePress} onContextMenu={(event) => { event.preventDefault(); openMessageMenu(messageIndex); }}>{displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>)}{message.voice && <TerminalVoiceAudio asset={message.voice.asset} durationMs={message.voice.durationMs} />}{editable && menuOpen && !editing && <div className="message-action-menu" role="menu">{message.role === 'assistant' && message.kind !== 'narration' && <button type="button" onClick={() => { void props.onGenerateVoice(messageIndex); cancelMessageMenu(); }} disabled={props.ttsBusy || !props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message))} title={props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message)) ? undefined : '请先设置语音 API'}>{props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message)) ? (message.voice ? '重新生成语音' : '生成语音') : '前往设置语音 API'}</button>}<button type="button" onClick={() => startMessageEdit(messageIndex)} disabled={props.ttsBusy}>编辑</button><button type="button" className="danger" disabled={props.ttsBusy} onClick={() => { if (window.confirm('删除这条台词？只会删除聊天记录，不会回滚已执行的状态变化。')) { void props.onDeleteMessage(messageIndex); cancelMessageMenu(); } }}>删除</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div>}{editing && <div className="message-edit-panel"><textarea aria-label="编辑台词" value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} autoFocus /><div className="button-row"><button type="button" onClick={() => { void props.onEditMessage(messageIndex, editingMessageText); cancelMessageMenu(); }} disabled={!editingMessageText.trim()}>保存</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}</div>; })}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > effectiveRevealedLineCount ? <button className="vn-next-line" onClick={() => { followLatestRef.current = true; setRevealedAssistantKey(latestAssistantKey); setRevealedLineCount(Math.min(latestAssistantLines.length, effectiveRevealedLineCount + 1)); }}>下一段 · {effectiveRevealedLineCount}/{latestAssistantLines.length}</button> : replyProgress && <div className="vn-generation-progress" role="status" aria-live="polite"><span>{replyProgress === 'first-line' ? '正在生成第一段' : '后续内容生成中'}</span><span className="vn-generation-dots" aria-hidden="true"><i /><i /><i /></span></div>}</div>
+        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.map((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, speakerLabelsById); const isLatestCollapsible = latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, effectiveRevealedLineCount)) : lines; const editable = isEditableChatMessage(message); const menuOpen = messageMenuIndex === messageIndex; const editing = editingMessageIndex === messageIndex; const cgEditing = cgDraftIndex === messageIndex; return <div className={`vn-message-group ${message.role}`} key={message.id ?? `${message.role}-${messageIndex}`} onPointerDown={(event) => beginMessagePress(event, messageIndex)} onPointerUp={clearMessagePress} onPointerCancel={clearMessagePress} onPointerLeave={clearMessagePress} onContextMenu={(event) => { event.preventDefault(); openMessageMenu(messageIndex); }}>{displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>)}{message.voice && <TerminalVoiceAudio asset={message.voice.asset} durationMs={message.voice.durationMs} />}{message.cg && <><ChatCgImage attachment={message.cg} /><div className="chat-cg-actions"><button type="button" className="secondary" onClick={() => void props.onDownloadCg(messageIndex)}>下载 CG</button><button type="button" className="danger" onClick={() => void props.onDeleteCg(messageIndex)}>删除 CG</button></div></>}{editable && menuOpen && !editing && !cgEditing && <div className="message-action-menu" role="menu">{message.role === 'assistant' && <button type="button" onClick={() => startCgDraft(messageIndex)} disabled={props.imageBusy || !props.imageConfigured}>{message.cg ? '重新生成 CG' : '制作 CG'}</button>}{message.role === 'assistant' && message.kind !== 'narration' && <button type="button" onClick={() => { void props.onGenerateVoice(messageIndex); cancelMessageMenu(); }} disabled={props.ttsBusy || !props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message))} title={props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message)) ? undefined : '请先设置语音 API'}>{props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message)) ? (message.voice ? '重新生成语音' : '生成语音') : '前往设置语音 API'}</button>}<button type="button" onClick={() => startMessageEdit(messageIndex)} disabled={props.ttsBusy || props.imageBusy}>编辑</button><button type="button" className="danger" disabled={props.ttsBusy || props.imageBusy} onClick={() => { if (window.confirm('删除这条台词？只会删除聊天记录，不会回滚已执行的状态变化。')) { void props.onDeleteMessage(messageIndex); cancelMessageMenu(); } }}>删除</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div>}{cgEditing && <div className="message-edit-panel cg-draft-panel"><label>画面描述<textarea aria-label="CG 画面描述" value={cgDraftText} onChange={(event) => setCgDraftText(event.target.value)} autoFocus /></label><fieldset><legend>入镜角色</legend>{Object.values(props.worldCharacters).map((character) => <label className="checkbox-line" key={character.id}><input type="checkbox" checked={cgCharacterIds.includes(character.id)} onChange={(event) => toggleCgCharacter(character.id, event.target.checked)} />{character.name}</label>)}</fieldset><label className="checkbox-line"><input type="checkbox" checked={cgIncludesPlayer} onChange={(event) => setCgIncludesPlayer(event.target.checked)} />包含用户 / 当前面具身份（需要双参考图锁脸）</label><p className="io-scope">这一步只编辑本地草稿，不调用 API。角色台词与旁白仍分开显示，最终画面描述可同时引用二者。</p><div className="button-row"><button type="button" onClick={() => { if (cgDraftIndex !== null) void props.onGenerateCg(cgDraftIndex, cgDraftText, cgCharacterIds, cgIncludesPlayer); cancelMessageMenu(); }} disabled={!cgDraftText.trim() || !cgCharacterIds.length || props.imageBusy}>{props.imageBusy ? '正在生成…' : message.cg ? '确认重新生成' : '确认生成'}</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}{editing && <div className="message-edit-panel"><textarea aria-label="编辑台词" value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} autoFocus /><div className="button-row"><button type="button" onClick={() => { void props.onEditMessage(messageIndex, editingMessageText); cancelMessageMenu(); }} disabled={!editingMessageText.trim()}>保存</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}</div>; })}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > effectiveRevealedLineCount ? <button className="vn-next-line" onClick={() => { followLatestRef.current = true; setRevealedAssistantKey(latestAssistantKey); setRevealedLineCount(Math.min(latestAssistantLines.length, effectiveRevealedLineCount + 1)); }}>下一段 · {effectiveRevealedLineCount}/{latestAssistantLines.length}</button> : replyProgress && <div className="vn-generation-progress" role="status" aria-live="polite"><span>{replyProgress === 'first-line' ? '正在生成第一段' : '后续内容生成中'}</span><span className="vn-generation-dots" aria-hidden="true"><i /><i /><i /></span></div>}</div>
       </div>
     </div>
     {props.topicMode === 'topics' && <div className="topic-tree-panel" aria-label="话题树">
@@ -4369,7 +4545,7 @@ function ProviderSettingsMigrationView(props: { providers: ProviderConfig[]; tts
   return <div className="library-subpage-content"><section className="library-legacy-content"><div className="section-heading"><div><span className="eyebrow">仅本地</span><h2>Provider 设置迁移</h2></div></div><div className="provider-card"><h3>全局备份</h3><p className="io-scope">一键备份当前世界、快照、聊天、资料、Provider 配置、界面偏好和本地资产。默认不包含 API key。</p><div className="button-row"><button onClick={() => void props.onExportGlobalBackup(false)}>导出全局备份</button><button className="secondary" onClick={() => { if (window.confirm('完整备份会把 API key 写入文件，请勿分享。确定继续吗？')) void props.onExportGlobalBackup(true); }}>导出完整备份（含 API key）</button><label className="file-button">导入全局备份<input type="file" accept=".zip" onChange={(event) => void props.onImportGlobalBackup(event.target.files?.[0])} /></label></div>{props.globalBackupPreview && <div className="fold-body"><p>备份预览：{props.globalBackupPreview.data.providers.length} 个普通 Provider、{props.globalBackupPreview.data.ttsConfigs.length} 个语音 Provider、{props.globalBackupPreview.data.imageConfigs.length} 份图像设置、{props.globalBackupPreview.data.imageVisualConfigs.length + props.globalBackupPreview.data.imageUserVisualConfigs.length} 份视觉配置、{props.globalBackupPreview.assets.size} 个资产{props.globalBackupPreview.hasSecrets ? '，包含 API key' : ''}。</p>{([['world','世界存档与快照'],['content','资料、聊天与本地索引'],['providers','Provider 与绑定'],['assets','图片、音频等资产'],['preferences','界面偏好']] as const).map(([key, label]) => <label className="checkbox-line" key={key}><input type="checkbox" checked={restoreSelection[key]} onChange={(event) => setRestoreSelection((current) => ({ ...current, [key]: event.target.checked }))} />{label}</label>)}<button onClick={() => void props.onRestoreGlobalBackup(props.globalBackupPreview!, restoreSelection)}>确认恢复所选内容</button></div>}</div><div className="provider-card"><p className="io-scope">迁移非敏感配置、默认项、路由绑定和图像生成选项。默认不导出 API key 或鉴权 headers；导入同 ID 配置时保留本机已有密钥。</p><h3>普通 Provider</h3>{availableProviders.length ? availableProviders.map((item) => <label className="checkbox-line" key={item.id}><input type="checkbox" checked={providerIds.includes(item.id)} onChange={(event) => toggle(providerIds, item.id, event.target.checked, setProviderIds)} />{item.name} · {item.model}</label>) : <p className="empty">没有普通 Provider 配置。</p>}<h3>语音 Provider</h3>{availableTtsConfigs.length ? availableTtsConfigs.map((item) => <label className="checkbox-line" key={item.id}><input type="checkbox" checked={ttsIds.includes(item.id)} onChange={(event) => toggle(ttsIds, item.id, event.target.checked, setTtsIds)} />{item.name} · {item.model || '未设置模型'}</label>) : <p className="empty">没有语音 Provider 配置。</p>}<label className="checkbox-line"><input type="checkbox" checked={includeBindings} onChange={(event) => setIncludeBindings(event.target.checked)} />包含任务路由和当前世界角色绑定</label><div className="button-row"><button onClick={() => { if (includeSecrets && !window.confirm('导出文件将包含 API key 和鉴权 headers。请确认文件只保存在你自己的设备上。')) return; void props.onExport(selection); }} disabled={!providerIds.length && !ttsIds.length && !props.imageConfig}>导出所选设置</button><label className="file-button">选择迁移包<input type="file" accept=".json,application/json" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; try { const pack = await importProviderSettingsPackage(file); setPreview(pack); setImportError(''); setProviderIds(pack.providers.map((item) => item.id)); setTtsIds(pack.ttsConfigs.map((item) => item.id)); setIncludeBindings(true); setIncludeSecrets(Boolean(pack.providers.some((item) => item.apiKey) || pack.ttsConfigs.some((item) => item.apiKey))); } catch (error) { setPreview(null); setImportError(errorMessage(error, '迁移包无法读取。')); } }} /></label><label className="checkbox-line"><input type="checkbox" checked={includeSecrets} onChange={(event) => setIncludeSecrets(event.target.checked)} />包含 API key 和鉴权 headers（仅用于个人迁移）</label>{includeSecrets && <p className="io-scope" role="alert">API key 将写入导出的 JSON 文件。请勿分享此文件；导出前会再次确认。</p>}</div>{importError && <p className="io-scope" role="alert">{importError}</p>}</div>{preview && <div className="provider-card"><div className="list-heading"><div><h3>导入预览</h3><p className="io-scope">导出时间：{new Date(preview.exportedAt).toLocaleString()}</p></div></div><p>普通 Provider：{preview.providers.length} 个 · 语音 Provider：{preview.ttsConfigs.length} 个 · 任务路由：{preview.bindings.length} 条 · 角色绑定：{preview.characterBindings.length} 条 · 图像选项：{preview.imageConfig ? '包含' : '无'}</p><div className="button-row"><button onClick={() => void props.onImport(preview, selection)} disabled={!providerIds.length && !ttsIds.length && !preview.imageConfig}>导入所选设置</button><button className="secondary" onClick={() => setPreview(null)}>取消预览</button></div></div>}</section></div>;
 }
 
-function ImageSettingsView(props: { config: ImageConfig; providers: ProviderConfig[]; setProvider: (provider: ProviderConfig) => void; busy: boolean; onSave: (config: ImageConfig) => Promise<void>; onTest: (config: ImageConfig) => Promise<void>; onNewProvider: () => void; onOpenProvider: () => void; save: SaveFile; personas: Persona[]; imageVisualConfigs: ImageVisualConfig[]; imageUserVisualConfigs: ImageUserVisualConfig[]; visualCharacterId: string; setVisualCharacterId: (value: string) => void; imagePrompt: string; setImagePrompt: (value: string) => void; imageTarget: 'avatar' | 'portrait'; setImageTarget: (value: 'avatar' | 'portrait') => void; onSaveImageVisualConfig: (characterId: string, appearancePrompt: string) => Promise<void>; onSetCharacterFaceLock: (characterId: string, enabled: boolean) => Promise<void>; onImportCharacterFaceReference: (characterId: string, file?: File) => Promise<void>; onRemoveCharacterFaceReference: (characterId: string) => Promise<void>; onSaveUserImageVisualConfig: (appearancePrompt: string) => Promise<void>; onSetUserFaceLock: (enabled: boolean) => Promise<void>; onImportUserFaceReference: (file?: File) => Promise<void>; onRemoveUserFaceReference: () => Promise<void>; onGenerateCharacterImage: (characterId: string, target: 'avatar' | 'portrait', scenePrompt: string) => Promise<void> }) {
+function ImageSettingsView(props: { config: ImageConfig; providers: ProviderConfig[]; setProvider: (provider: ProviderConfig) => void; busy: boolean; onSave: (config: ImageConfig) => Promise<void>; onTest: (config: ImageConfig) => Promise<void>; onNewProvider: () => void; onOpenProvider: () => void; save: SaveFile; personas: Persona[]; imageVisualConfigs: ImageVisualConfig[]; imageUserVisualConfigs: ImageUserVisualConfig[]; visualCharacterId: string; setVisualCharacterId: (value: string) => void; imagePrompt: string; setImagePrompt: (value: string) => void; imageTarget: 'avatar' | 'portrait'; setImageTarget: (value: 'avatar' | 'portrait') => void; onSaveImageVisualConfig: (characterId: string, appearancePrompt: string) => Promise<void>; onSetCharacterFaceLock: (characterId: string, enabled: boolean) => Promise<void>; onImportCharacterFaceReference: (characterId: string, file?: File) => Promise<void>; onRemoveCharacterFaceReference: (characterId: string) => Promise<void>; onSaveUserImageVisualConfig: (appearancePrompt: string) => Promise<void>; onSetUserFaceLock: (enabled: boolean) => Promise<void>; onImportUserFaceReference: (file?: File) => Promise<void>; onRemoveUserFaceReference: () => Promise<void>; onGenerateCharacterImage: (characterId: string, target: 'avatar' | 'portrait', scenePrompt: string) => Promise<void>; onDownloadGenerated?: () => Promise<void>; onDeleteGenerated?: () => Promise<void> }) {
   const compatibleProviders = props.providers.filter((item) => item.kind === 'openai-compatible');
   const [draft, setDraft] = useState(props.config);
   useEffect(() => { setDraft(props.config); }, [props.config]);
@@ -4399,6 +4575,7 @@ function ImageSettingsView(props: { config: ImageConfig; providers: ProviderConf
       <label>响应格式<select value={draft.responseFormat} onChange={(event) => update({ responseFormat: event.target.value as ImageConfig['responseFormat'] })}><option value="b64_json">b64_json（推荐，收到后转存二进制）</option><option value="url">url</option></select></label>
       <label>参考图能力<select value={draft.referenceMode} onChange={(event) => update({ referenceMode: event.target.value as ImageConfig['referenceMode'] })}><option value="none">关闭 · 仅提示词生成</option><option value="openai-edits">OpenAI-compatible images/edits</option></select></label>
       {draft.referenceMode === 'openai-edits' ? <><label>自定义 edits 端点（可选）<input value={draft.editEndpoint ?? ''} onChange={(event) => update({ editEndpoint: event.target.value || undefined })} placeholder="留空时由 Provider 基础 URL 推导 /images/edits" /></label><p className="io-scope">启用后，只有存在锁脸参考图时才会使用 multipart edits 请求；没有参考图时仍使用 generations。</p></> : <p className="io-scope">当前 Provider 不会接收锁脸参考图；后续会明确降级为固定外貌提示词。</p>}
+      {draft.referenceMode === 'openai-edits' && <label className="checkbox-line"><input type="checkbox" checked={draft.multiReferenceEnabled} onChange={(event) => update({ multiReferenceEnabled: event.target.checked })} />声明 Provider 支持多张参考图（双人锁脸 CG 必须开启）</label>}
       <div className="stat-list"><span>调用 {draft.requestCount} 次</span><span>失败 {draft.failureCount} 次</span>{draft.lastCalledAt && <span>最近调用 {new Date(draft.lastCalledAt).toLocaleString()}</span>}</div>
       {draft.lastError && <p className="io-scope" role="alert">最近错误：{draft.lastError}</p>}
       <div className="button-row"><button onClick={() => void props.onSave(draft)} disabled={props.busy}>保存设置</button><button className="secondary" onClick={() => void props.onTest(draft)} disabled={props.busy || !selectedProvider}>连接测试</button></div>
@@ -4415,7 +4592,8 @@ function ImageSettingsView(props: { config: ImageConfig; providers: ProviderConf
         <label>生成目标<select value={props.imageTarget} onChange={(event) => props.setImageTarget(event.target.value as 'avatar' | 'portrait')}><option value="avatar">头像</option><option value="portrait">立绘</option></select></label>
         <label>场景 / 姿态要求<textarea value={props.imagePrompt} onChange={(event) => props.setImagePrompt(event.target.value)} placeholder="例如：站在雨后的海边车站，回头看向镜头。" /></label>
         <label>最终 Prompt 预览<textarea readOnly value={selectedCharacter ? (() => { try { return buildCharacterImagePrompt({ scenePrompt: props.imagePrompt, stylePrompt: draft.stylePrompt, appearancePrompt: appearanceDraft }); } catch { return '请先填写场景 / 姿态要求。'; } })() : ''} /></label>
-        <div className="button-row"><button onClick={() => selectedCharacter && void props.onGenerateCharacterImage(selectedCharacter.id, props.imageTarget, props.imagePrompt)} disabled={props.busy || !selectedProvider || !selectedCharacter || !props.imagePrompt.trim()}>{props.busy ? '正在生成…' : `生成${props.imageTarget === 'avatar' ? '头像' : '立绘'}`}</button></div>
+        <div className="button-row"><button onClick={() => selectedCharacter && void props.onGenerateCharacterImage(selectedCharacter.id, props.imageTarget, props.imagePrompt)} disabled={props.busy || !selectedProvider || !selectedCharacter || !props.imagePrompt.trim()}>{props.busy ? '正在生成…' : `生成${props.imageTarget === 'avatar' ? '头像构图' : '立绘构图'}`}</button></div>
+        {draft.lastGenerated && <div className="standalone-image-result"><p>最近生成结果：{draft.lastGenerated.label}。它是独立图片，不会自动替换角色头像或立绘。</p><ChatCgImage attachment={{ asset: draft.lastGenerated.asset, prompt: draft.lastGenerated.prompt, requestId: draft.lastGenerated.asset.assetId, characterIds: selectedCharacter ? [selectedCharacter.id] : [], includesPlayer: false, generatedAt: draft.lastGenerated.generatedAt }} /><div className="button-row"><button className="secondary" onClick={() => void props.onDownloadGenerated?.()}>下载图片</button><button className="danger" onClick={() => void props.onDeleteGenerated?.()}>删除图片</button></div></div>}
       </> : <p className="empty">当前世界还没有正式角色，请先在终端的角色卡中加入角色。</p>}
     </div>
     <div className="provider-card">
@@ -4488,10 +4666,13 @@ function SettingsView(props: {
   onImportUserFaceReference: (file?: File) => Promise<void>;
   onRemoveUserFaceReference: () => Promise<void>;
   onGenerateCharacterImage: (characterId: string, target: 'avatar' | 'portrait', scenePrompt: string) => Promise<void>;
+  onDownloadGeneratedImage?: () => Promise<void>;
+  onDeleteGeneratedImage?: () => Promise<void>;
   voiceCacheStats: VoiceCacheStats;
   onClearVoiceCache: () => Promise<void>;
   imageAssetStats: ImageAssetStats;
   onClearUnusedImageAssets: () => Promise<void>;
+  onClearChatCgImages?: () => Promise<void>;
   storageEstimate: StorageEstimate;
   onPersistStorage: () => Promise<void>;
   assetIntegrityReport: AssetIntegrityReport | null;
@@ -4551,7 +4732,7 @@ function SettingsView(props: {
   const pageTitle = SETTINGS_PAGE_DEFINITIONS.find((entry) => entry.id === props.activePage)?.pageTitle ?? '设置';
   if (!props.activePage) return <DesktopLauncher launcherId="settings" title="设置" appName={props.appName} entries={entries} onOpen={(id) => props.onOpenPage(id as SettingsPage)} />;
   if (props.activePage === 'migration') return <SubpageShell title={pageTitle} pageId="migration" onBack={props.onBack}><ProviderSettingsMigrationView providers={props.providers} ttsConfigs={props.ttsConfigs} imageConfig={props.imageConfig} onExport={props.onExportProviderSettings} onImport={props.onImportProviderSettings} onExportGlobalBackup={props.onExportGlobalBackup} onImportGlobalBackup={props.onImportGlobalBackup} globalBackupPreview={props.globalBackupPreview} onRestoreGlobalBackup={props.onRestoreGlobalBackup} /></SubpageShell>;
-  if (props.activePage === 'image') return <SubpageShell title={pageTitle} pageId="image" onBack={props.onBack}><ImageSettingsView config={props.imageConfig} providers={props.providers} setProvider={props.setProvider} busy={props.imageBusy} onSave={props.onSaveImage} onTest={props.onTestImage} onNewProvider={props.onNewProvider} onOpenProvider={props.onOpenProvider} save={props.save} personas={props.personas} imageVisualConfigs={props.imageVisualConfigs} imageUserVisualConfigs={props.imageUserVisualConfigs} visualCharacterId={props.visualCharacterId} setVisualCharacterId={props.setVisualCharacterId} imagePrompt={props.imagePrompt} setImagePrompt={props.setImagePrompt} imageTarget={props.imageTarget} setImageTarget={props.setImageTarget} onSaveImageVisualConfig={props.onSaveImageVisualConfig} onSetCharacterFaceLock={props.onSetCharacterFaceLock} onImportCharacterFaceReference={props.onImportCharacterFaceReference} onRemoveCharacterFaceReference={props.onRemoveCharacterFaceReference} onSaveUserImageVisualConfig={props.onSaveUserImageVisualConfig} onSetUserFaceLock={props.onSetUserFaceLock} onImportUserFaceReference={props.onImportUserFaceReference} onRemoveUserFaceReference={props.onRemoveUserFaceReference} onGenerateCharacterImage={props.onGenerateCharacterImage} /></SubpageShell>;
+  if (props.activePage === 'image') return <SubpageShell title={pageTitle} pageId="image" onBack={props.onBack}><ImageSettingsView config={props.imageConfig} providers={props.providers} setProvider={props.setProvider} busy={props.imageBusy} onSave={props.onSaveImage} onTest={props.onTestImage} onNewProvider={props.onNewProvider} onOpenProvider={props.onOpenProvider} save={props.save} personas={props.personas} imageVisualConfigs={props.imageVisualConfigs} imageUserVisualConfigs={props.imageUserVisualConfigs} visualCharacterId={props.visualCharacterId} setVisualCharacterId={props.setVisualCharacterId} imagePrompt={props.imagePrompt} setImagePrompt={props.setImagePrompt} imageTarget={props.imageTarget} setImageTarget={props.setImageTarget} onSaveImageVisualConfig={props.onSaveImageVisualConfig} onSetCharacterFaceLock={props.onSetCharacterFaceLock} onImportCharacterFaceReference={props.onImportCharacterFaceReference} onRemoveCharacterFaceReference={props.onRemoveCharacterFaceReference} onSaveUserImageVisualConfig={props.onSaveUserImageVisualConfig} onSetUserFaceLock={props.onSetUserFaceLock} onImportUserFaceReference={props.onImportUserFaceReference} onRemoveUserFaceReference={props.onRemoveUserFaceReference} onGenerateCharacterImage={props.onGenerateCharacterImage} onDownloadGenerated={props.onDownloadGeneratedImage} onDeleteGenerated={props.onDeleteGeneratedImage} /></SubpageShell>;
   return <SubpageShell title={pageTitle} pageId={props.activePage} onBack={props.onBack}>
     <details className="fold-card" open><summary>玩家身份 · 面具身份</summary><div className="fold-body"><div className="provider-card persona-card"><div className="list-heading"><div><span className="eyebrow">玩家身份</span><h3>面具身份</h3></div><span className="io-scope">每个世界绑定一个</span></div><div className="persona-fields"><input placeholder="身份名称，例如：旅人" value={props.personaName} onChange={(event) => props.setPersonaName(event.target.value)} /><input placeholder="对话框称呼，例如：小明" value={props.personaDisplayName} onChange={(event) => props.setPersonaDisplayName(event.target.value)} /><textarea placeholder="自我描述（会注入面对面提示词）" value={props.personaDescription} onChange={(event) => props.setPersonaDescription(event.target.value)} /></div><div className="button-row"><button onClick={() => void props.onSavePersona()}>{props.personaEditingId ? '更新面具' : '保存面具'}</button><button className="secondary" onClick={() => { props.setPersonaEditingId(''); props.setPersonaName(''); props.setPersonaDisplayName(''); props.setPersonaDescription(''); }}>新建面具</button></div>{props.personas.length ? <div className="persona-list">{props.personas.map((persona) => <div className="list-row" key={persona.id}><span>{persona.name}<small>对话框：{persona.displayName}{persona.description ? ` · ${persona.description}` : ''}</small></span><span className="button-row"><button className={props.personaId === persona.id ? '' : 'secondary'} onClick={() => props.onBindPersona(persona.id)}>{props.personaId === persona.id ? '当前绑定' : '绑定'}</button><button className="secondary" onClick={() => { props.setPersonaEditingId(persona.id); props.setPersonaName(persona.name); props.setPersonaDisplayName(persona.displayName); props.setPersonaDescription(persona.description); }}>编辑</button><button className="danger" onClick={() => void props.onDeletePersona(persona.id)}>删除</button></span></div>)}</div> : <p className="empty">还没有面具身份，聊天名牌默认使用玩家名字。</p>}</div></div></details>
     <details className="fold-card" open><summary>Provider 配置 {props.requestStatus === 'requesting' ? '· 请求中' : ''}</summary><div className="fold-body"><div className="section-heading"><div><span className="eyebrow">本地设置</span><h2>Provider</h2></div>{props.requestStatus === 'requesting' && <span className="request-status requesting">请求中…</span>}</div>
@@ -4647,6 +4828,7 @@ function SettingsView(props: {
       <div className="stat-list"><span>{props.imageAssetStats.count} 个图片</span><span>{formatByteSize(props.imageAssetStats.totalBytes)}</span><span>{props.imageAssetStats.referenceCount} 处角色视觉 / 锁脸引用</span></div>
       <p className="io-scope">安全清理只删除完整引用扫描确认无人使用的图片，并移除已缺失的锁脸引用。头像、立绘、地图、贴图、快照和锁脸仍在使用的图片不会删除。</p>
       <button type="button" className="danger" onClick={() => void props.onClearUnusedImageAssets()}>清理无引用图片</button>
+      <button type="button" className="danger" onClick={() => void props.onClearChatCgImages?.()}>清理聊天 CG（保留文字）</button>
       <h3>语音缓存</h3>
       <div className="stat-list"><span>{props.voiceCacheStats.count} 个音频</span><span>{formatByteSize(props.voiceCacheStats.totalBytes)}</span><span>{props.voiceCacheStats.referenceCount} 处消息引用</span></div>
       <p className="io-scope">清理只移除消息中的语音引用并保留文字；被头像、贴图等其他功能共用的资产不会删除。</p>
@@ -4812,6 +4994,25 @@ function TerminalAssetImage({ asset, alt = '贴图' }: { asset?: AssetRef; alt?:
     return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [asset]);
   return src ? <img className="terminal-sticker" src={src} alt={alt} /> : <span className="terminal-sticker-missing">贴图不可用</span>;
+}
+
+function ChatCgImage({ attachment }: { attachment: ChatCgAttachment }) {
+  const [src, setSrc] = useState<string>();
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | undefined;
+    setSrc(undefined);
+    if (attachment.asset.kind === 'url') { setSrc(attachment.asset.url); return () => undefined; }
+    void loadAsset(attachment.asset.assetId).then((stored) => {
+      if (!stored || cancelled) return;
+      objectUrl = URL.createObjectURL(stored.blob);
+      setSrc(objectUrl);
+    });
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [attachment.asset]);
+  return src
+    ? <figure className="chat-cg-attachment"><img src={src} alt="聊天 CG" /><figcaption>{attachment.includesPlayer ? '用户与角色互动 CG' : '角色场景 CG'}</figcaption></figure>
+    : <div className="chat-cg-missing">CG 图片不可用，文字记录仍保留。</div>;
 }
 
 function TerminalVoiceAudio({ asset, durationMs }: { asset?: AssetRef; durationMs?: number }) {

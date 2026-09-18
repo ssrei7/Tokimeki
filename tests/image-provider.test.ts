@@ -54,6 +54,13 @@ describe('OpenAI-compatible image provider', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it('submits multiple reference images as repeated image fields', () => {
+    const request = buildImageEditRequest(config, '双人互动', [new Blob(['face-a']), new Blob(['face-b'])], { referenceMode: 'openai-edits' });
+    const body = request.init.body as FormData;
+    expect(body.getAll('image')).toHaveLength(2);
+    expect(body.get('image')).toBeInstanceOf(Blob);
+  });
+
   it('validates local image settings without changing SaveFile schema', () => {
     expect(ImageConfigSchema.parse({ id: 'image', size: '1024x1024', responseFormat: 'b64_json', referenceMode: 'none', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: new Date().toISOString() }).id).toBe('image');
     expect(() => ImageConfigSchema.parse({ id: 'image', size: '1024x1024', responseFormat: 'url', referenceMode: 'openai-edits', editEndpoint: 'not-a-url', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: new Date().toISOString() })).toThrow('端点');

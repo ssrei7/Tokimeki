@@ -111,6 +111,6 @@ function sanitizeTts(config: TtsConfig): TtsConfig {
 }
 
 function sanitizeImageConfig(config: ImageConfig, includeProviderId: boolean): ImageConfig {
-  const { lastError: _error, lastCalledAt: _called, providerId, ...rest } = config;
+  const { lastError: _error, lastCalledAt: _called, lastGenerated: _lastGenerated, providerId, ...rest } = config;
   return ImageConfigSchema.parse({ ...rest, ...(includeProviderId && providerId ? { providerId } : {}), requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: new Date().toISOString() });
 }
