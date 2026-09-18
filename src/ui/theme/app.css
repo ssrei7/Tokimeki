@@ -240,6 +240,10 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .theme-appearance-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .theme-appearance-grid label { display: grid; gap: 5px; color: var(--gray-600); font-size: 12px; }
 .theme-appearance-preview { display: grid; gap: 8px; margin-top: 12px; padding: 12px; border: 1px dashed var(--theme-card-border); border-radius: var(--theme-card-radius); background: var(--theme-terminal-bg); }
+.desktop-title-editor { display: grid; grid-template-columns: minmax(80px, auto) minmax(0, 1fr); gap: 6px 8px; margin: 8px 0; }
+.desktop-title-editor strong { grid-column: 1 / -1; padding-top: 7px; border-top: 1px solid var(--theme-list-divider); color: var(--gray-700); }
+.desktop-title-editor label { display: contents; color: var(--gray-600); font-size: 12px; }
+.desktop-title-editor input { min-width: 0; padding: 7px 9px; }
 @media (max-width: 560px) { .theme-appearance-grid { grid-template-columns: 1fr; } }
 .provider-card label.checkbox-line { display: flex; align-items: center; gap: 8px; }
 .provider-card label.checkbox-line input { width: auto; flex: 0 0 auto; }

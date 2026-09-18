@@ -2,6 +2,7 @@ export const THEME_STORAGE_KEY = 'tokimeki.theme-mode';
 export const CUSTOM_CSS_STORAGE_KEY = 'tokimeki.custom-css';
 export const THEME_TEMPLATE_STORAGE_KEY = 'tokimeki.theme-template';
 export const THEME_APPEARANCE_STORAGE_KEY = 'tokimeki.theme-appearance';
+export const DESKTOP_TITLE_STORAGE_KEY = 'tokimeki.desktop-titles';
 export const THEME_MODES = ['system', 'light', 'dark'] as const;
 export const THEME_TEMPLATES = ['default', 'soft', 'compact'] as const;
 export type ThemeMode = typeof THEME_MODES[number];
@@ -31,6 +32,7 @@ export interface ThemeAppearanceConfig {
   mapCardShadow: string;
   mapGap: number;
 }
+export type DesktopTitleOverrides = Record<string, Record<string, string>>;
 
 export const DEFAULT_THEME_APPEARANCE: ThemeAppearanceConfig = {
   playerBubbleBg: 'var(--gray-600)', playerBubbleFg: 'var(--gray-0)', characterBubbleBg: 'var(--gray-0)', characterBubbleFg: 'var(--gray-800)',
@@ -79,6 +81,23 @@ export function applyThemeAppearance(config: ThemeAppearanceConfig, root: Pick<H
   const parsed = parseThemeAppearance(config); const vars: Record<string, string> = {
     '--theme-player-bubble-bg': parsed.playerBubbleBg, '--theme-player-bubble-fg': parsed.playerBubbleFg, '--theme-character-bubble-bg': parsed.characterBubbleBg, '--theme-character-bubble-fg': parsed.characterBubbleFg, '--theme-message-radius': `${parsed.messageRadius}px`, '--theme-message-padding': `${parsed.messagePadding}px`, '--theme-terminal-bg': parsed.terminalBg, '--theme-card-bg': parsed.cardBg, '--theme-card-border': parsed.cardBorder, '--theme-card-radius': `${parsed.cardRadius}px`, '--theme-card-shadow': parsed.cardShadow, '--theme-list-divider': parsed.listDivider, '--theme-terminal-input-bg': parsed.terminalInputBg, '--theme-button-bg': parsed.buttonBg, '--theme-selected-bg': parsed.selectedBg, '--theme-list-gap': `${parsed.listGap}px`, '--theme-map-card-bg': parsed.mapCardBg, '--theme-map-card-border': parsed.mapCardBorder, '--theme-map-card-radius': `${parsed.mapCardRadius}px`, '--theme-map-card-shadow': parsed.mapCardShadow, '--theme-map-gap': `${parsed.mapGap}px`,
   }; Object.entries(vars).forEach(([key, value]) => root.style.setProperty(key, value));
+}
+export function parseDesktopTitleOverrides(value: unknown): DesktopTitleOverrides {
+  if (!value || typeof value !== 'object') return {};
+  const result: DesktopTitleOverrides = {};
+  for (const [launcherId, entries] of Object.entries(value as Record<string, unknown>)) {
+    if (!entries || typeof entries !== 'object') continue;
+    const valid = Object.fromEntries(Object.entries(entries as Record<string, unknown>).filter(([, title]) => typeof title === 'string' && title.length <= 40).map(([id, title]) => [id, title as string]));
+    if (Object.keys(valid).length) result[launcherId] = valid;
+  }
+  return result;
+}
+export function readDesktopTitleOverrides(storage: Pick<Storage, 'getItem'>): DesktopTitleOverrides {
+  try { const raw = storage.getItem(DESKTOP_TITLE_STORAGE_KEY); return raw ? parseDesktopTitleOverrides(JSON.parse(raw)) : {}; } catch { return {}; }
+}
+export function writeDesktopTitleOverrides(storage: Pick<Storage, 'setItem' | 'removeItem'>, value: DesktopTitleOverrides): void {
+  const parsed = parseDesktopTitleOverrides(value);
+  try { if (Object.keys(parsed).length) storage.setItem(DESKTOP_TITLE_STORAGE_KEY, JSON.stringify(parsed)); else storage.removeItem(DESKTOP_TITLE_STORAGE_KEY); } catch { /* local preference unavailable */ }
 }
 export function readCustomCss(storage: Pick<Storage, 'getItem'>): string {
   try { return storage.getItem(CUSTOM_CSS_STORAGE_KEY) ?? ''; } catch { return ''; }

@@ -76,7 +76,7 @@ import { DesktopLauncher, EmptyState, SubpageShell, type DesktopEntry } from './
 import { MusicApp } from './components/music-app';
 import { useMusicPlayer, type MusicPlayerController } from './features/music/player';
 import './ui/theme/app.css';
-import { applyCustomCss, applyTheme, applyThemeAppearance, applyThemeTemplate, DEFAULT_THEME_APPEARANCE, parseThemeAppearance, readCustomCss, readThemeAppearance, readThemeMode, readThemeTemplate, resolveTheme, THEME_APPEARANCE_STORAGE_KEY, THEME_STORAGE_KEY, THEME_TEMPLATE_STORAGE_KEY, type ThemeAppearanceConfig, type ThemeMode, type ThemeTemplate, validateCustomCss, writeCustomCss, writeThemeAppearance } from './ui/theme/preferences';
+import { applyCustomCss, applyTheme, applyThemeAppearance, applyThemeTemplate, DEFAULT_THEME_APPEARANCE, parseDesktopTitleOverrides, parseThemeAppearance, readCustomCss, readDesktopTitleOverrides, readThemeAppearance, readThemeMode, readThemeTemplate, resolveTheme, THEME_APPEARANCE_STORAGE_KEY, THEME_STORAGE_KEY, THEME_TEMPLATE_STORAGE_KEY, type DesktopTitleOverrides, type ThemeAppearanceConfig, type ThemeMode, type ThemeTemplate, validateCustomCss, writeCustomCss, writeDesktopTitleOverrides, writeThemeAppearance } from './ui/theme/preferences';
 
 type Tab = 'map' | 'day' | 'chat' | 'library' | 'settings';
 export type SettingsPage = 'player' | 'provider' | 'vector-memory' | 'voice' | 'image' | 'routing' | 'migration' | 'display' | 'rules' | 'privacy' | 'debug' | 'dev-tools';
@@ -4780,6 +4780,7 @@ function SettingsView(props: {
 }) {
   const [settingsThemeMode, setSettingsThemeMode] = useState<ThemeMode>(() => typeof window === 'undefined' ? 'system' : readThemeMode(window.localStorage));
   const [settingsThemeTemplate, setSettingsThemeTemplate] = useState<ThemeTemplate>(() => typeof window === 'undefined' ? 'default' : readThemeTemplate(window.localStorage));
+  const [desktopTitles, setDesktopTitles] = useState<DesktopTitleOverrides>(() => typeof window === 'undefined' ? {} : readDesktopTitleOverrides(window.localStorage));
   const [appearanceDraft, setAppearanceDraft] = useState<ThemeAppearanceConfig>(() => props.themeAppearance);
   const settingsResolvedTheme = resolveTheme(settingsThemeMode, typeof window !== 'undefined' && (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false));
   const changeSettingsTheme = (mode: ThemeMode) => {
@@ -4793,6 +4794,11 @@ function SettingsView(props: {
   };
   const applyAppearanceDraft = () => props.onThemeAppearanceChange(appearanceDraft);
   const resetAppearanceDraft = () => { const next = { ...DEFAULT_THEME_APPEARANCE }; setAppearanceDraft(next); props.onThemeAppearanceChange(next); };
+  const setDesktopTitle = (launcherId: string, entryId: string, title: string) => {
+    const next = parseDesktopTitleOverrides({ ...desktopTitles, [launcherId]: { ...desktopTitles[launcherId], [entryId]: title } });
+    setDesktopTitles(next); writeDesktopTitleOverrides(window.localStorage, next); window.dispatchEvent(new CustomEvent('tokimeki:theme-change'));
+  };
+  const resetDesktopTitles = () => { setDesktopTitles({}); writeDesktopTitleOverrides(window.localStorage, {}); window.dispatchEvent(new CustomEvent('tokimeki:theme-change')); };
   const isSaved = props.providers.some((item) => item.id === props.provider.id);
   const energy = getEnergyState(props.save.world);
   const entries: readonly DesktopEntry[] = SETTINGS_PAGE_DEFINITIONS;
@@ -4903,6 +4909,10 @@ function SettingsView(props: {
       <textarea aria-label="自定义 CSS" spellCheck={false} value={props.customCssDraft} onChange={(event) => props.setCustomCssDraft(event.target.value)} placeholder="例如：.message { border-radius: 16px; }" />
       <div className="button-row"><button type="button" onClick={() => { const issues = props.onSaveCustomCss(); if (issues.length) window.alert(issues.join('\n')); }}>应用自定义 CSS</button><button type="button" className="secondary" onClick={props.onResetCustomCss}>恢复默认</button></div>
       <p className="io-scope">只允许本地 CSS；禁止 @import、外链 url、脚本表达式和行为属性。不会执行 JavaScript，也不会请求网络。</p>
+      <h3>桌面入口标题</h3>
+      <p className="io-scope">标题覆盖只影响桌面图标；输入为空时恢复内置标题。底部主导航保持固定。</p>
+      <div className="desktop-title-editor"><strong>设置桌面</strong>{SETTINGS_PAGE_DEFINITIONS.map((entry) => <label key={`settings-${entry.id}`}>{entry.label}<input value={desktopTitles.settings?.[entry.id] ?? ''} placeholder={entry.label} maxLength={40} onChange={(event) => setDesktopTitle('settings', entry.id, event.target.value)} /></label>)}<strong>终端桌面</strong>{LIBRARY_PAGE_DEFINITIONS.map((entry) => <label key={`terminal-${entry.id}`}>{entry.label}<input value={desktopTitles.terminal?.[entry.id] ?? ''} placeholder={entry.label} maxLength={40} onChange={(event) => setDesktopTitle('terminal', entry.id, event.target.value)} /></label>)}</div>
+      <button type="button" className="secondary" onClick={resetDesktopTitles}>恢复全部入口默认标题</button>
       <h3>生活资源</h3>
       <label className="checkbox-line"><input type="checkbox" checked={energy?.enabled ?? false} disabled={!energy} onChange={(event) => props.onEnergyEnabledChange(event.target.checked)} />启用体力消耗</label>
       <p className="io-scope">体力作为通用 stat 保存。关闭后行动不扣体力，当前数值仍保留；重新开启后继续使用。</p>

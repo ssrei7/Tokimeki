@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerE
 import { cn } from '@/lib/utils';
 import { desktopIconContrastForLuminance, readWallpaperLuminance, type DesktopIconContrast } from '@/ui/desktop-icon-contrast';
 import { clearDesktopOrder, clearDesktopPages, moveIdBefore, moveIdToPageEnd, readDesktopOrder, readDesktopPages, reconcileDesktopOrder, writeDesktopOrder, writeDesktopPage } from './desktop-order';
+import { readDesktopTitleOverrides } from '@/ui/theme/preferences';
 
 export type DesktopEntry = {
   id: string;
@@ -23,6 +24,7 @@ export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperU
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
+  const [titleOverrides, setTitleOverrides] = useState(() => typeof window === 'undefined' ? {} : readDesktopTitleOverrides(window.localStorage));
   const entryIds = useMemo(() => entries.map((entry) => entry.id), [entries]);
   const entryIdsKey = entryIds.join('\u0001');
   const [orderedIds, setOrderedIds] = useState(() => readDesktopOrder(launcherId, entryIds));
@@ -35,6 +37,7 @@ export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperU
   const assignedPage = (id: string, index: number) => pageAssignments[id] ?? Math.floor(index / pageSize);
   const pageCount = Math.max(1, ...orderedEntries.map((entry, index) => assignedPage(entry.id, index) + 1));
   const visibleEntries = orderedEntries.filter((entry, index) => assignedPage(entry.id, index) === page).slice(0, pageSize);
+  const titledEntries = visibleEntries.map((entry) => ({ ...entry, label: titleOverrides[launcherId]?.[entry.id]?.trim() || entry.label }));
   const commitOrder = (next: readonly string[], movedId?: string) => {
     const reconciled = reconcileDesktopOrder(next, entryIds);
     setOrderedIds(reconciled);
@@ -146,6 +149,7 @@ export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperU
     });
   }, [launcherId, entryIdsKey]);
   useEffect(() => () => stopLongPress(), []);
+  useEffect(() => { const refresh = () => setTitleOverrides(readDesktopTitleOverrides(window.localStorage)); window.addEventListener('tokimeki:theme-change', refresh); return () => window.removeEventListener('tokimeki:theme-change', refresh); }, []);
   const style = contrast ? {
     '--desktop-icon-ink': contrast.ink,
     '--desktop-icon-label': contrast.label,
@@ -155,7 +159,7 @@ export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperU
   return <section className={cn('desktop-launcher', reorderMode && 'reorder-mode')} aria-label={title} style={style} onPointerDown={(event) => { if (event.target === event.currentTarget && reorderMode) setReorderMode(false); }} onPointerMove={handleLauncherPointerMove} onPointerUp={handleLauncherPointerUp}>
     <PageHeader eyebrow={appName} title={title} action={reorderMode ? <div className="desktop-reorder-actions"><button type="button" className="secondary" onClick={() => { clearDesktopOrder(launcherId); clearDesktopPages(launcherId); setOrderedIds([...entryIds]); setPageAssignments({}); setAnnouncement('已恢复默认排列'); }}>恢复默认</button><button type="button" onClick={() => { setReorderMode(false); setDraggedId(null); setAnnouncement('已退出排列模式'); }}>完成</button></div> : undefined} />
     <div className="desktop-grid" onPointerDown={(event) => { if (event.target === event.currentTarget && reorderMode) setReorderMode(false); }}>
-      {visibleEntries.map((entry) => <DesktopAppIcon key={entry.id} entry={entry} reorderMode={reorderMode} dragged={draggedId === entry.id} focused={focusedId === entry.id} onOpen={handleIconClick} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onKeyDown={(id, event) => { if (!reorderMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); enterReorderMode(id); return; } if (!reorderMode) return; const offset = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' ? -columns : event.key === 'ArrowDown' ? columns : 0; if (offset) { event.preventDefault(); moveByOffset(id, offset); } }} />)}
+      {titledEntries.map((entry) => <DesktopAppIcon key={entry.id} entry={entry} reorderMode={reorderMode} dragged={draggedId === entry.id} focused={focusedId === entry.id} onOpen={handleIconClick} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onKeyDown={(id, event) => { if (!reorderMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); enterReorderMode(id); return; } if (!reorderMode) return; const offset = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' ? -columns : event.key === 'ArrowDown' ? columns : 0; if (offset) { event.preventDefault(); moveByOffset(id, offset); } }} />)}
     </div>
     {pageCount > 1 && <nav className="desktop-pagination" aria-label="桌面页码">{Array.from({ length: pageCount }, (_, index) => <button key={index} type="button" data-desktop-page={index} className={cn(index === page && 'active', reorderMode && draggedId && 'drop-target')} aria-label={`第 ${index + 1} 页`} aria-current={index === page ? 'page' : undefined} onClick={() => setPage(index)}><span aria-hidden="true" /></button>)}</nav>}
     {reorderMode && <p className="desktop-reorder-hint">拖动图标或使用方向键重新排列；拖到页码可移动到其他页。</p>}
