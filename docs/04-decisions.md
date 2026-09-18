@@ -610,3 +610,8 @@
 **决定**：数据与隐私页纯本地显示当前平台族、浏览器/standalone 形态、通知权限、Service Worker 是否受控、Media Session、持久化存储及后台相关 API 可见性。诊断不申请权限、不注册 Service Worker、不调用 Provider，也不根据 User-Agent 宣称具体系统版本必然支持某项能力。
 
 **平台边界**：API 存在只表示浏览器暴露接口，不代表 Android/iOS 会允许后台请求、通知、媒体控制或同步任务持续运行。当前没有 Service Worker 和通知入口；后台可靠降级继续采用页面隐藏前落盘、返回前台识别中断、用户显式重试和防止重复 ops。真机结果按设备、系统、浏览器与安装形态记录，不能泛化为跨平台承诺。SaveFile 保持 v41。
+
+## D113 不使用 Service Worker 代理 Provider 请求
+**决定**：不实现 Service Worker 单次生成请求代理、流式片段后台写入或 Background Sync 自动重放。Service Worker 跨域请求仍受 CORS 限制，移动系统可随时终止 Worker；自动重放还可能导致重复计费、重复文本和竞态。为恢复请求而保存 endpoint、鉴权 headers、API key 与完整 prompt 也会扩大敏感数据暴露面。
+
+**恢复边界**：继续采用前台直接请求、请求前保存 recovery、流式正文落盘、页面隐藏时标记中断、回到前台后由用户显式重试，以及 requestId / `opsApplied` 防重复应用。Service Worker 后续只可分别用于版本化静态壳或通知展示，不得读取 Provider 配置、持有 API key、发起生成或自动重试。SaveFile 保持 v41。

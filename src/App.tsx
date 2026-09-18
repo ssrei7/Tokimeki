@@ -64,6 +64,7 @@ import { readCallHistoryCollapsed, readContactGroupCollapsed, readContactGroupPr
 import { buildNpcExpansionPrompt, buildPromoteNpcOp, characterCardFromPromotedCharacter, createNpcPromotionDraft, parseNpcExpansionResponse, summarizeNpcSchedule, type NpcPromotionDraft } from './ui/npc-promotion';
 import { formatStorageBytes, readStorageEstimate, requestPersistentStorage, storageUsagePercent, type StorageEstimate } from './ui/storage';
 import { notificationCapabilityLabel, readMobileCapabilities, serviceWorkerCapabilityLabel } from './ui/mobile-capabilities';
+import { PROVIDER_PROXY_ASSESSMENT, providerProxyAssessmentLabel } from './ui/service-worker-assessment';
 import { PLAYER_ACCENT_COLOR, resolveCharacterAccentColors, resolveSpeakerAccentColor } from './ui/character-color';
 import { Calendar, ChatCircle, DeviceMobile, GearSix, MapTrifold, type Icon as PhosphorIcon } from '@phosphor-icons/react';
 import { StorySceneReader } from './ui/story-scene';
@@ -5125,6 +5126,9 @@ function SettingsView(props: {
       <div className="stat-list"><span>平台：{mobileCapabilities.platformFamily === 'ios' ? 'iOS / iPadOS' : mobileCapabilities.platformFamily === 'android' ? 'Android' : '其他 / 无法确定'}</span><span>运行方式：{mobileCapabilities.displayMode === 'standalone' ? '主屏幕 / standalone' : '浏览器标签页'}</span><span>通知：{notificationCapabilityLabel(mobileCapabilities)}</span><span>Service Worker：{serviceWorkerCapabilityLabel(mobileCapabilities)}</span><span>Media Session：{mobileCapabilities.mediaSessionApi ? 'API 可用' : '不可用'}</span><span>持久化存储：{mobileCapabilities.storagePersistApi ? '可申请' : '不可申请'}</span></div>
       <details><summary>后台相关 API 诊断</summary><div className="stat-list"><span>Push：{mobileCapabilities.pushManagerApi ? 'API 可见' : '不可用'}</span><span>Background Sync：{mobileCapabilities.backgroundSyncApi ? 'API 可见' : '不可用'}</span><span>Periodic Sync：{mobileCapabilities.periodicSyncApi ? 'API 可见' : '不可用'}</span><span>Wake Lock：{mobileCapabilities.wakeLockApi ? 'API 可见' : '不可用'}</span><span>安全上下文：{mobileCapabilities.secureContext ? '是' : '否'}</span></div></details>
       <p className="io-scope">“API 可用”只表示当前浏览器暴露了接口，不代表后台请求、通知、锁屏播放或定时任务一定持续运行。系统仍可能冻结页面、终止 Service Worker 或回收进程；Tokimeki 继续以落盘恢复和手动重试作为可靠降级。</p>
+      <h3>Provider 后台代理评估</h3>
+      <p className="io-scope">{providerProxyAssessmentLabel(mobileCapabilities.serviceWorkerApi)}。Service Worker 仍受 CORS 和系统生命周期限制；Tokimeki 不会把 API key 或完整 prompt 复制进后台任务，也不会自动重放可能产生重复计费和重复 ops 的生成请求。</p>
+      <details><summary>查看不启用原因</summary><ul>{PROVIDER_PROXY_ASSESSMENT.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></details>
       <h3>图片资产</h3>
       <div className="stat-list"><span>{props.imageAssetStats.count} 个图片</span><span>{formatByteSize(props.imageAssetStats.totalBytes)}</span><span>{props.imageAssetStats.referenceCount} 处角色视觉 / 锁脸引用</span></div>
       <p className="io-scope">安全清理只删除完整引用扫描确认无人使用的图片，并移除已缺失的锁脸引用。头像、立绘、地图、贴图、快照和锁脸仍在使用的图片不会删除。</p>
