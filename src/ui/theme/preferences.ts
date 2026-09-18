@@ -1,11 +1,42 @@
 export const THEME_STORAGE_KEY = 'tokimeki.theme-mode';
 export const CUSTOM_CSS_STORAGE_KEY = 'tokimeki.custom-css';
 export const THEME_TEMPLATE_STORAGE_KEY = 'tokimeki.theme-template';
+export const THEME_APPEARANCE_STORAGE_KEY = 'tokimeki.theme-appearance';
 export const THEME_MODES = ['system', 'light', 'dark'] as const;
 export const THEME_TEMPLATES = ['default', 'soft', 'compact'] as const;
 export type ThemeMode = typeof THEME_MODES[number];
 export type ThemeTemplate = typeof THEME_TEMPLATES[number];
 export type ResolvedTheme = Exclude<ThemeMode, 'system'>;
+
+export interface ThemeAppearanceConfig {
+  playerBubbleBg: string;
+  playerBubbleFg: string;
+  characterBubbleBg: string;
+  characterBubbleFg: string;
+  messageRadius: number;
+  messagePadding: number;
+  terminalBg: string;
+  cardBg: string;
+  cardBorder: string;
+  cardRadius: number;
+  cardShadow: string;
+  listDivider: string;
+  terminalInputBg: string;
+  buttonBg: string;
+  selectedBg: string;
+  listGap: number;
+  mapCardBg: string;
+  mapCardBorder: string;
+  mapCardRadius: number;
+  mapCardShadow: string;
+  mapGap: number;
+}
+
+export const DEFAULT_THEME_APPEARANCE: ThemeAppearanceConfig = {
+  playerBubbleBg: 'var(--gray-600)', playerBubbleFg: 'var(--gray-0)', characterBubbleBg: 'var(--gray-0)', characterBubbleFg: 'var(--gray-800)',
+  messageRadius: 8, messagePadding: 12, terminalBg: 'var(--gray-50)', cardBg: 'var(--gray-0)', cardBorder: 'var(--gray-100)', cardRadius: 8, cardShadow: '0 4px 16px rgb(63 63 63 / 0.05)', listDivider: 'var(--gray-100)', terminalInputBg: 'var(--gray-0)', buttonBg: 'var(--gray-600)', selectedBg: 'var(--gray-50)', listGap: 8,
+  mapCardBg: 'var(--gray-0)', mapCardBorder: 'var(--gray-100)', mapCardRadius: 8, mapCardShadow: '0 4px 16px rgb(63 63 63 / 0.05)', mapGap: 8,
+};
 
 export function parseThemeMode(value: unknown): ThemeMode {
   return typeof value === 'string' && (THEME_MODES as readonly string[]).includes(value) ? value as ThemeMode : 'system';
@@ -25,6 +56,29 @@ export function readThemeMode(storage: Pick<Storage, 'getItem'>): ThemeMode {
 }
 export function writeThemeMode(storage: Pick<Storage, 'setItem'>, mode: ThemeMode): void {
   try { storage.setItem(THEME_STORAGE_KEY, mode); } catch { /* local preference unavailable */ }
+}
+export function parseThemeAppearance(value: unknown): ThemeAppearanceConfig {
+  if (!value || typeof value !== 'object') return { ...DEFAULT_THEME_APPEARANCE };
+  const source = value as Partial<Record<keyof ThemeAppearanceConfig, unknown>>;
+  const numberValue = (key: keyof ThemeAppearanceConfig, fallback: number, min: number, max: number) => typeof source[key] === 'number' && Number.isFinite(source[key]) ? Math.max(min, Math.min(max, source[key] as number)) : fallback;
+  const colorValue = (key: keyof ThemeAppearanceConfig, fallback: string) => typeof source[key] === 'string' && source[key]!.length <= 160 ? source[key] as string : fallback;
+  return {
+    playerBubbleBg: colorValue('playerBubbleBg', DEFAULT_THEME_APPEARANCE.playerBubbleBg), playerBubbleFg: colorValue('playerBubbleFg', DEFAULT_THEME_APPEARANCE.playerBubbleFg), characterBubbleBg: colorValue('characterBubbleBg', DEFAULT_THEME_APPEARANCE.characterBubbleBg), characterBubbleFg: colorValue('characterBubbleFg', DEFAULT_THEME_APPEARANCE.characterBubbleFg),
+    messageRadius: numberValue('messageRadius', 8, 0, 32), messagePadding: numberValue('messagePadding', 12, 4, 28), terminalBg: colorValue('terminalBg', DEFAULT_THEME_APPEARANCE.terminalBg), cardBg: colorValue('cardBg', DEFAULT_THEME_APPEARANCE.cardBg), cardBorder: colorValue('cardBorder', DEFAULT_THEME_APPEARANCE.cardBorder), cardRadius: numberValue('cardRadius', 8, 0, 32), cardShadow: colorValue('cardShadow', DEFAULT_THEME_APPEARANCE.cardShadow), listDivider: colorValue('listDivider', DEFAULT_THEME_APPEARANCE.listDivider), terminalInputBg: colorValue('terminalInputBg', DEFAULT_THEME_APPEARANCE.terminalInputBg), buttonBg: colorValue('buttonBg', DEFAULT_THEME_APPEARANCE.buttonBg), selectedBg: colorValue('selectedBg', DEFAULT_THEME_APPEARANCE.selectedBg), listGap: numberValue('listGap', 8, 0, 32),
+    mapCardBg: colorValue('mapCardBg', DEFAULT_THEME_APPEARANCE.mapCardBg), mapCardBorder: colorValue('mapCardBorder', DEFAULT_THEME_APPEARANCE.mapCardBorder), mapCardRadius: numberValue('mapCardRadius', 8, 0, 32), mapCardShadow: colorValue('mapCardShadow', DEFAULT_THEME_APPEARANCE.mapCardShadow), mapGap: numberValue('mapGap', 8, 0, 32),
+  };
+}
+export function readThemeAppearance(storage: Pick<Storage, 'getItem'>): ThemeAppearanceConfig {
+  try { const raw = storage.getItem(THEME_APPEARANCE_STORAGE_KEY); return raw ? parseThemeAppearance(JSON.parse(raw)) : { ...DEFAULT_THEME_APPEARANCE }; } catch { return { ...DEFAULT_THEME_APPEARANCE }; }
+}
+export function writeThemeAppearance(storage: Pick<Storage, 'setItem' | 'removeItem'>, config: ThemeAppearanceConfig): void {
+  const parsed = parseThemeAppearance(config);
+  try { storage.setItem(THEME_APPEARANCE_STORAGE_KEY, JSON.stringify(parsed)); } catch { /* local preference unavailable */ }
+}
+export function applyThemeAppearance(config: ThemeAppearanceConfig, root: Pick<HTMLElement, 'style'> = document.documentElement): void {
+  const parsed = parseThemeAppearance(config); const vars: Record<string, string> = {
+    '--theme-player-bubble-bg': parsed.playerBubbleBg, '--theme-player-bubble-fg': parsed.playerBubbleFg, '--theme-character-bubble-bg': parsed.characterBubbleBg, '--theme-character-bubble-fg': parsed.characterBubbleFg, '--theme-message-radius': `${parsed.messageRadius}px`, '--theme-message-padding': `${parsed.messagePadding}px`, '--theme-terminal-bg': parsed.terminalBg, '--theme-card-bg': parsed.cardBg, '--theme-card-border': parsed.cardBorder, '--theme-card-radius': `${parsed.cardRadius}px`, '--theme-card-shadow': parsed.cardShadow, '--theme-list-divider': parsed.listDivider, '--theme-terminal-input-bg': parsed.terminalInputBg, '--theme-button-bg': parsed.buttonBg, '--theme-selected-bg': parsed.selectedBg, '--theme-list-gap': `${parsed.listGap}px`, '--theme-map-card-bg': parsed.mapCardBg, '--theme-map-card-border': parsed.mapCardBorder, '--theme-map-card-radius': `${parsed.mapCardRadius}px`, '--theme-map-card-shadow': parsed.mapCardShadow, '--theme-map-gap': `${parsed.mapGap}px`,
+  }; Object.entries(vars).forEach(([key, value]) => root.style.setProperty(key, value));
 }
 export function readCustomCss(storage: Pick<Storage, 'getItem'>): string {
   try { return storage.getItem(CUSTOM_CSS_STORAGE_KEY) ?? ''; } catch { return ''; }

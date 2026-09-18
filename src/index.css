@@ -53,6 +53,25 @@
   --theme-message-radius: 8px;
   --theme-card-radius: 8px;
   --theme-gap: 8px;
+  --theme-player-bubble-bg: var(--gray-600);
+  --theme-player-bubble-fg: var(--gray-0);
+  --theme-character-bubble-bg: var(--gray-0);
+  --theme-character-bubble-fg: var(--gray-800);
+  --theme-message-padding: 12px;
+  --theme-terminal-bg: var(--gray-50);
+  --theme-card-bg: var(--gray-0);
+  --theme-card-border: var(--gray-100);
+  --theme-card-shadow: 0 4px 16px rgb(63 63 63 / 0.05);
+  --theme-list-divider: var(--gray-100);
+  --theme-terminal-input-bg: var(--gray-0);
+  --theme-button-bg: var(--gray-600);
+  --theme-selected-bg: var(--gray-50);
+  --theme-list-gap: 8px;
+  --theme-map-card-bg: var(--gray-0);
+  --theme-map-card-border: var(--gray-100);
+  --theme-map-card-radius: 8px;
+  --theme-map-card-shadow: 0 4px 16px rgb(63 63 63 / 0.05);
+  --theme-map-gap: 8px;
 }
 
 :root[data-theme-template='soft'] { --theme-message-radius: 16px; --theme-card-radius: 14px; --theme-gap: 10px; }
