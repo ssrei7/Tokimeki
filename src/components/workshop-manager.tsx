@@ -3,6 +3,7 @@ import { listWorkshopBindings, listWorkshopPackages } from '../data/db/content';
 import { importWorkshopPackage } from '../data/io/workshop-package';
 import { exportInstalledWorkshopPackage, installWorkshopPackage, setWorkshopPackageEnabled, uninstallWorkshopPackage, workshopPackageBindingSummary } from '../data/workshop-install';
 import type { WorkshopBinding, WorkshopPackageImport, WorkshopPackageRecord, WorkshopValidationIssue } from '../data/workshop';
+import { notifyWorkshopChanged } from '../ui/workshop-runtime';
 
 type Notice = { tone: 'info' | 'success' | 'error'; text: string } | null;
 
@@ -65,7 +66,8 @@ export function WorkshopManager({ saveId }: { saveId: string }) {
       await installWorkshopPackage(preview, saveId);
       setPreview(null);
       await refresh();
-      setNotice({ tone: 'success', text: '工坊包已安装并为当前世界启用。包内内容仍处于静态状态，不会执行规则或调用 API。' });
+      notifyWorkshopChanged();
+      setNotice({ tone: 'success', text: '工坊包已安装并为当前世界启用。受限 App 可从终端桌面打开；规则、事件和 Provider 动作仍不会执行。' });
     } catch (error) { setNotice({ tone: 'error', text: errorText(error, '安装工坊包失败。') }); }
     finally { setBusy(false); }
   }
@@ -76,7 +78,8 @@ export function WorkshopManager({ saveId }: { saveId: string }) {
     try {
       await setWorkshopPackageEnabled(saveId, record.id, !enabled);
       await refresh();
-      setNotice({ tone: 'success', text: enabled ? '已为当前世界停用；包定义和资产均保留。' : '已为当前世界启用；运行时尚未开放，包仍不会执行。' });
+      notifyWorkshopChanged();
+      setNotice({ tone: 'success', text: enabled ? '已为当前世界停用；包定义、资产和本地 App 状态均保留。' : '已为当前世界启用；受限 App 图标会出现在终端桌面。' });
     } catch (error) { setNotice({ tone: 'error', text: errorText(error, '更新世界绑定失败。') }); }
     finally { setBusy(false); }
   }
@@ -94,12 +97,13 @@ export function WorkshopManager({ saveId }: { saveId: string }) {
   async function remove(record: WorkshopPackageRecord): Promise<void> {
     const linked = await workshopPackageBindingSummary(record.id);
     const worlds = new Set(linked.map((binding) => binding.saveId));
-    if (!window.confirm(`确认全局卸载“${record.package.manifest.name}”吗？将移除 ${worlds.size} 个世界绑定。为保护用户资源，本地二进制资产会暂时保留。`)) return;
+    if (!window.confirm(`确认全局卸载“${record.package.manifest.name}”吗？将移除 ${worlds.size} 个世界绑定。为保护用户资源，按世界隔离的本地 App 状态和二进制资产都会保留。`)) return;
     setBusy(true);
     try {
       const result = await uninstallWorkshopPackage(record.id);
       await refresh();
-      setNotice({ tone: 'success', text: `已卸载并移除 ${result.removedBindings.length} 条世界绑定；${result.retainedAssetIds.length} 个资产为安全起见仍保留。` });
+      notifyWorkshopChanged();
+      setNotice({ tone: 'success', text: `已卸载并移除 ${result.removedBindings.length} 条世界绑定；本地 App 状态与 ${result.retainedAssetIds.length} 个二进制资产均保留。` });
     } catch (error) { setNotice({ tone: 'error', text: errorText(error, '卸载工坊包失败。') }); }
     finally { setBusy(false); }
   }
@@ -107,10 +111,10 @@ export function WorkshopManager({ saveId }: { saveId: string }) {
   const previewInstalled = preview ? installedIds.has(preview.package.manifest.id) : false;
   return <div className="library-subpage-content workshop-manager">
     {notice && <div className={`feedback ${notice.tone}`} role="status">{notice.text}<button type="button" aria-label="关闭提示" onClick={() => setNotice(null)}>×</button></div>}
-    <section className="library-legacy-content">
+    <section className="workshop-content">
       <div className="section-heading"><div><span className="eyebrow">声明式本地包</span><h2>创意工坊</h2></div><span className="io-scope">零 API · 不执行代码</span></div>
       <div className="list-card">
-        <div className="list-heading"><div><h3>导入并预览</h3><p className="io-scope">当前只校验、安装和绑定声明式包。动态页面、规则、事件、Prompt 与 Provider 动作暂不运行。</p></div></div>
+        <div className="list-heading"><div><h3>导入并预览</h3><p className="io-scope">受限页面可读取已授权世界事实并保存本地 App 状态；规则、事件、op、Prompt 与 Provider 动作暂不运行。</p></div></div>
         <label className="file-button">选择工坊包<input type="file" accept=".zip,application/zip" disabled={busy} onChange={(event) => { void readPackage(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label>
       </div>
       {preview && <div className="list-card workshop-preview">
@@ -123,7 +127,7 @@ export function WorkshopManager({ saveId }: { saveId: string }) {
         <div className="button-row"><button type="button" disabled={busy || !preview.report.canInstall || previewInstalled} onClick={() => void installPreview()}>确认安装并启用</button><button type="button" className="secondary" disabled={busy} onClick={() => setPreview(null)}>取消</button></div>
       </div>}
       <div className="list-card">
-        <div className="list-heading"><div><h3>已安装包</h3><p className="io-scope">启用状态按世界隔离。停用不会删除包；全局卸载不会自动删除二进制资产。</p></div><span className="io-scope">{records.length} 个</span></div>
+        <div className="list-heading"><div><h3>已安装包</h3><p className="io-scope">启用状态和 App 本地状态按世界隔离。停用不会删除包；全局卸载会保留本地状态和二进制资产。</p></div><span className="io-scope">{records.length} 个</span></div>
         {records.length ? <div className="event-package-list">{records.map((record) => {
           const binding = bindingByPackage.get(record.id);
           return <div className="list-row workshop-package-row" key={record.id}><span><strong>{record.package.manifest.name}</strong><small>{record.id} · v{record.package.manifest.version} · {binding?.enabled ? '当前世界已启用' : '当前世界未启用'}</small></span><div className="button-row"><button type="button" className="secondary" disabled={busy} onClick={() => void toggle(record)}>{binding?.enabled ? '停用' : '启用'}</button><button type="button" className="secondary" disabled={busy} onClick={() => void exportRecord(record)}>导出</button><button type="button" className="danger" disabled={busy} onClick={() => void remove(record)}>全局卸载</button></div></div>;

@@ -15,6 +15,7 @@ export type DesktopEntry = {
   id: string;
   label: string;
   icon: LucideIcon;
+  iconAsset?: AssetRef;
   tone?: 'blue' | 'green' | 'amber' | 'rose' | 'violet' | 'gray';
 };
 
@@ -42,7 +43,7 @@ export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperU
   const assignedPage = (id: string, index: number) => pageAssignments[id] ?? Math.floor(index / pageSize);
   const pageCount = Math.max(1, ...orderedEntries.map((entry, index) => assignedPage(entry.id, index) + 1));
   const visibleEntries = orderedEntries.filter((entry, index) => assignedPage(entry.id, index) === page).slice(0, pageSize);
-  const titledEntries = visibleEntries.map((entry) => ({ ...entry, label: titleOverrides[launcherId]?.[entry.id]?.trim() || entry.label, iconAsset: iconOverrides[launcherId]?.[entry.id] }));
+  const titledEntries = visibleEntries.map((entry) => ({ ...entry, label: titleOverrides[launcherId]?.[entry.id]?.trim() || entry.label, iconAsset: iconOverrides[launcherId]?.[entry.id] ?? entry.iconAsset }));
   const commitOrder = (next: readonly string[], movedId?: string) => {
     const reconciled = reconcileDesktopOrder(next, entryIds);
     setOrderedIds(reconciled);

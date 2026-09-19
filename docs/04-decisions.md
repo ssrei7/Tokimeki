@@ -670,3 +670,8 @@
 **决定**：创意工坊包 v1 只允许严格 schema 校验的 `manifest.json`、`app.json`、`rules.json`、可选事件/Prompt/资产元数据及本地图片。禁止 JavaScript、TypeScript、React、HTML、CSS、脚本 URL、base64 和任意网络能力。导入时从声明内容反向推导权限，缺少声明、断裂引用、不安全表达式、未开放 op 或未知文件均阻止安装；额外权限显示警告。
 
 **存储与运行边界**：包定义保存在 Content IndexedDB v11，世界启用状态按 `saveId + packageId` 隔离，图片二进制继续保存到 Assets IndexedDB；SaveFile 保持 v41。首切片只提供本地预览、安装、启停、导出和全局卸载，不渲染包 UI、不注册事件或 Prompt、不执行动作、不调用 Provider。卸载保守保留二进制，工坊资产绑定纳入现有引用完整性检查和图片清理引用根；包更新、动态 UI、编辑器、AI 草案生成、确定性活动运行时和全局备份分别后续立项。
+
+## D125 创意工坊受限运行时只开放本地 UI 状态与只读事实
+**决定**：当前世界已启用的工坊包可在终端桌面显示动态图标，并由固定 React 组件解释声明式页面。运行时只执行包内导航和 `set-local`，并允许组件读取 manifest 逐项声明的世界事实；每次执行前重新检查权限和引用。`submit-op`、`trigger-event`、规则、Prompt 与 Provider 动作保持禁用，不接入核心循环或网络。
+
+**状态与卸载边界**：本地 App 状态保存到 Content IndexedDB v12，以 `saveId + packageId` 隔离，仅接受受限标量，不写入 SaveFile v41。停用保留包、资产和本地状态；全局卸载删除包定义与世界绑定，但保守保留本地状态和二进制资产。页面读取的世界事实来自当前 SaveFile 快照且只读，运行时不接受包提供的 HTML、CSS 或代码。

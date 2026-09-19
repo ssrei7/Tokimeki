@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import { CharacterCardSchema, ChatRecordSchema, ChatRecoveryRecordSchema, MemoryVectorRecordSchema, MusicStateSchema, PersonaSchema, PresetBundleSchema, PresetSchema, StoryScenePresetSchema, TerminalStickerRecordSchema, WorldbookEntrySchema, normalizeChatMessages, type CharacterCard, type ChatRecord, type ChatRecoveryRecord, type MemoryVectorRecord, type MusicState, type Persona, type Preset, type PresetBundle, type StoryScenePresetRecord, type TerminalStickerRecord, type WorldbookEntry } from '../content';
-import { WorkshopBindingSchema, WorkshopPackageRecordSchema, workshopBindingId, type WorkshopBinding, type WorkshopPackageRecord } from '../workshop';
+import { WorkshopBindingSchema, WorkshopLocalStateSchema, WorkshopPackageRecordSchema, workshopBindingId, type WorkshopBinding, type WorkshopLocalState, type WorkshopPackageRecord } from '../workshop';
 
 export class ContentDatabase extends Dexie {
   characters!: Table<CharacterCard, string>;
@@ -16,6 +16,7 @@ export class ContentDatabase extends Dexie {
   terminalStickers!: Table<TerminalStickerRecord, string>;
   workshopPackages!: Table<WorkshopPackageRecord, string>;
   workshopBindings!: Table<WorkshopBinding, string>;
+  workshopStates!: Table<WorkshopLocalState, string>;
   constructor(name = 'tokimeki-content') {
     super(name);
     this.version(1).stores({ characters: 'id', worldbooks: 'id', presets: 'id' });
@@ -34,6 +35,7 @@ export class ContentDatabase extends Dexie {
     this.version(9).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId', chatRecovery: 'characterId', memoryVectors: 'id, saveId, [saveId+characterId]', musicStates: 'id' });
     this.version(10).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId', chatRecovery: 'characterId', memoryVectors: 'id, saveId, [saveId+characterId]', musicStates: 'id', terminalStickers: 'id' });
     this.version(11).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId', chatRecovery: 'characterId', memoryVectors: 'id, saveId, [saveId+characterId]', musicStates: 'id', terminalStickers: 'id', workshopPackages: 'id, updatedAt', workshopBindings: 'id, packageId, saveId, [saveId+packageId]' });
+    this.version(12).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId', chatRecovery: 'characterId', memoryVectors: 'id, saveId, [saveId+characterId]', musicStates: 'id', terminalStickers: 'id', workshopPackages: 'id, updatedAt', workshopBindings: 'id, packageId, saveId, [saveId+packageId]', workshopStates: 'id, packageId, saveId, [saveId+packageId]' });
   }
 }
 
@@ -91,4 +93,13 @@ export async function deleteWorkshopPackage(id: string): Promise<WorkshopBinding
     await contentDb.workshopBindings.where('packageId').equals(id).delete();
   });
   return bindings.map((binding) => WorkshopBindingSchema.parse(binding));
+}
+export async function loadWorkshopLocalState(saveId: string, packageId: string): Promise<WorkshopLocalState | undefined> {
+  const record = await contentDb.workshopStates.get(workshopBindingId(saveId, packageId));
+  return record ? WorkshopLocalStateSchema.parse(record) : undefined;
+}
+export async function saveWorkshopLocalState(saveId: string, packageId: string, values: WorkshopLocalState['values'], timestamp = new Date().toISOString()): Promise<WorkshopLocalState> {
+  const parsed = WorkshopLocalStateSchema.parse({ id: workshopBindingId(saveId, packageId), saveId, packageId, values, updatedAt: timestamp });
+  await contentDb.workshopStates.put(parsed);
+  return parsed;
 }

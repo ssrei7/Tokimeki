@@ -88,4 +88,15 @@ describe('workshop package protocol', () => {
     expect(workshopBindingId('world-a', 'sample.activity')).toBe('world-a:sample.activity');
     expect(workshopBindingId('world-b', 'sample.activity')).not.toBe(workshopBindingId('world-a', 'sample.activity'));
   });
+
+  it('rejects local-state actions that cannot be persisted by the restricted runtime', () => {
+    const pack = WorkshopPackageSchema.parse({
+      ...minimalPackage(),
+      manifest: { ...minimalPackage().manifest, permissions: [{ capability: 'app.local-state' }] },
+      app: { entryPageId: 'home', pages: [{ id: 'home', title: '首页', components: [{ kind: 'button', label: '保存', action: { type: 'set-local', key: 'note', value: 'x'.repeat(2001) } }] }] },
+    });
+    const report = validateWorkshopPackage(pack);
+    expect(report.canInstall).toBe(false);
+    expect(report.issues).toContainEqual(expect.objectContaining({ code: 'invalid-local-state', severity: 'error' }));
+  });
 });

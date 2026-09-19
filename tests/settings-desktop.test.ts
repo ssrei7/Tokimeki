@@ -248,7 +248,7 @@ describe('library desktop', () => {
     expect(source).toContain('aria-label="重回要求"');
     expect(source).toContain('onDeleteSticker');
     const contentDbSource = readFileSync(new URL('../src/data/db/content.ts', import.meta.url), 'utf8');
-    expect(contentDbSource).toContain('this.version(11)');
+    expect(contentDbSource).toContain('this.version(12)');
     expect(contentDbSource).toContain('terminalStickers');
     expect(source).toContain('aria-label="打开更多功能"');
     expect(source).toContain('aria-label="转账"');

@@ -29,10 +29,10 @@
 - 阶段 10 代码侧验收已通过，记录见 `docs/03-roadmap.md` 的“阶段 10 · 有生态”。
 - 当前世界 SaveFile schema：v41。没有必要时不得升级；升级必须在同一提交提供 migration 与 fixture 测试。
 - Provider IndexedDB：v9。
-- Content IndexedDB：v11。
+- Content IndexedDB：v12。
 - Assets IndexedDB：v3。
 - 角色包 schema：v1；世界包 schema：v1；预设包 schema：v2。
-- 最近一次完整验证：76 个测试文件、489 项测试通过；`npm run build` 与 `git diff --check` 通过。
+- 最近一次完整验证：77 个测试文件、495 项测试通过；`npm run build` 与 `git diff --check` 通过。
 - 当前已知构建提示：主 JavaScript 包约 1.28 MB，Vite 会提示超过 500 kB。它是非阻塞性能项，后续可通过页面级动态导入处理。
 - 阶段 10 最后的功能修复为：身份头像设置只在“设置 → 身份”挂载，不再出现在“设置 → 向量”。
 
@@ -79,9 +79,9 @@
 
 ### 创意工坊
 
-- 声明式工坊包 v1 已完成首切片：本地 ZIP 校验、权限反向推导、兼容与引用报告、安装、按世界启停、导出和全局卸载。
-- 包定义位于 Content IndexedDB v11，世界绑定按 `saveId + packageId` 隔离，图片仍位于 Assets IndexedDB；SaveFile 保持 v41。
-- 首切片是静态安装闭环：不渲染包 UI、不执行规则/事件/Prompt/op、不调用 Provider。协议说明见 `docs/13-workshop-package-v1.md`。
+- 声明式工坊包 v1 已完成前两个切片：本地 ZIP 校验、权限反向推导、兼容与引用报告、安装/启停/导出/卸载，以及受限 UI 渲染、终端动态图标、只读世界事实和本地 App 状态。
+- 包定义、世界绑定和本地 App 状态位于 Content IndexedDB v12；绑定与状态均按 `saveId + packageId` 隔离，图片仍位于 Assets IndexedDB；SaveFile 保持 v41。
+- 当前只运行包内导航和本地状态动作。规则、事件、Prompt、op 与 Provider 动作明确禁用，不调用 API。协议说明见 `docs/13-workshop-package-v1.md`。
 
 ---
 
@@ -142,8 +142,8 @@ AI 制作流程应为：
 ### 推荐垂直切片
 
 1. **已完成**：定义 App 包 schema、权限枚举、校验报告、导入导出和本地安装/卸载；不接 AI，不渲染动态 UI。
-2. 下一步：实现受限 UI 渲染器、终端动态图标和只读/本地状态组件。
-3. 实现工坊编辑器、实时预览、权限与冲突展示。
+2. **已完成**：实现受限 UI 渲染器、终端动态图标和只读/本地状态组件。
+3. 下一步：实现工坊编辑器、实时预览、权限与冲突展示。
 4. 接入用户显式触发的 AI 草案生成；结果必须先校验和预览。
 5. 注册通用确定性活动 op / 钩子，使玩法包能够配置钓鱼、种田、开店等规则。
 6. 完成包更新、版本依赖、卸载保护、全局备份和完整性审计。

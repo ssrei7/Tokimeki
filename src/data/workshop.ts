@@ -159,6 +159,15 @@ export const WorkshopBindingSchema = z.object({
   updatedAt: z.string().datetime(),
 }).strict();
 
+export const WorkshopLocalValueSchema = z.union([z.string().max(2000), z.number().finite(), z.boolean(), z.null()]);
+export const WorkshopLocalStateSchema = z.object({
+  id: z.string().min(1),
+  saveId: IdSchema,
+  packageId: IdSchema,
+  values: z.record(IdSchema, WorkshopLocalValueSchema),
+  updatedAt: z.string().datetime(),
+}).strict();
+
 export type WorkshopManifest = z.infer<typeof WorkshopManifestSchema>;
 export type WorkshopPermission = z.infer<typeof WorkshopPermissionSchema>;
 export type WorkshopAction = z.infer<typeof WorkshopActionSchema>;
@@ -166,6 +175,8 @@ export type WorkshopComponent = z.infer<typeof WorkshopComponentSchema>;
 export type WorkshopPackage = z.infer<typeof WorkshopPackageSchema>;
 export type WorkshopPackageRecord = z.infer<typeof WorkshopPackageRecordSchema>;
 export type WorkshopBinding = z.infer<typeof WorkshopBindingSchema>;
+export type WorkshopLocalValue = z.infer<typeof WorkshopLocalValueSchema>;
+export type WorkshopLocalState = z.infer<typeof WorkshopLocalStateSchema>;
 
 export interface WorkshopAssetPayload {
   id: string;
@@ -284,7 +295,10 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
     if (action.type === 'navigate') {
       required.add('navigation.local');
       if (!pages.has(action.pageId)) addIssue('error', 'missing-page', `动作引用了不存在的页面：${action.pageId}`, `${path}.pageId`);
-    } else if (action.type === 'set-local') required.add('app.local-state');
+    } else if (action.type === 'set-local') {
+      required.add('app.local-state');
+      if (!WorkshopLocalValueSchema.safeParse(action.value).success) addIssue('error', 'invalid-local-state', '本地 App 状态只允许最多 2000 字符的字符串、有限数值、布尔值或 null。', `${path}.value`);
+    }
     else if (action.type === 'submit-op') required.add(permissionLabel('op.submit', action.op));
     else if (action.type === 'trigger-event') {
       required.add(permissionLabel('event.trigger', action.eventId));
@@ -331,7 +345,7 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
   for (const permission of required) if (!declared.has(permission)) addIssue('error', 'permission-missing', `缺少权限声明：${permission}`, 'manifest.permissions');
   for (const permission of declared) if (!required.has(permission)) addIssue('warning', 'permission-unused', `声明了当前包未使用的权限：${permission}`, 'manifest.permissions');
   if (promptTokenTotal > declaredPromptBudget) addIssue('error', 'prompt-permission-budget', `Prompt 实际预算 ${promptTokenTotal} 超过权限声明预算 ${declaredPromptBudget}。`, 'manifest.permissions');
-  if (required.size) addIssue('info', 'runtime-inert', '首个工坊切片只安装并保存包；组件、规则、事件、Prompt 和 Provider 动作暂不运行。');
+  if (required.size) addIssue('info', 'runtime-boundary', '受限页面仅运行包内导航、本地 App 状态和已授权的世界事实读取；规则、事件、op、Prompt 和 Provider 动作暂不运行。');
 
   return { canInstall: !issues.some((issue) => issue.severity === 'error'), issues, requiredPermissions: [...required].sort() };
 }

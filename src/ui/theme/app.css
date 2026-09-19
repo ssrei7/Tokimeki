@@ -89,7 +89,9 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .subpage-content[data-page='worldbook'] > *,
 .subpage-content[data-page='presets'] > *,
 .subpage-content[data-page='inventory'] > *,
-.subpage-content[data-page='save'] > * { display: block; }
+.subpage-content[data-page='save'] > *,
+.subpage-content[data-page='workshop'] > *,
+.subpage-content[data-page='workshop-app'] > * { display: block; }
 .subpage-content[data-page='messages'] > .terminal-thread-view { display: flex; flex: 1 1 auto; min-height: 0; }
 .day-default-view .day-moved-content { display: none; }
 .surface-card { border: 1px solid var(--gray-100); border-radius: var(--surface-radius); padding: 16px; background: var(--gray-0); box-shadow: var(--surface-shadow); }
@@ -108,6 +110,16 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .library-subpage-content[data-page='save'] .library-legacy-content > :nth-child(1),
 .library-subpage-content[data-page='save'] .library-legacy-content > :nth-child(5),
 .library-subpage-content[data-page='save'] .library-legacy-content > :nth-child(11) { display: block; }
+.workshop-content, .workshop-component-stack { display: grid; gap: 14px; }
+.workshop-content-image, .workshop-content-card img { display: block; width: 100%; max-height: 320px; object-fit: contain; border-radius: var(--surface-radius); background: var(--gray-50); }
+.workshop-image-fallback { min-height: 120px; display: grid; place-items: center; border: 1px dashed var(--gray-200); border-radius: var(--surface-radius); }
+.workshop-content-card { display: grid; gap: 10px; }
+.workshop-fact { display: grid; gap: 8px; }
+.workshop-fact ul, .workshop-component-stack > ul { margin: 0; padding-left: 20px; }
+.workshop-tabs { flex-wrap: wrap; }
+.workshop-component-stack > label, .workshop-progress { display: grid; gap: 6px; color: var(--gray-600); font-size: 13px; }
+.workshop-component-stack input, .workshop-component-stack select { width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--gray-0); color: var(--gray-800); }
+.workshop-progress progress { width: 100%; accent-color: var(--theme-button-bg); }
 @media (min-width: 700px) { :root { --desktop-grid-row-gap: 24px; --desktop-grid-column-gap: 14px; } .desktop-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
 @media (max-width: 399px) { :root { --desktop-icon-size: 50px; --desktop-grid-row-gap: 18px; --desktop-grid-column-gap: 6px; } .desktop-app-icon-label { font-size: 11px; } }
 .map-screen { position: relative; min-height: calc(100dvh - 150px); display: flex; flex-direction: column; gap: 14px; }
