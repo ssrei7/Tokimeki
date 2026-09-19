@@ -61,6 +61,7 @@ import { buildMemoryConsolidationPrompt, parseMemoryConsolidationResponse, shoul
 import { markAppointmentOnEnter, markAppointmentOnTimeAdvance, settleAppointments } from './core/appointments';
 import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
 import { readCallHistoryCollapsed, readContactGroupCollapsed, readContactGroupPreferences, writeCallHistoryCollapsed, writeContactGroupCollapsed, writeContactGroupPreferences, type ContactCustomGroup } from './ui/contact-groups';
+import { readPlayerAvatar, readPlayerAvatarOverrides, writePlayerAvatar } from './ui/player-avatar-preferences';
 import { buildNpcExpansionPrompt, buildPromoteNpcOp, characterCardFromPromotedCharacter, createNpcPromotionDraft, parseNpcExpansionResponse, summarizeNpcSchedule, type NpcPromotionDraft } from './ui/npc-promotion';
 import { formatStorageBytes, readStorageEstimate, requestPersistentStorage, storageUsagePercent, type StorageEstimate } from './ui/storage';
 import { notificationCapabilityLabel, readMobileCapabilities, serviceWorkerCapabilityLabel } from './ui/mobile-capabilities';
@@ -156,6 +157,11 @@ const LIBRARY_DAY_PAGE_MAP: Partial<Record<LibraryPage, DayPage>> = {
 type ContentKind = 'character' | 'worldbook' | 'preset' | 'memory';
 type RequestStatus = 'idle' | StreamStatus;
 type Feedback = { tone: 'info' | 'success' | 'error'; text: string } | null;
+type PersonaSaveAction =
+  | { kind: 'set-avatar'; personaId: string; source?: File | string }
+  | { kind: 'remove-avatar'; personaId: string }
+  | { kind: 'set-player-avatar'; saveId: string; source?: File | string }
+  | { kind: 'remove-player-avatar'; saveId: string };
 type DebugState = { prompt: AssembledPrompt | null; raw: string; ops: string; state: string };
 type PendingOpsRecovery = { raw: string; actorId?: string; messageIndex?: number; streamError?: string; requestId?: string };
 type GiftGenerationContext = { giftId: string; itemId: string; itemName: string; charId: string; charName: string };
@@ -834,8 +840,8 @@ export function App() {
   }
 
   async function deleteImageAssetIfUnreferenced(assetId: string): Promise<void> {
-    const [chats, savedSnapshots, stickers, characterImageConfigs, userImageConfigs, imageConfigs] = await Promise.all([contentDb.chats.toArray(), listSnapshots(), listTerminalStickers(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray()]);
-    const referenced = collectStoredAssetIds([saveRef.current, ...savedSnapshots.map((snapshot) => snapshot.save), chats, stickers]);
+    const [chats, savedSnapshots, stickers, personas, characterImageConfigs, userImageConfigs, imageConfigs] = await Promise.all([contentDb.chats.toArray(), listSnapshots(), listTerminalStickers(), contentDb.personas.toArray(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray()]);
+    const referenced = collectStoredAssetIds([saveRef.current, ...savedSnapshots.map((snapshot) => snapshot.save), chats, stickers, personas, readPlayerAvatarOverrides(window.localStorage)]);
     for (const id of imageReferenceAssetIds(characterImageConfigs, userImageConfigs)) referenced.add(id);
     for (const config of imageConfigs) if (config.lastGenerated?.asset.assetId) referenced.add(config.lastGenerated.asset.assetId);
     for (const group of Object.values(readDesktopIconOverrides(window.localStorage))) for (const ref of Object.values(group)) if (ref.kind === 'stored') referenced.add(ref.assetId);
@@ -854,10 +860,12 @@ export function App() {
   }
 
   async function loadImageAssetReferenceRoots() {
-    const [characterCards, chats, savedSnapshots, stickers, musicStates, characterImageConfigs, userImageConfigs, imageConfigs] = await Promise.all([contentDb.characters.toArray(), contentDb.chats.toArray(), listSnapshots(), listTerminalStickers(), contentDb.musicStates.toArray(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray()]);
+    const [characterCards, personas, chats, savedSnapshots, stickers, musicStates, characterImageConfigs, userImageConfigs, imageConfigs] = await Promise.all([contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.chats.toArray(), listSnapshots(), listTerminalStickers(), contentDb.musicStates.toArray(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray()]);
     return [
       { label: '当前世界', value: saveRef.current },
       ...characterCards.map((card) => ({ label: `角色库/${card.id}`, value: card })),
+      ...personas.map((persona) => ({ label: `身份头像/${persona.id}`, value: persona.avatar })),
+      { label: '玩家身份头像', value: readPlayerAvatarOverrides(window.localStorage) },
       ...savedSnapshots.map((snapshot) => ({ label: `快照/${snapshot.id}`, value: snapshot.save })),
       ...chats.map((record) => ({ label: `聊天/${record.characterId}`, value: record })),
       ...stickers.map((sticker) => ({ label: `贴图库/${sticker.id}`, value: sticker })),
@@ -870,10 +878,12 @@ export function App() {
   }
 
   async function refreshImageAssetStats(): Promise<void> {
-    const [assets, characterCards, chats, savedSnapshots, characterImageConfigs, userImageConfigs, imageConfigs] = await Promise.all([listAssets(), contentDb.characters.toArray(), contentDb.chats.toArray(), listSnapshots(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray()]);
+    const [assets, characterCards, personas, chats, savedSnapshots, characterImageConfigs, userImageConfigs, imageConfigs] = await Promise.all([listAssets(), contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.chats.toArray(), listSnapshots(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray()]);
     const roots = [
       ...Object.values(saveRef.current.world.characters).map((character) => ({ label: `当前角色/${character.id}`, value: character.visuals })),
       ...characterCards.map((card) => ({ label: `角色库/${card.id}`, value: card.packageProfile?.visuals })),
+      ...personas.map((persona) => ({ label: `身份头像/${persona.id}`, value: persona.avatar })),
+      { label: '玩家身份头像', value: readPlayerAvatarOverrides(window.localStorage) },
       ...savedSnapshots.flatMap((snapshot) => Object.values(snapshot.save.world.characters).map((character) => ({ label: `快照/${snapshot.id}/角色/${character.id}`, value: character.visuals }))),
       ...characterImageConfigs.map((config) => ({ label: `角色锁脸/${config.id}`, value: config.referenceImage })),
       ...userImageConfigs.map((config) => ({ label: `用户锁脸/${config.id}`, value: config.referenceImage })),
@@ -1174,12 +1184,85 @@ export function App() {
     setFeedback({ tone: 'success', text: 'StoryScene 草案已删除。' });
   }
 
-  async function savePersonaDraft(): Promise<void> {
+  async function savePersonaDraft(action?: PersonaSaveAction): Promise<void> {
+    if (action) {
+      if (action.kind === 'set-player-avatar' || action.kind === 'remove-player-avatar') {
+        const previous = readPlayerAvatar(window.localStorage, action.saveId);
+        const previousAssetId = storedAssetId(previous);
+        let createdAssetId: string | undefined;
+        try {
+          if (action.kind === 'remove-player-avatar') {
+            writePlayerAvatar(window.localStorage, action.saveId);
+            if (previousAssetId) await deleteImageAssetIfUnreferenced(previousAssetId);
+            await refreshImageAssetStats();
+            setAssetIntegrityReport(null);
+            setFeedback({ tone: 'success', text: '基础玩家头像已移除。' });
+            return;
+          }
+          if (!action.source) return;
+          let avatar: AssetRef;
+          if (typeof action.source === 'string') avatar = externalImageAssetRef(action.source);
+          else {
+            if (!action.source.type.startsWith('image/')) throw new Error('玩家头像必须是图片文件。');
+            const image = await downsampleImage(action.source, 512, 0.9);
+            createdAssetId = `player-avatar-${action.saveId}-${Date.now()}`;
+            await saveAsset({ id: createdAssetId, blob: image.blob, mimeType: image.mimeType, category: 'image', width: image.width, height: image.height, createdAt: now() });
+            avatar = { kind: 'stored', assetId: createdAssetId };
+          }
+          writePlayerAvatar(window.localStorage, action.saveId, avatar);
+          if (previousAssetId && previousAssetId !== createdAssetId) await deleteImageAssetIfUnreferenced(previousAssetId);
+          await refreshImageAssetStats();
+          setAssetIntegrityReport(null);
+          setFeedback({ tone: 'success', text: `基础玩家头像已保存${avatar.kind === 'url' ? '；外链未下载到本地' : ''}。` });
+        } catch (error) {
+          if (createdAssetId) await deleteImageAssetIfUnreferenced(createdAssetId).catch(() => undefined);
+          setFeedback({ tone: 'error', text: errorMessage(error, '基础玩家头像保存失败。') });
+        }
+        return;
+      }
+      const existing = personas.find((persona) => persona.id === action.personaId);
+      if (!existing) { setFeedback({ tone: 'error', text: '找不到要设置头像的身份。' }); return; }
+      const previousAssetId = storedAssetId(existing.avatar);
+      let createdAssetId: string | undefined;
+      try {
+        if (action.kind === 'remove-avatar') {
+          const { avatar: _avatar, ...withoutAvatar } = existing;
+          const saved = await savePersona({ ...withoutAvatar, updatedAt: now() });
+          setPersonas((items) => items.map((persona) => persona.id === saved.id ? saved : persona));
+          if (previousAssetId) await deleteImageAssetIfUnreferenced(previousAssetId);
+          await refreshImageAssetStats();
+          setAssetIntegrityReport(null);
+          setFeedback({ tone: 'success', text: `${existing.name}的身份头像已移除。` });
+          return;
+        }
+        if (!action.source) return;
+        let avatar: AssetRef;
+        if (typeof action.source === 'string') avatar = externalImageAssetRef(action.source);
+        else {
+          if (!action.source.type.startsWith('image/')) throw new Error('身份头像必须是图片文件。');
+          const image = await downsampleImage(action.source, 512, 0.9);
+          createdAssetId = `persona-avatar-${existing.id}-${Date.now()}`;
+          await saveAsset({ id: createdAssetId, blob: image.blob, mimeType: image.mimeType, category: 'image', width: image.width, height: image.height, createdAt: now() });
+          avatar = { kind: 'stored', assetId: createdAssetId };
+        }
+        const saved = await savePersona({ ...existing, avatar, updatedAt: now() });
+        setPersonas((items) => items.map((persona) => persona.id === saved.id ? saved : persona));
+        if (previousAssetId && previousAssetId !== createdAssetId) await deleteImageAssetIfUnreferenced(previousAssetId);
+        await refreshImageAssetStats();
+        setAssetIntegrityReport(null);
+        setFeedback({ tone: 'success', text: `${existing.name}的身份头像已保存${avatar.kind === 'url' ? '；外链未下载到本地' : ''}。` });
+      } catch (error) {
+        if (createdAssetId) await deleteImageAssetIfUnreferenced(createdAssetId).catch(() => undefined);
+        setFeedback({ tone: 'error', text: errorMessage(error, '身份头像保存失败。') });
+      }
+      return;
+    }
     const nameValue = personaName.trim();
     const displayValue = personaDisplayName.trim();
     if (!nameValue || !displayValue) { setFeedback({ tone: 'error', text: '面具名称和对话框称呼不能为空。' }); return; }
     const id = personaEditingId || slug(nameValue);
-    const saved = await savePersona({ id, name: nameValue, displayName: displayValue, description: personaDescription.trim(), updatedAt: now() });
+    const existing = personas.find((persona) => persona.id === id);
+    const saved = await savePersona({ id, name: nameValue, displayName: displayValue, description: personaDescription.trim(), avatar: existing?.avatar, updatedAt: now() });
     setPersonas((items) => [...items.filter((item) => item.id !== id), saved]);
     setPersonaEditingId(''); setPersonaName(''); setPersonaDisplayName(''); setPersonaDescription('');
     setFeedback({ tone: 'success', text: '面具身份已保存。' });
@@ -1194,11 +1277,16 @@ export function App() {
   }
 
   async function removePersona(personaId: string): Promise<void> {
+    const existing = personas.find((persona) => persona.id === personaId);
+    const avatarAssetId = storedAssetId(existing?.avatar);
     await deletePersona(personaId);
     setPersonas((items) => items.filter((item) => item.id !== personaId));
     if (saveRef.current.world.player.personaId === personaId) {
       const next = structuredClone(saveRef.current); delete next.world.player.personaId; commitSave(next);
     }
+    if (avatarAssetId) await deleteImageAssetIfUnreferenced(avatarAssetId);
+    await refreshImageAssetStats();
+    setAssetIntegrityReport(null);
   }
 
   async function generateDayDiary(day: number): Promise<void> {
@@ -4883,6 +4971,21 @@ function LocalNotificationSettingsPanel() {
   return <><h3>本地完成通知</h3><p className="io-scope">仅在你显式生成的面对面回复或终端回复于页面后台完成时提醒。通知只显示通用文案，不包含角色名、台词、prompt 或 API 信息；不会远程推送、定时唤醒或后台生成。</p><div className="stat-list"><span>开关：{settings.enabled ? '已启用' : '已关闭'}</span><span>权限：{permission === 'granted' ? '已授权' : permission === 'denied' ? '已拒绝' : permission === 'default' ? '尚未请求' : '不支持'}</span></div><div className="button-row"><button type="button" className="secondary" disabled={busy || settings.enabled} onClick={() => void enable()}>{busy ? '处理中…' : '启用完成通知'}</button><button type="button" className="secondary" disabled={busy || !settings.enabled} onClick={() => void test()}>发送测试通知</button><button type="button" className="secondary" disabled={busy || !settings.enabled} onClick={disable}>关闭通知</button></div>{status && <p className="io-scope" role="status">{status}</p>}</>;
 }
 
+function PersonaAvatarSettings(props: { saveId: string; playerName: string; personas: Persona[]; activePersonaId: string; onSave: (action: PersonaSaveAction) => Promise<void> }) {
+  const [urlDrafts, setUrlDrafts] = useState<Record<string, string>>({});
+  const [playerAvatar, setPlayerAvatar] = useState<AssetRef | undefined>(() => readPlayerAvatar(window.localStorage, props.saveId));
+  useEffect(() => { setPlayerAvatar(readPlayerAvatar(window.localStorage, props.saveId)); }, [props.saveId]);
+  const savePlayerAvatar = async (action: Extract<PersonaSaveAction, { kind: 'set-player-avatar' | 'remove-player-avatar' }>) => {
+    await props.onSave(action);
+    setPlayerAvatar(readPlayerAvatar(window.localStorage, props.saveId));
+  };
+  const rows = [
+    { id: `player:${props.saveId}`, name: props.playerName, label: '基础玩家身份', avatar: playerAvatar, player: true as const },
+    ...props.personas.map((persona) => ({ id: persona.id, name: persona.displayName || persona.name, label: `${persona.name}${props.activePersonaId === persona.id ? ' · 当前绑定' : ''}`, avatar: persona.avatar, player: false as const })),
+  ];
+  return <section className="provider-card persona-avatar-panel"><div className="list-heading"><div><h3>身份头像</h3><p className="io-scope">基础玩家和每个面具可分别设置头像。可上传本地图片或保存 http(s) 外链；锁脸参考图仍在“图像”页单独管理。</p></div><span className="io-scope">零 API</span></div><div className="persona-avatar-list">{rows.map((row) => <div className="persona-avatar-row" key={row.id}><ContactAvatar name={row.name} avatar={row.avatar} /><div className="persona-avatar-copy"><strong>{row.label}</strong><small>{row.avatar?.kind === 'stored' ? '本地头像' : row.avatar?.kind === 'url' ? '外链头像' : '使用文字回退'}</small></div><div className="button-row"><label className="file-button">{row.avatar ? '更换头像' : '上传头像'}<input type="file" accept="image/*" onChange={(event) => { const source = event.target.files?.[0]; if (row.player) void savePlayerAvatar({ kind: 'set-player-avatar', saveId: props.saveId, source }); else void props.onSave({ kind: 'set-avatar', personaId: row.id, source }); event.currentTarget.value = ''; }} /></label>{row.avatar && <button type="button" className="danger" onClick={() => row.player ? void savePlayerAvatar({ kind: 'remove-player-avatar', saveId: props.saveId }) : void props.onSave({ kind: 'remove-avatar', personaId: row.id })}>移除头像</button>}</div><div className="persona-avatar-url"><input aria-label={`${row.label}头像外链`} placeholder="https://…" value={urlDrafts[row.id] ?? ''} onChange={(event) => setUrlDrafts((current) => ({ ...current, [row.id]: event.target.value }))} /><button type="button" className="secondary" disabled={!urlDrafts[row.id]?.trim()} onClick={() => row.player ? void savePlayerAvatar({ kind: 'set-player-avatar', saveId: props.saveId, source: urlDrafts[row.id] }) : void props.onSave({ kind: 'set-avatar', personaId: row.id, source: urlDrafts[row.id] })}>保存外链</button></div></div>)}</div></section>;
+}
+
 function SettingsView(props: {
   appName: string;
   desktopIcons: DesktopIconOverrides;
@@ -4990,7 +5093,7 @@ function SettingsView(props: {
   setPersonaDisplayName: (value: string) => void;
   personaDescription: string;
   setPersonaDescription: (value: string) => void;
-  onSavePersona: () => Promise<void>;
+  onSavePersona: (action?: PersonaSaveAction) => Promise<void>;
   onBindPersona: (id: string) => void;
   onDeletePersona: (id: string) => Promise<void>;
   statKey: string;
@@ -5078,6 +5181,7 @@ function SettingsView(props: {
   return <SubpageShell title={pageTitle} pageId={props.activePage} onBack={props.onBack}>
     {props.activePage === 'display' && <section className="provider-card settings-display-shortcut" aria-label="主题与主题包"><div className="section-heading"><div><span className="eyebrow">显示设置</span><h2>主题与主题包</h2></div><span className="io-scope">所有操作均为本地操作，不调用 API</span></div><div className="button-row"><label>主题模式<select aria-label="显示页主题模式" value={settingsThemeMode} onChange={(event) => changeSettingsTheme(event.target.value as ThemeMode)}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><label>组件模板<select aria-label="显示页组件模板" value={settingsThemeTemplate} onChange={(event) => changeSettingsThemeTemplate(event.target.value as ThemeTemplate)}><option value="default">默认灰阶</option><option value="soft">柔和圆角</option><option value="compact">紧凑直角</option></select></label></div><p className="io-scope">下方“显示选项”区域仍保留完整的消息气泡、卡片、地图和自定义 CSS 编辑器。</p><div className="button-row"><button type="button" className="secondary" onClick={() => void props.onExportThemePackage()}>导出主题包</button><label className="file-button">导入主题包<input type="file" accept=".zip" onChange={(event) => void props.onImportThemePackage(event.target.files?.[0])} /></label></div>{props.themePackagePreview && <p className="io-scope" role="status">主题包已读取，请向下查看预览并选择覆盖、另存或取消。</p>}</section>}
     <details className="fold-card" open><summary>玩家身份 · 面具身份</summary><div className="fold-body"><div className="provider-card persona-card"><div className="list-heading"><div><span className="eyebrow">玩家身份</span><h3>面具身份</h3></div><span className="io-scope">每个世界绑定一个</span></div><div className="persona-fields"><input placeholder="身份名称，例如：旅人" value={props.personaName} onChange={(event) => props.setPersonaName(event.target.value)} /><input placeholder="对话框称呼，例如：小明" value={props.personaDisplayName} onChange={(event) => props.setPersonaDisplayName(event.target.value)} /><textarea placeholder="自我描述（会注入面对面提示词）" value={props.personaDescription} onChange={(event) => props.setPersonaDescription(event.target.value)} /></div><div className="button-row"><button onClick={() => void props.onSavePersona()}>{props.personaEditingId ? '更新面具' : '保存面具'}</button><button className="secondary" onClick={() => { props.setPersonaEditingId(''); props.setPersonaName(''); props.setPersonaDisplayName(''); props.setPersonaDescription(''); }}>新建面具</button></div>{props.personas.length ? <div className="persona-list">{props.personas.map((persona) => <div className="list-row" key={persona.id}><span>{persona.name}<small>对话框：{persona.displayName}{persona.description ? ` · ${persona.description}` : ''}</small></span><span className="button-row"><button className={props.personaId === persona.id ? '' : 'secondary'} onClick={() => props.onBindPersona(persona.id)}>{props.personaId === persona.id ? '当前绑定' : '绑定'}</button><button className="secondary" onClick={() => { props.setPersonaEditingId(persona.id); props.setPersonaName(persona.name); props.setPersonaDisplayName(persona.displayName); props.setPersonaDescription(persona.description); }}>编辑</button><button className="danger" onClick={() => void props.onDeletePersona(persona.id)}>删除</button></span></div>)}</div> : <p className="empty">还没有面具身份，聊天名牌默认使用玩家名字。</p>}</div></div></details>
+    <PersonaAvatarSettings saveId={props.save.meta.id} playerName={props.save.world.player.name} personas={props.personas} activePersonaId={props.personaId} onSave={props.onSavePersona} />
     <details className="fold-card" open><summary>Provider 配置 {props.requestStatus === 'requesting' ? '· 请求中' : ''}</summary><div className="fold-body"><div className="section-heading"><div><span className="eyebrow">本地设置</span><h2>Provider</h2></div>{props.requestStatus === 'requesting' && <span className="request-status requesting">请求中…</span>}</div>
     <div className="provider-card">
       <div className="field-with-action"><select aria-label="Provider 配置" value={isSaved ? props.provider.id : ''} onChange={(event) => { const found = props.providers.find((item) => item.id === event.target.value); if (found) props.setProvider(found); }}><option value="">未保存的新配置</option>{props.providers.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.kind}</option>)}</select><button className="secondary" onClick={props.onNewProvider}>新建</button></div>

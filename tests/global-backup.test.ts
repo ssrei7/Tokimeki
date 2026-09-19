@@ -38,6 +38,15 @@ describe('global backup IO', () => {
     expect(imported.assetMeta.face.category).toBe('image');
   });
 
+  it('round trips persona avatar references with local image assets', async () => {
+    const updatedAt = '2026-09-19T00:00:00.000Z';
+    const persona = { id: 'traveler', name: '旅人', displayName: '小明', description: '', avatar: { kind: 'stored' as const, assetId: 'persona-avatar' }, updatedAt };
+    const blob = await exportGlobalBackup({ ...base, content: { ...base.content, personas: [persona] } }, [{ id: 'persona-avatar', blob: new Blob(['image'], { type: 'image/webp' }), mimeType: 'image/webp', category: 'image', createdAt: updatedAt }]);
+    const imported = await importGlobalBackup(blob);
+    expect(imported.data.content.personas[0].avatar).toEqual({ kind: 'stored', assetId: 'persona-avatar' });
+    expect(imported.assets.has('persona-avatar')).toBe(true);
+  });
+
   it('round trips local music references and music asset metadata', async () => {
     const updatedAt = '2026-09-19T00:00:00.000Z';
     const musicState = { id: 'default' as const, tracks: [{ id: 'local', title: 'Local', artist: '', asset: { kind: 'stored' as const, assetId: 'music-1' }, updatedAt }], currentTrackId: 'local', mode: 'sequence' as const, volume: 0.8, positionSeconds: 0, shuffleQueue: [], updatedAt };

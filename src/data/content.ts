@@ -21,6 +21,7 @@ export const PersonaSchema = z.object({
   name: z.string().min(1),
   displayName: z.string().min(1),
   description: z.string().default(''),
+  avatar: AssetRefSchema.optional(),
   updatedAt: z.string().datetime(),
 });
 export type Persona = z.infer<typeof PersonaSchema>;
