@@ -61,7 +61,7 @@ import { buildMemoryConsolidationPrompt, parseMemoryConsolidationResponse, shoul
 import { markAppointmentOnEnter, markAppointmentOnTimeAdvance, settleAppointments } from './core/appointments';
 import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
 import { readCallHistoryCollapsed, readContactGroupCollapsed, readContactGroupPreferences, writeCallHistoryCollapsed, writeContactGroupCollapsed, writeContactGroupPreferences, type ContactCustomGroup } from './ui/contact-groups';
-import { readPlayerAvatar, readPlayerAvatarOverrides, writePlayerAvatar } from './ui/player-avatar-preferences';
+import { readPlayerAvatar, readPlayerAvatarOverrides, resolvePlayerIdentityAppearance, writePlayerAvatar } from './ui/player-avatar-preferences';
 import { buildNpcExpansionPrompt, buildPromoteNpcOp, characterCardFromPromotedCharacter, createNpcPromotionDraft, parseNpcExpansionResponse, summarizeNpcSchedule, type NpcPromotionDraft } from './ui/npc-promotion';
 import { formatStorageBytes, readStorageEstimate, requestPersistentStorage, storageUsagePercent, type StorageEstimate } from './ui/storage';
 import { notificationCapabilityLabel, readMobileCapabilities, serviceWorkerCapabilityLabel } from './ui/mobile-capabilities';
@@ -5598,6 +5598,23 @@ function TerminalMessagesView(props: {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingMessageText, setEditingMessageText] = useState('');
   const messagePressTimerRef = useRef<number | null>(null);
+  const [playerIdentityAppearance, setPlayerIdentityAppearance] = useState(() => resolvePlayerIdentityAppearance(props.save.world.player.name, readPlayerAvatar(window.localStorage, props.save.meta.id)));
+  useEffect(() => {
+    let active = true;
+    const baseAvatar = readPlayerAvatar(window.localStorage, props.save.meta.id);
+    const personaId = props.save.world.player.personaId;
+    if (!personaId) {
+      setPlayerIdentityAppearance(resolvePlayerIdentityAppearance(props.save.world.player.name, baseAvatar));
+      return () => { active = false; };
+    }
+    setPlayerIdentityAppearance(resolvePlayerIdentityAppearance(props.save.world.player.name, baseAvatar));
+    void contentDb.personas.get(personaId).then((persona) => {
+      if (active) setPlayerIdentityAppearance(resolvePlayerIdentityAppearance(props.save.world.player.name, baseAvatar, persona));
+    }).catch(() => {
+      if (active) setPlayerIdentityAppearance(resolvePlayerIdentityAppearance(props.save.world.player.name, baseAvatar));
+    });
+    return () => { active = false; };
+  }, [props.save.meta.id, props.save.world.player.name, props.save.world.player.personaId]);
   useEffect(() => {
     if (selectedId && !candidateIds.has(selectedId)) {
       setSelectedId('');
@@ -5716,7 +5733,7 @@ function TerminalMessagesView(props: {
               </div>}
             </div>
           </article>
-          {mine && <ContactAvatar name={props.save.world.player.name} />}
+          {mine && <ContactAvatar name={playerIdentityAppearance.name} avatar={playerIdentityAppearance.avatar} />}
         </div>;
       })}
     </div>

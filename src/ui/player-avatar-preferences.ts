@@ -1,4 +1,5 @@
 import { AssetRefSchema, type AssetRef } from '../data/schema/save';
+import type { Persona } from '../data/content';
 
 export const PLAYER_AVATAR_STORAGE_KEY = 'tokimeki.player-avatars.v1';
 export type PlayerAvatarOverrides = Record<string, AssetRef>;
@@ -37,4 +38,11 @@ export function writePlayerAvatar(storage: Pick<Storage, 'getItem' | 'setItem' |
   } catch {
     throw new Error('无法保存玩家头像偏好。');
   }
+}
+
+export function resolvePlayerIdentityAppearance(playerName: string, baseAvatar: AssetRef | undefined, persona?: Pick<Persona, 'displayName' | 'avatar'>): { name: string; avatar?: AssetRef } {
+  return {
+    name: persona?.displayName || playerName,
+    avatar: persona?.avatar ?? baseAvatar,
+  };
 }

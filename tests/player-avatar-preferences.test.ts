@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PLAYER_AVATAR_STORAGE_KEY, parsePlayerAvatarOverrides, readPlayerAvatar, writePlayerAvatar } from '../src/ui/player-avatar-preferences';
+import { PLAYER_AVATAR_STORAGE_KEY, parsePlayerAvatarOverrides, readPlayerAvatar, resolvePlayerIdentityAppearance, writePlayerAvatar } from '../src/ui/player-avatar-preferences';
 
 describe('player avatar preferences', () => {
   it('stores avatars by world without changing SaveFile', () => {
@@ -16,5 +16,12 @@ describe('player avatar preferences', () => {
 
   it('drops malformed entries while preserving valid references', () => {
     expect(parsePlayerAvatarOverrides({ good: { kind: 'stored', assetId: 'avatar' }, bad: { kind: 'url', url: 'ftp://example.com/a.png' } })).toEqual({ good: { kind: 'stored', assetId: 'avatar' } });
+  });
+
+  it('prefers the active persona avatar, then the world player avatar, then initials', () => {
+    const base = { kind: 'stored' as const, assetId: 'base-avatar' };
+    expect(resolvePlayerIdentityAppearance('玩家', base, { displayName: '旅人', avatar: { kind: 'url', url: 'https://example.com/mask.png' } })).toEqual({ name: '旅人', avatar: { kind: 'url', url: 'https://example.com/mask.png' } });
+    expect(resolvePlayerIdentityAppearance('玩家', base, { displayName: '旅人' })).toEqual({ name: '旅人', avatar: base });
+    expect(resolvePlayerIdentityAppearance('玩家', undefined)).toEqual({ name: '玩家', avatar: undefined });
   });
 });
