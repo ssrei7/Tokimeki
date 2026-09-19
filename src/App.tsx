@@ -4801,7 +4801,7 @@ function ImageSettingsView(props: { config: ImageConfig; providers: ProviderConf
   const activePersona = props.personas.find((item) => item.id === props.save.world.player.personaId);
   const [userAppearanceDraft, setUserAppearanceDraft] = useState(userVisual?.appearancePrompt ?? '');
   useEffect(() => { setUserAppearanceDraft(userVisual?.appearancePrompt ?? ''); }, [userVisual?.appearancePrompt, userIdentity.id]);
-  return <div className="library-subpage-content"><section className="library-legacy-content">
+  return <div className="image-settings-content"><section>
     <div className="section-heading"><div><span className="eyebrow">显式调用</span><h2>图像生成</h2></div><span className={`request-status ${draft.lastStatus === 'error' ? 'error' : ''}`}>{props.busy ? '请求中…' : draft.lastStatus === 'success' ? '最近成功' : draft.lastStatus === 'error' ? '最近失败' : '尚未调用'}</span></div>
     <div className="provider-card">
       <p className="io-scope">这里管理 OpenAI-compatible 图像生成。保存、查看和切换配置均为纯本地操作；只有点击“连接测试”或后续“生成图像”时才会调用一次 Provider。</p>

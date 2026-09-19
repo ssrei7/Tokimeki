@@ -42,9 +42,14 @@ describe('settings desktop', () => {
     expect(ROUTING_TASK_IDS).not.toContain('image');
   });
 
-  it('keeps the standalone image settings content visible', () => {
+  it('keeps standalone image and display settings visible without child-index drift', () => {
     const css = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
-    expect(css).toContain(".subpage-content[data-page='image'] > :nth-child(1)");
+    const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    expect(app).toContain('className="image-settings-content"');
+    expect(css).toContain(".subpage-content[data-page='image'] > .image-settings-content");
+    expect(css).toContain(".subpage-content[data-page='display'] > .settings-display-shortcut");
+    expect(css).toContain(".subpage-content[data-page='display'] > details:nth-of-type(7)");
+    expect(css).not.toContain(".subpage-content[data-page='display'] > :nth-child(7)");
   });
 
   it('renders every launcher as a named button', () => {

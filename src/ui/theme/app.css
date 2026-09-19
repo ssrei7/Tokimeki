@@ -58,23 +58,23 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .subpage-back { min-height: 36px; display: inline-flex; align-items: center; gap: 3px; padding: 0 9px; border: 1px solid var(--gray-200); background: var(--gray-0); color: var(--gray-700); font-size: 12px; }
 .subpage-back svg { width: 17px; height: 17px; }
 .subpage-content > * { display: none; }
-.subpage-content[data-page='player'] > :nth-child(1),
-.subpage-content[data-page='provider'] > :nth-child(2),
-.subpage-content[data-page='vector-memory'] > :nth-child(3),
-.subpage-content[data-page='voice'] > :nth-child(4),
-.subpage-content[data-page='routing'] > :nth-child(5),
-.subpage-content[data-page='rules'] > :nth-child(6),
-.subpage-content[data-page='display'] > :nth-child(7),
-.subpage-content[data-page='image'] > :nth-child(1),
-.subpage-content[data-page='privacy'] > :nth-child(8),
-.subpage-content[data-page='debug'] > :nth-child(9),
-.subpage-content[data-page='dev-tools'] > :nth-child(10),
-.subpage-content[data-page='migration'] > :nth-child(1) { display: block; }
+.subpage-content[data-page='player'] > details:nth-of-type(1),
+.subpage-content[data-page='provider'] > details:nth-of-type(2),
+.subpage-content[data-page='vector-memory'] > details:nth-of-type(3),
+.subpage-content[data-page='voice'] > details:nth-of-type(4),
+.subpage-content[data-page='routing'] > details:nth-of-type(5),
+.subpage-content[data-page='rules'] > details:nth-of-type(6),
+.subpage-content[data-page='display'] > .settings-display-shortcut,
+.subpage-content[data-page='display'] > details:nth-of-type(7),
+.subpage-content[data-page='image'] > .image-settings-content,
+.subpage-content[data-page='privacy'] > details:nth-of-type(8),
+.subpage-content[data-page='debug'] > details:nth-of-type(9),
+.subpage-content[data-page='dev-tools'] > details:nth-of-type(n+10),
+.subpage-content[data-page='migration'] > :first-child { display: block; }
 .subpage-content > details > summary { display: none; }
 .subpage-content > details > :not(summary) { display: block !important; }
 .subpage-content > .fold-card, .subpage-content > .advanced { margin: 0; border: 0; background: transparent; box-shadow: none; overflow: visible; }
 .subpage-content > .fold-card > .fold-body { padding: 0; }
-.subpage-content[data-page='display'] > :nth-child(7) .provider-card > :nth-child(-n+3) { display: none; }
 .subpage-content[data-page='migration'] .library-legacy-content > * { display: block; }
 .subpage-content[data-page='messages'] > *,
 .subpage-content[data-page='contacts'] > *,
