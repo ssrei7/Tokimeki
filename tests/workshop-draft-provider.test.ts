@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createMockProviderConfig } from '../src/providers/adapters/mock';
 import { buildWorkshopAgentMessages, buildWorkshopDraftMessages, generateWorkshopDraft, parseWorkshopAgentResponse, parseWorkshopDraftResponse, runWorkshopAgentTurn } from '../src/providers/workshop-draft';
+import { WORKSHOP_AGENT_PROTOCOL_VERSION, WorkshopAgentProtocolResponseSchema } from '../src/providers/workshop-agent-protocol';
 import type { ProviderConfig } from '../src/providers/types';
 
 const base: ProviderConfig = { id: 'draft', name: 'Draft', kind: 'openai-compatible', endpoint: 'https://example.test/v1', model: 'demo', contextWindow: 8192, maxOutputTokens: 2048, temperature: 0.2 };
@@ -55,14 +56,15 @@ describe('workshop draft provider', () => {
       history: [{ role: 'user', content: '先做一个首页' }, { role: 'assistant', content: '首页已完成' }],
     });
     const payload = JSON.parse(messages[1]!.content);
-    expect(payload).toMatchObject({ instruction: '增加图鉴页', currentSource: packageJson });
+    expect(payload).toMatchObject({ protocolVersion: WORKSHOP_AGENT_PROTOCOL_VERSION, instruction: '增加图鉴页', currentSource: packageJson });
+    expect(messages[0]!.content).toContain('project.replace');
     expect(payload.diagnostics[0].code).toBe('permission-missing');
     expect(payload.history).toHaveLength(2);
     expect(payload.save).toBeUndefined();
   });
 
   it('runs one user-configured API turn and accepts a complete declarative project update', async () => {
-    const response = JSON.stringify({ message: '已增加图鉴页。', package: JSON.parse(packageJson) });
+    const response = JSON.stringify({ protocolVersion: 1, message: '已增加图鉴页。', toolCalls: [{ id: 'replace-project', name: 'project.replace', arguments: { package: JSON.parse(packageJson) } }] });
     const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
       expect(JSON.parse(body.messages[1].content).instruction).toBe('增加图鉴页');
@@ -72,6 +74,27 @@ describe('workshop draft provider', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(result.message).toContain('图鉴');
     expect(result.package.manifest.id).toBe('ai.sample');
+    expect(result.toolCallId).toBe('replace-project');
     expect(parseWorkshopAgentResponse(packageJson).message).toContain('已更新');
+  });
+
+  it('strictly rejects unknown, duplicated or malformed tool calls', () => {
+    const pack = JSON.parse(packageJson);
+    expect(WorkshopAgentProtocolResponseSchema.safeParse({ protocolVersion: 1, message: '完成', toolCalls: [{ id: 'replace', name: 'project.replace', arguments: { package: pack } }] }).success).toBe(true);
+    expect(() => parseWorkshopAgentResponse(JSON.stringify({ protocolVersion: 1, message: '完成', toolCalls: [{ id: 'unknown', name: 'world.write', arguments: {} }] }))).toThrow('不符合工具协议');
+    expect(() => parseWorkshopAgentResponse(JSON.stringify({ protocolVersion: 1, message: '完成', toolCalls: [
+      { id: 'one', name: 'project.replace', arguments: { package: pack } },
+      { id: 'two', name: 'project.replace', arguments: { package: pack } },
+    ] }))).toThrow('不符合工具协议');
+    expect(() => parseWorkshopAgentResponse(JSON.stringify({ protocolVersion: 2, message: '完成', toolCalls: [{ id: 'replace', name: 'project.replace', arguments: { package: pack } }] }))).toThrow('protocolVersion');
+    expect(() => parseWorkshopAgentResponse(JSON.stringify({ protocolVersion: 1, message: '完成', toolCalls: [{ id: 'replace', name: 'project.replace', arguments: { package: pack } }], extra: true }))).toThrow('不符合工具协议');
+    expect(() => parseWorkshopAgentResponse(JSON.stringify({ protocolVersion: 1, message: '完成', toolCalls: [{ id: 'replace', name: 'project.replace', arguments: { package: {} } }] }))).toThrow('不符合工具协议');
+  });
+
+  it('keeps the previous complete-project response compatible during protocol migration', () => {
+    const legacy = parseWorkshopAgentResponse(JSON.stringify({ message: '兼容旧响应。', package: JSON.parse(packageJson) }));
+    expect(legacy.message).toBe('兼容旧响应。');
+    expect(legacy.package.manifest.id).toBe('ai.sample');
+    expect(legacy.toolCallId).toBeUndefined();
   });
 });

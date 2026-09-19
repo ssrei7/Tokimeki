@@ -14,6 +14,48 @@
 
 编辑器内提供用户 API 驱动的多轮工坊 Agent。每次用户显式发送指令时，最多调用一次同一 `workshop_draft` 路由，携带当前工程源码、最近 8 条对话和最多 100 条本地校验诊断。Agent 可返回完整 workshop v1 工程，包括页面、规则、事件和 Prompt 声明；结果仍须通过严格 schema 并回到本地校验/预览，尚未开放的运行能力不会因 AI 输出而生效。当前不自动重试、不自动修复、不自动安装，并允许撤销上一次 Agent 修改。
 
+Agent v1 使用 Provider 无关的应用层 JSON 工具协议；不要求端点支持厂商专属 function calling。新响应必须采用以下结构，且目前恰好只能调用一次 `project.replace`：
+
+```json
+{
+  "protocolVersion": 1,
+  "message": "已按要求更新工程。",
+  "toolCalls": [
+    {
+      "id": "replace-project",
+      "name": "project.replace",
+      "arguments": {
+        "package": {
+          "manifest": {
+            "type": "workshop",
+            "packageVersion": 1,
+            "runtimeVersion": 1,
+            "id": "sample.app",
+            "name": "示例",
+            "author": "User Agent",
+            "version": "1.0.0",
+            "permissions": []
+          },
+          "app": {
+            "entryPageId": "home",
+            "pages": [
+              {
+                "id": "home",
+                "title": "首页",
+                "components": [{ "kind": "text", "text": "示例" }]
+              }
+            ]
+          },
+          "rules": { "rules": [] }
+        }
+      }
+    }
+  ]
+}
+```
+
+调用 ID 只能使用 1–64 个 ASCII 字母、数字、点、下划线或连字符。协议拒绝未知工具、多次调用、额外字段、错误版本和不符合 `WorkshopPackageSchema` 的工程。`project.replace` 只替换当前页面内的草稿，不安装、不持久化、不修改世界事实，也不会触发新的网络请求。为兼容已配置模型，旧 `{ "message", "package" }` 和裸包响应暂时仍可解析；新提示只要求 v1 工具协议。能力目录、局部 patch、校验/预览工具和多步循环尚未开放。
+
 除用户显式触发的初稿生成与 Agent 指令外，工坊导入、编辑、校验、预览、安装、启停、导出和运行均为纯本地操作。Agent 请求不包含 SaveFile、已安装包、世界游玩状态或其他库内容；API key 只按现有 Provider 规则作为鉴权信息发送到用户配置的端点。
 
 ## 2. ZIP 结构

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { WorkshopPackageSchema, type WorkshopPackage, type WorkshopValidationIssue } from '../data/workshop';
 import { streamChat, type StreamStatus } from './stream';
 import type { ChatMessage, ProviderConfig } from './types';
+import { executeWorkshopAgentToolCalls, WORKSHOP_AGENT_PROTOCOL_VERSION, WorkshopAgentProtocolResponseSchema } from './workshop-agent-protocol';
 
 export const WORKSHOP_DRAFT_REQUIREMENT_LIMIT = 4000;
 export const WORKSHOP_AGENT_SOURCE_LIMIT = 512 * 1024;
@@ -18,7 +19,8 @@ manifest.permissions 必须准确声明实际用到的 world.read resources、ap
 最小结构示例：{"manifest":{"type":"workshop","packageVersion":1,"runtimeVersion":1,"id":"sample.app","name":"示例","author":"AI Draft","version":"1.0.0","permissions":[]},"app":{"entryPageId":"home","pages":[{"id":"home","title":"首页","components":[{"kind":"text","text":"示例"}]}]},"rules":{"rules":[]}}`;
 
 const AGENT_SYSTEM_PROMPT = `你是“小小地图”创意工坊内的 App 制作 Agent。用户会提供当前声明式工程源码、本地校验诊断、最近对话和本轮指令。
-你必须返回一个 JSON 对象：{"message":"给用户的简短说明","package":{...workshop 包 v1...}}。不要输出 Markdown、代码围栏或额外字段。
+你必须使用工坊 Agent v1 工具协议返回一个 JSON 对象：{"protocolVersion":1,"message":"给用户的简短说明","toolCalls":[{"id":"replace-project","name":"project.replace","arguments":{"package":{...完整 workshop 包 v1...}}}]}。不要输出 Markdown、代码围栏或额外字段。
+当前只开放一次 project.replace 工具调用。它只替换内存中的编辑器草稿，不安装包、不写世界状态、不调用网络。不要请求未列出的工具，也不要返回多个工具调用。
 你要在当前工程上增量修改，保留用户未要求删除的页面、规则、资产声明和其他内容。若原源码有误，根据 diagnostics 修复并返回完整合法工程。
 可用页面组件：title、text、fact、image、card、list、tabs、button、input、select、progress、confirm。可声明动作：navigate、set-local、submit-op、trigger-event、provider-text，但必须如实声明权限且不得承诺尚未开放的运行能力。
 当前可执行的活动规则 hook 仅有 manual 和 onEnterNode；规则效果仅能是 submit-op 封装的 add_stat、set_flag、give_item、take_item。用户按钮触发活动时，按钮 op 为 run_workshop_activity，payload 为 {"ruleId":"规则-id"}。
@@ -45,6 +47,7 @@ export interface WorkshopAgentTurnInput {
 export interface WorkshopAgentTurnResult {
   message: string;
   package: WorkshopPackage;
+  toolCallId?: string;
 }
 
 export function buildWorkshopDraftMessages(requirement: string): ChatMessage[] {
@@ -97,21 +100,23 @@ export function buildWorkshopAgentMessages(input: WorkshopAgentTurnInput): ChatM
   const diagnostics = input.diagnostics.slice(0, 100).map((issue) => ({ severity: issue.severity, code: issue.code, message: issue.message, ...(issue.path ? { path: issue.path } : {}) }));
   return [
     { role: 'system', content: AGENT_SYSTEM_PROMPT },
-    { role: 'user', content: JSON.stringify({ instruction, currentSource: input.currentSource, diagnostics, history }) },
+    { role: 'user', content: JSON.stringify({ protocolVersion: WORKSHOP_AGENT_PROTOCOL_VERSION, instruction, currentSource: input.currentSource, diagnostics, history }) },
   ];
 }
 
 export function parseWorkshopAgentResponse(raw: string): WorkshopAgentTurnResult {
   const value = parseJsonResponse(raw, 'Provider 返回的 Agent 结果不是有效 JSON。');
+  const protocol = WorkshopAgentProtocolResponseSchema.safeParse(value);
+  if (protocol.success) return executeWorkshopAgentToolCalls(protocol.data);
   const parsed = WorkshopAgentTurnResponseSchema.safeParse(value);
   if (!parsed.success) {
     const legacyPackage = WorkshopPackageSchema.safeParse(value);
     if (legacyPackage.success) return { message: 'Agent 已更新当前声明式工程。', package: legacyPackage.data };
   }
   if (!parsed.success) {
-    const first = parsed.error.issues[0];
+    const first = protocol.error.issues[0] ?? parsed.error.issues[0];
     const path = first?.path.length ? `（${first.path.map(String).join('.')}）` : '';
-    throw new Error(`Provider 返回的 Agent 结果不符合协议${path}：${first?.message ?? '未知错误'}`);
+    throw new Error(`Provider 返回的 Agent 结果不符合工具协议${path}：${first?.message ?? '未知错误'}`);
   }
   return parsed.data;
 }
