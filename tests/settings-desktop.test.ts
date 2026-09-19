@@ -52,6 +52,12 @@ describe('settings desktop', () => {
     expect(css).not.toContain(".subpage-content[data-page='display'] > :nth-child(7)");
   });
 
+  it('mounts identity avatar controls only on the identity settings page', () => {
+    const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    expect(app).toContain("{props.activePage === 'player' && <PersonaAvatarSettings");
+    expect(app).not.toMatch(/^\s*<PersonaAvatarSettings saveId=/m);
+  });
+
   it('offers local custom CSS import and export without auto-applying imports', () => {
     const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     expect(app).toContain('>导出 CSS</button>');
