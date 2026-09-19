@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import { CharacterCardSchema, ChatRecordSchema, ChatRecoveryRecordSchema, MemoryVectorRecordSchema, MusicStateSchema, PersonaSchema, PresetBundleSchema, PresetSchema, StoryScenePresetSchema, TerminalStickerRecordSchema, WorldbookEntrySchema, normalizeChatMessages, type CharacterCard, type ChatRecord, type ChatRecoveryRecord, type MemoryVectorRecord, type MusicState, type Persona, type Preset, type PresetBundle, type StoryScenePresetRecord, type TerminalStickerRecord, type WorldbookEntry } from '../content';
+import { WorkshopBindingSchema, WorkshopPackageRecordSchema, workshopBindingId, type WorkshopBinding, type WorkshopPackageRecord } from '../workshop';
 
 export class ContentDatabase extends Dexie {
   characters!: Table<CharacterCard, string>;
@@ -13,6 +14,8 @@ export class ContentDatabase extends Dexie {
   memoryVectors!: Table<MemoryVectorRecord, string>;
   musicStates!: Table<MusicState, string>;
   terminalStickers!: Table<TerminalStickerRecord, string>;
+  workshopPackages!: Table<WorkshopPackageRecord, string>;
+  workshopBindings!: Table<WorkshopBinding, string>;
   constructor(name = 'tokimeki-content') {
     super(name);
     this.version(1).stores({ characters: 'id', worldbooks: 'id', presets: 'id' });
@@ -30,6 +33,7 @@ export class ContentDatabase extends Dexie {
     this.version(8).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId', chatRecovery: 'characterId', memoryVectors: 'id, saveId, [saveId+characterId]' });
     this.version(9).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId', chatRecovery: 'characterId', memoryVectors: 'id, saveId, [saveId+characterId]', musicStates: 'id' });
     this.version(10).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId', chatRecovery: 'characterId', memoryVectors: 'id, saveId, [saveId+characterId]', musicStates: 'id', terminalStickers: 'id' });
+    this.version(11).stores({ characters: 'id', personas: 'id', worldbooks: 'id', presets: 'id', presetBundles: 'id', storyScenePresets: 'id', chats: 'characterId', chatRecovery: 'characterId', memoryVectors: 'id, saveId, [saveId+characterId]', musicStates: 'id', terminalStickers: 'id', workshopPackages: 'id, updatedAt', workshopBindings: 'id, packageId, saveId, [saveId+packageId]' });
   }
 }
 
@@ -61,3 +65,30 @@ export async function loadMusicState(): Promise<MusicState | undefined> { const 
 export async function listTerminalStickers(): Promise<TerminalStickerRecord[]> { return contentDb.terminalStickers.orderBy('createdAt').toArray(); }
 export async function saveTerminalSticker(record: TerminalStickerRecord): Promise<TerminalStickerRecord> { const parsed = TerminalStickerRecordSchema.parse(record); await contentDb.terminalStickers.put(parsed); return parsed; }
 export async function deleteTerminalSticker(id: string): Promise<void> { await contentDb.terminalStickers.delete(id); }
+export async function listWorkshopPackages(): Promise<WorkshopPackageRecord[]> { return (await contentDb.workshopPackages.toArray()).map((record) => WorkshopPackageRecordSchema.parse(record)); }
+export async function loadWorkshopPackage(id: string): Promise<WorkshopPackageRecord | undefined> { const record = await contentDb.workshopPackages.get(id); return record ? WorkshopPackageRecordSchema.parse(record) : undefined; }
+export async function installWorkshopPackageRecord(record: WorkshopPackageRecord, binding: WorkshopBinding): Promise<WorkshopPackageRecord> {
+  const parsedRecord = WorkshopPackageRecordSchema.parse(record);
+  const parsedBinding = WorkshopBindingSchema.parse(binding);
+  await contentDb.transaction('rw', contentDb.workshopPackages, contentDb.workshopBindings, async () => {
+    await contentDb.workshopPackages.add(parsedRecord);
+    await contentDb.workshopBindings.put(parsedBinding);
+  });
+  return parsedRecord;
+}
+export async function listWorkshopBindings(saveId?: string): Promise<WorkshopBinding[]> { const records = saveId ? await contentDb.workshopBindings.where('saveId').equals(saveId).toArray() : await contentDb.workshopBindings.toArray(); return records.map((record) => WorkshopBindingSchema.parse(record)); }
+export async function setWorkshopBinding(saveId: string, packageId: string, enabled: boolean, timestamp: string): Promise<WorkshopBinding> {
+  const id = workshopBindingId(saveId, packageId);
+  const current = await contentDb.workshopBindings.get(id);
+  const parsed = WorkshopBindingSchema.parse({ id, saveId, packageId, enabled, createdAt: current?.createdAt ?? timestamp, updatedAt: timestamp });
+  await contentDb.workshopBindings.put(parsed);
+  return parsed;
+}
+export async function deleteWorkshopPackage(id: string): Promise<WorkshopBinding[]> {
+  const bindings = await contentDb.workshopBindings.where('packageId').equals(id).toArray();
+  await contentDb.transaction('rw', contentDb.workshopPackages, contentDb.workshopBindings, async () => {
+    await contentDb.workshopPackages.delete(id);
+    await contentDb.workshopBindings.where('packageId').equals(id).delete();
+  });
+  return bindings.map((binding) => WorkshopBindingSchema.parse(binding));
+}

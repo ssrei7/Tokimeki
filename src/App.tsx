@@ -79,6 +79,7 @@ import { canAffordEnergy, energyCostForAction, getEnergyState, movementEnergyKin
 import { AlertTriangle, ArrowLeft, Backpack, BookOpen, Bot, BrainCircuit, Bug, CalendarDays, Camera, Check, ChevronDown, ChevronUp, ContactRound, Download, FileArchive, Gift, History, House, Image as ImageIcon, LogOut, MessageCircle, Milestone, Music2, NotebookPen, Palette, Phone, PhoneIncoming, PhoneOff, Plus, ReceiptText, RefreshCw, Reply, Route, RotateCcw, Send, ShieldCheck, SlidersHorizontal, Smile, Sparkles, Target, UserRound, UsersRound, BriefcaseBusiness, Wrench, X } from 'lucide-react';
 import { DesktopLauncher, EmptyState, SubpageShell, type DesktopEntry } from './components/desktop-shell';
 import { MusicApp } from './components/music-app';
+import { WorkshopManager } from './components/workshop-manager';
 import { PackageHelpButton } from './components/package-help-dialog';
 import { useMusicPlayer, type MusicPlayerController } from './features/music/player';
 import './ui/theme/app.css';
@@ -94,7 +95,7 @@ export const BOTTOM_NAV_ITEMS: readonly (readonly [Tab, string, PhosphorIcon])[]
   ['library', '终端', DeviceMobile],
   ['settings', '设置', GearSix],
 ];
-export type LibraryPage = 'messages' | 'contacts' | 'calls' | 'music' | 'memories' | 'collection' | 'inventory' | 'characters' | 'worldbook' | 'presets' | 'event-packages' | 'story' | 'save' | 'calendar' | 'goals' | 'housing' | 'career' | 'diary' | 'events' | 'progress' | 'snapshots';
+export type LibraryPage = 'messages' | 'contacts' | 'calls' | 'music' | 'workshop' | 'memories' | 'collection' | 'inventory' | 'characters' | 'worldbook' | 'presets' | 'event-packages' | 'story' | 'save' | 'calendar' | 'goals' | 'housing' | 'career' | 'diary' | 'events' | 'progress' | 'snapshots';
 export type DayPage = 'calendar' | 'goals' | 'housing' | 'career' | 'settlement' | 'diary' | 'events' | 'story' | 'snapshots';
 export const DAY_PAGE_DEFINITIONS: readonly (DesktopEntry & { id: DayPage; pageTitle: string })[] = [
   { id: 'calendar', label: '日历', pageTitle: '日历', icon: CalendarDays, tone: 'gray' },
@@ -113,6 +114,7 @@ export const LIBRARY_PAGE_DEFINITIONS: readonly (DesktopEntry & { id: LibraryPag
   { id: 'contacts', label: '联系人', pageTitle: '联系人', icon: ContactRound, tone: 'gray' },
   { id: 'calls', label: '通话', pageTitle: '通话', icon: Phone, tone: 'gray' },
   { id: 'music', label: '音乐', pageTitle: '音乐', icon: Music2, tone: 'gray' },
+  { id: 'workshop', label: '工坊', pageTitle: '创意工坊', icon: Wrench, tone: 'gray' },
   { id: 'calendar', label: '日历', pageTitle: '日历', icon: CalendarDays, tone: 'gray' },
   { id: 'goals', label: '目标', pageTitle: '生活目标', icon: Target, tone: 'gray' },
   { id: 'housing', label: '住所', pageTitle: '住所', icon: House, tone: 'gray' },
@@ -840,8 +842,8 @@ export function App() {
   }
 
   async function deleteImageAssetIfUnreferenced(assetId: string): Promise<void> {
-    const [chats, savedSnapshots, stickers, personas, characterImageConfigs, userImageConfigs, imageConfigs] = await Promise.all([contentDb.chats.toArray(), listSnapshots(), listTerminalStickers(), contentDb.personas.toArray(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray()]);
-    const referenced = collectStoredAssetIds([saveRef.current, ...savedSnapshots.map((snapshot) => snapshot.save), chats, stickers, personas, readPlayerAvatarOverrides(window.localStorage)]);
+    const [chats, savedSnapshots, stickers, personas, characterImageConfigs, userImageConfigs, imageConfigs, workshopPackages] = await Promise.all([contentDb.chats.toArray(), listSnapshots(), listTerminalStickers(), contentDb.personas.toArray(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray(), contentDb.workshopPackages.toArray()]);
+    const referenced = collectStoredAssetIds([saveRef.current, ...savedSnapshots.map((snapshot) => snapshot.save), chats, stickers, personas, workshopPackages, readPlayerAvatarOverrides(window.localStorage)]);
     for (const id of imageReferenceAssetIds(characterImageConfigs, userImageConfigs)) referenced.add(id);
     for (const config of imageConfigs) if (config.lastGenerated?.asset.assetId) referenced.add(config.lastGenerated.asset.assetId);
     for (const group of Object.values(readDesktopIconOverrides(window.localStorage))) for (const ref of Object.values(group)) if (ref.kind === 'stored') referenced.add(ref.assetId);
@@ -860,7 +862,7 @@ export function App() {
   }
 
   async function loadImageAssetReferenceRoots() {
-    const [characterCards, personas, chats, savedSnapshots, stickers, musicStates, characterImageConfigs, userImageConfigs, imageConfigs] = await Promise.all([contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.chats.toArray(), listSnapshots(), listTerminalStickers(), contentDb.musicStates.toArray(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray()]);
+    const [characterCards, personas, chats, savedSnapshots, stickers, musicStates, characterImageConfigs, userImageConfigs, imageConfigs, workshopPackages] = await Promise.all([contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.chats.toArray(), listSnapshots(), listTerminalStickers(), contentDb.musicStates.toArray(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray(), contentDb.workshopPackages.toArray()]);
     return [
       { label: '当前世界', value: saveRef.current },
       ...characterCards.map((card) => ({ label: `角色库/${card.id}`, value: card })),
@@ -873,12 +875,13 @@ export function App() {
       ...characterImageConfigs.map((config) => ({ label: `角色锁脸/${config.id}`, value: config })),
       ...userImageConfigs.map((config) => ({ label: `用户锁脸/${config.id}`, value: config })),
       ...imageConfigs.map((config) => ({ label: `独立生成/${config.id}`, value: config.lastGenerated })),
+      ...workshopPackages.map((record) => ({ label: `工坊包/${record.id}`, value: record.assetBindings })),
       { label: '桌面图标', value: readDesktopIconOverrides(window.localStorage) },
     ];
   }
 
   async function refreshImageAssetStats(): Promise<void> {
-    const [assets, characterCards, personas, chats, savedSnapshots, characterImageConfigs, userImageConfigs, imageConfigs] = await Promise.all([listAssets(), contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.chats.toArray(), listSnapshots(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray()]);
+    const [assets, characterCards, personas, chats, savedSnapshots, characterImageConfigs, userImageConfigs, imageConfigs, workshopPackages] = await Promise.all([listAssets(), contentDb.characters.toArray(), contentDb.personas.toArray(), contentDb.chats.toArray(), listSnapshots(), providerDb.imageVisualConfigs.toArray(), providerDb.imageUserVisualConfigs.toArray(), providerDb.imageConfigs.toArray(), contentDb.workshopPackages.toArray()]);
     const roots = [
       ...Object.values(saveRef.current.world.characters).map((character) => ({ label: `当前角色/${character.id}`, value: character.visuals })),
       ...characterCards.map((card) => ({ label: `角色库/${card.id}`, value: card.packageProfile?.visuals })),
@@ -889,6 +892,7 @@ export function App() {
       ...userImageConfigs.map((config) => ({ label: `用户锁脸/${config.id}`, value: config.referenceImage })),
       ...chats.map((record) => ({ label: `聊天 CG/${record.characterId}`, value: record.messages.map((message) => message.cg) })),
       ...imageConfigs.map((config) => ({ label: `独立生成/${config.id}`, value: config.lastGenerated })),
+      ...workshopPackages.map((record) => ({ label: `工坊包/${record.id}`, value: record.assetBindings })),
       { label: '桌面图标', value: readDesktopIconOverrides(window.localStorage) },
     ];
     setImageAssetStats(summarizeImageAssets(assets.map((asset) => ({ id: asset.id, size: asset.blob.size, mimeType: asset.mimeType, category: asset.category })), roots));
@@ -5815,6 +5819,7 @@ function LibraryView(props: { appName: string; characters: CharacterCard[]; worl
   if (navigation.activePage === 'messages') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><TerminalMessagesView save={props.save} onOpenContacts={() => navigation.onOpenPage('contacts')} onSendText={props.onSendTerminalText} onSendStickerAsset={props.onSendStickerAsset} stickers={props.stickers} onImportStickerFile={props.onImportStickerFile} onImportStickerUrl={props.onImportStickerUrl} onDeleteSticker={props.onDeleteSticker} onRejoin={props.onRejoin} onEditMessage={props.onEditTerminalMessage} onDeleteMessage={props.onDeleteTerminalMessage} onGenerateReply={props.onGenerateTerminalReply} onGenerateVoice={props.onSendVoice} onDownloadVoice={props.onDownloadVoice} voiceAvailable={props.isVoiceAvailable} voiceBusy={props.ttsBusy} onSendPlayerTransfer={props.onSendPlayerTransfer} onResolveIncomingTransfer={props.onResolveIncomingTransfer} onCreateTerminalAppointment={props.onCreateTerminalAppointment} onSimulateIncomingAppointment={props.onSimulateIncomingAppointment} onResolveTerminalAppointment={props.onResolveTerminalAppointment} onSimulateAppointmentAcceptance={props.onSimulateAppointmentAcceptance} onConfirmTerminalAppointment={props.onConfirmTerminalAppointment} terminalBusy={props.terminalBusy} /></SubpageShell>;
   if (navigation.activePage === 'calls') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><TerminalCallsView save={props.save} activeCall={props.terminalCall} onStartCall={props.onStartCall} onSimulateIncomingCall={props.onSimulateIncomingCall} onAnswerCall={props.onAnswerCall} onSimulateCallAnswer={props.onSimulateCallAnswer} onEndCall={props.onEndCall} /></SubpageShell>;
   if (navigation.activePage === 'music') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><MusicApp player={props.musicPlayer} /></SubpageShell>;
+  if (navigation.activePage === 'workshop') return <SubpageShell eyebrow="终端" title={pageTitle} pageId={navigation.activePage} onBack={navigation.onBack}><WorkshopManager saveId={props.save.meta.id} /></SubpageShell>;
   if (navigation.activePage === 'event-packages') return <SubpageShell eyebrow="终端" title="事件包" pageId="event-packages" onBack={navigation.onBack}><EventPackageView save={props.save} onExport={props.onExportEventPackage} onImport={props.onImportEventPackage} /></SubpageShell>;
   const worldCharacters = Object.values(props.save.world.characters);
   const selectedWorldCharacter = worldCharacters.find((character) => character.id === props.visualCharacterId) ?? worldCharacters[0];
