@@ -24,12 +24,13 @@ export function useEnabledWorkshopPackages(saveId: string): WorkshopPackageRecor
   return records;
 }
 
-function WorkshopAssetImage({ reference, alt, className }: { reference?: AssetRef; alt: string; className?: string }) {
+function WorkshopAssetImage({ reference, previewSrc, alt, className }: { reference?: AssetRef; previewSrc?: string; alt: string; className?: string }) {
   const [src, setSrc] = useState<string>();
   useEffect(() => {
     let cancelled = false;
     let objectUrl: string | undefined;
     setSrc(undefined);
+    if (previewSrc) { setSrc(previewSrc); return () => undefined; }
     if (!reference || reference.kind !== 'stored') return () => undefined;
     void loadAsset(reference.assetId).then((asset) => {
       if (cancelled || !asset || asset.blob.size === 0) return;
@@ -37,7 +38,7 @@ function WorkshopAssetImage({ reference, alt, className }: { reference?: AssetRe
       setSrc(objectUrl);
     }).catch(() => undefined);
     return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [reference]);
+  }, [previewSrc, reference]);
   return src ? <img className={className} src={src} alt={alt} /> : <div className="empty workshop-image-fallback" role="img" aria-label={alt || '图片不可用'}>图片不可用</div>;
 }
 
@@ -55,7 +56,7 @@ function blockedActionLabel(action: WorkshopAction): string {
   return '当前包未声明所需权限';
 }
 
-export function WorkshopPageRenderer({ record, save, pageId, values, onPageChange, onValueChange }: { record: WorkshopPackageRecord; save: SaveFile; pageId: string; values: Record<string, WorkshopLocalValue>; onPageChange: (pageId: string) => void; onValueChange: (key: string, value: WorkshopLocalValue) => void }) {
+export function WorkshopPageRenderer({ record, save, pageId, values, assetUrls = {}, onPageChange, onValueChange }: { record: WorkshopPackageRecord; save: SaveFile; pageId: string; values: Record<string, WorkshopLocalValue>; assetUrls?: Readonly<Record<string, string>>; onPageChange: (pageId: string) => void; onValueChange: (key: string, value: WorkshopLocalValue) => void }) {
   const pages = useMemo(() => new Map(record.package.app.pages.map((page) => [page.id, page])), [record]);
   const page = pages.get(pageId) ?? pages.get(record.package.app.entryPageId) ?? record.package.app.pages[0];
   const runAction = (action: WorkshopAction) => {
@@ -76,8 +77,8 @@ export function WorkshopPageRenderer({ record, save, pageId, values, onPageChang
       const fact = resolveWorkshopFact(component.resource, save);
       return <section className="surface-card workshop-fact" key={key}><strong>{component.label || fact.label}</strong><ul>{fact.lines.map((line, lineIndex) => <li key={`${line}-${lineIndex}`}>{line}</li>)}</ul></section>;
     }
-    if (component.kind === 'image') return <WorkshopAssetImage key={key} reference={record.assetBindings[component.assetId]} alt={component.alt} className="workshop-content-image" />;
-    if (component.kind === 'card') return <article className="surface-card workshop-content-card" key={key}>{component.imageAssetId && <WorkshopAssetImage reference={record.assetBindings[component.imageAssetId]} alt={component.title ?? ''} />}{component.title && <h3>{component.title}</h3>}{component.body && <p>{component.body}</p>}</article>;
+    if (component.kind === 'image') return <WorkshopAssetImage key={key} reference={record.assetBindings[component.assetId]} previewSrc={assetUrls[component.assetId]} alt={component.alt} className="workshop-content-image" />;
+    if (component.kind === 'card') return <article className="surface-card workshop-content-card" key={key}>{component.imageAssetId && <WorkshopAssetImage reference={record.assetBindings[component.imageAssetId]} previewSrc={assetUrls[component.imageAssetId]} alt={component.title ?? ''} />}{component.title && <h3>{component.title}</h3>}{component.body && <p>{component.body}</p>}</article>;
     if (component.kind === 'list') return <ul key={key}>{component.items.map((item, itemIndex) => <li key={`${itemIndex}-${item}`}>{item}</li>)}</ul>;
     if (component.kind === 'tabs') return <nav className="button-row workshop-tabs" aria-label="App 页面" key={key}>{component.tabs.map((tab) => {
       const enabled = hasWorkshopPermission(record, 'navigation.local') && pages.has(tab.pageId);
