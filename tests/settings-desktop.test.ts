@@ -52,6 +52,14 @@ describe('settings desktop', () => {
     expect(css).not.toContain(".subpage-content[data-page='display'] > :nth-child(7)");
   });
 
+  it('offers local custom CSS import and export without auto-applying imports', () => {
+    const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    expect(app).toContain('>导出 CSS</button>');
+    expect(app).toContain('>导入 CSS<input type="file" accept=".css,text/css,text/plain"');
+    expect(app).toContain('尚未应用。请先检查编辑器内容');
+    expect(app).toContain('validateCustomCss(css)');
+  });
+
   it('renders every launcher as a named button', () => {
     const html = renderToStaticMarkup(createElement(DesktopLauncher, { launcherId: 'settings', title: '设置', entries: SETTINGS_PAGE_DEFINITIONS, onOpen: () => undefined }));
     for (const entry of SETTINGS_PAGE_DEFINITIONS) {

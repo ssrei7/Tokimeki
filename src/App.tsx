@@ -5023,6 +5023,7 @@ function SettingsView(props: {
   const [settingsThemeTemplate, setSettingsThemeTemplate] = useState<ThemeTemplate>(() => typeof window === 'undefined' ? 'default' : readThemeTemplate(window.localStorage));
   const [desktopTitles, setDesktopTitles] = useState<DesktopTitleOverrides>(() => typeof window === 'undefined' ? {} : readDesktopTitleOverrides(window.localStorage));
   const [appearanceDraft, setAppearanceDraft] = useState<ThemeAppearanceConfig>(() => props.themeAppearance);
+  const [customCssIoStatus, setCustomCssIoStatus] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   useEffect(() => { setAppearanceDraft(props.themeAppearance); }, [props.themeAppearance]);
   const settingsResolvedTheme = resolveTheme(settingsThemeMode, typeof window !== 'undefined' && (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false));
   const changeSettingsTheme = (mode: ThemeMode) => {
@@ -5040,6 +5041,26 @@ function SettingsView(props: {
   const applyAppearanceDraft = () => props.onThemeAppearanceChange(appearanceDraft);
   const resetAppearanceDraft = () => { const next = { ...DEFAULT_THEME_APPEARANCE }; setAppearanceDraft(next); props.onThemeAppearanceChange(next); };
   const appearancePreviewStyle = themeAppearanceCssVariables(appearanceDraft) as CSSProperties;
+  const exportCustomCssFile = () => {
+    const issues = validateCustomCss(props.customCssDraft);
+    if (issues.length) { setCustomCssIoStatus({ tone: 'error', text: issues.join(' ') }); return; }
+    if (!props.customCssDraft.trim()) { setCustomCssIoStatus({ tone: 'error', text: '没有可导出的自定义 CSS。' }); return; }
+    const url = URL.createObjectURL(new Blob([props.customCssDraft], { type: 'text/css;charset=utf-8' }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `xiaoxiaoditu-custom-css-${new Date().toISOString().slice(0, 10)}.css`; anchor.click(); URL.revokeObjectURL(url);
+    setCustomCssIoStatus({ tone: 'success', text: '自定义 CSS 已导出；此操作未调用 API。' });
+  };
+  const importCustomCssFile = async (file?: File) => {
+    if (!file) return;
+    try {
+      const css = await file.text();
+      const issues = validateCustomCss(css);
+      if (issues.length) { setCustomCssIoStatus({ tone: 'error', text: `导入失败：${issues.join(' ')}` }); return; }
+      props.setCustomCssDraft(css);
+      setCustomCssIoStatus({ tone: 'success', text: `已载入 ${file.name}，尚未应用。请先检查编辑器内容，再点击“应用自定义 CSS”。` });
+    } catch {
+      setCustomCssIoStatus({ tone: 'error', text: 'CSS 文件无法读取，当前内容未改变。' });
+    }
+  };
   const setDesktopTitle = (launcherId: string, entryId: string, title: string) => {
     const next = parseDesktopTitleOverrides({ ...desktopTitles, [launcherId]: { ...desktopTitles[launcherId], [entryId]: title } });
     setDesktopTitles(next); writeDesktopTitleOverrides(window.localStorage, next); window.dispatchEvent(new CustomEvent('tokimeki:theme-change'));
@@ -5160,7 +5181,8 @@ function SettingsView(props: {
       <div className="button-row"><button type="button" onClick={applyAppearanceDraft}>应用外观</button><button type="button" className="secondary" onClick={resetAppearanceDraft}>恢复外观默认</button></div>
       <h3>自定义 CSS</h3>
       <textarea aria-label="自定义 CSS" spellCheck={false} value={props.customCssDraft} onChange={(event) => props.setCustomCssDraft(event.target.value)} placeholder="例如：.message { border-radius: 16px; }" />
-      <div className="button-row"><button type="button" onClick={() => { const issues = props.onSaveCustomCss(); if (issues.length) window.alert(issues.join('\n')); }}>应用自定义 CSS</button><button type="button" className="secondary" onClick={props.onResetCustomCss}>恢复默认</button></div>
+      <div className="button-row"><button type="button" onClick={() => { const issues = props.onSaveCustomCss(); if (issues.length) { setCustomCssIoStatus({ tone: 'error', text: issues.join(' ') }); return; } setCustomCssIoStatus({ tone: 'success', text: '自定义 CSS 已应用并保存在当前浏览器。' }); }}>应用自定义 CSS</button><button type="button" className="secondary" onClick={() => { props.onResetCustomCss(); setCustomCssIoStatus({ tone: 'success', text: '自定义 CSS 已恢复默认。' }); }}>恢复默认</button><button type="button" className="secondary" onClick={exportCustomCssFile} disabled={!props.customCssDraft.trim()}>导出 CSS</button><label className="file-button">导入 CSS<input type="file" accept=".css,text/css,text/plain" onChange={(event) => { void importCustomCssFile(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label></div>
+      {customCssIoStatus && <p className="io-scope" role={customCssIoStatus.tone === 'error' ? 'alert' : 'status'}>{customCssIoStatus.text}</p>}
       <p className="io-scope">只允许本地 CSS；禁止 @import、外链 url、脚本表达式和行为属性。不会执行 JavaScript，也不会请求网络。</p>
       <h3>桌面入口标题</h3>
       <p className="io-scope">标题覆盖只影响桌面图标；输入为空时恢复内置标题。底部主导航保持固定。</p>
