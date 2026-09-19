@@ -227,7 +227,7 @@ type TaskId =
   | 'extract_ops'       // 二段式结构化抽取
   | 'summarize_day'     // 日记
   | 'summarize_chapter' // 章节压缩
-  | 'workshop_draft'    // 用户显式生成工坊声明式草稿
+  | 'workshop_draft'    // 用户 API 驱动的工坊 Agent 初稿与多轮修改
   | 'image' | 'tts';    // 阶段 10
 ```
 

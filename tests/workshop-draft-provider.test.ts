@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createMockProviderConfig } from '../src/providers/adapters/mock';
-import { buildWorkshopDraftMessages, generateWorkshopDraft, parseWorkshopDraftResponse } from '../src/providers/workshop-draft';
+import { buildWorkshopAgentMessages, buildWorkshopDraftMessages, generateWorkshopDraft, parseWorkshopAgentResponse, parseWorkshopDraftResponse, runWorkshopAgentTurn } from '../src/providers/workshop-draft';
 import type { ProviderConfig } from '../src/providers/types';
 
 const base: ProviderConfig = { id: 'draft', name: 'Draft', kind: 'openai-compatible', endpoint: 'https://example.test/v1', model: 'demo', contextWindow: 8192, maxOutputTokens: 2048, temperature: 0.2 };
@@ -45,5 +45,33 @@ describe('workshop draft provider', () => {
     const pack = await generateWorkshopDraft(createMockProviderConfig('perfect'), '任意需求', { fetchImpl: async () => { throw new Error('must not fetch'); } });
     expect(pack.manifest.id).toBe('mock.generated-app');
     await expect(generateWorkshopDraft(createMockProviderConfig('malformed'), '任意需求')).rejects.toThrow('不是有效 JSON');
+  });
+
+  it('builds an agent turn from the current project, recent dialogue and local diagnostics', () => {
+    const messages = buildWorkshopAgentMessages({
+      instruction: '增加图鉴页',
+      currentSource: packageJson,
+      diagnostics: [{ severity: 'error', code: 'permission-missing', message: '缺少权限', path: 'manifest.permissions' }],
+      history: [{ role: 'user', content: '先做一个首页' }, { role: 'assistant', content: '首页已完成' }],
+    });
+    const payload = JSON.parse(messages[1]!.content);
+    expect(payload).toMatchObject({ instruction: '增加图鉴页', currentSource: packageJson });
+    expect(payload.diagnostics[0].code).toBe('permission-missing');
+    expect(payload.history).toHaveLength(2);
+    expect(payload.save).toBeUndefined();
+  });
+
+  it('runs one user-configured API turn and accepts a complete declarative project update', async () => {
+    const response = JSON.stringify({ message: '已增加图鉴页。', package: JSON.parse(packageJson) });
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(JSON.parse(body.messages[1].content).instruction).toBe('增加图鉴页');
+      return new Response(JSON.stringify({ choices: [{ message: { content: response } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const result = await runWorkshopAgentTurn(base, { instruction: '增加图鉴页', currentSource: packageJson, diagnostics: [] }, { fetchImpl });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.message).toContain('图鉴');
+    expect(result.package.manifest.id).toBe('ai.sample');
+    expect(parseWorkshopAgentResponse(packageJson).message).toContain('已更新');
   });
 });

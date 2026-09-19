@@ -1,8 +1,11 @@
-import { WorkshopPackageSchema, type WorkshopPackage } from '../data/workshop';
+import { z } from 'zod';
+import { WorkshopPackageSchema, type WorkshopPackage, type WorkshopValidationIssue } from '../data/workshop';
 import { streamChat, type StreamStatus } from './stream';
 import type { ChatMessage, ProviderConfig } from './types';
 
 export const WORKSHOP_DRAFT_REQUIREMENT_LIMIT = 4000;
+export const WORKSHOP_AGENT_SOURCE_LIMIT = 512 * 1024;
+export const WORKSHOP_AGENT_HISTORY_LIMIT = 8;
 
 const SYSTEM_PROMPT = `你是“小小地图”的声明式终端 App 草稿生成器。只输出一个 JSON 对象，不要 Markdown、解释或代码围栏。
 输出必须是 workshop 包 v1，顶层只能包含 manifest、app、rules；不要输出 events、prompts、assetMeta，也不要引用图片。
@@ -13,6 +16,36 @@ manifest 固定 type="workshop"、packageVersion=1、runtimeVersion=1，id 只�
 manifest.permissions 必须准确声明实际用到的 world.read resources、app.local-state 和 navigation.local，不要声明未使用权限。
 所有数值只是界面展示常量或本地 App 状态，不能声称改变世界事实。若需求涉及尚未开放的确定性玩法，请制作记录/说明界面，并在正文中明确结果不会自动写入世界。
 最小结构示例：{"manifest":{"type":"workshop","packageVersion":1,"runtimeVersion":1,"id":"sample.app","name":"示例","author":"AI Draft","version":"1.0.0","permissions":[]},"app":{"entryPageId":"home","pages":[{"id":"home","title":"首页","components":[{"kind":"text","text":"示例"}]}]},"rules":{"rules":[]}}`;
+
+const AGENT_SYSTEM_PROMPT = `你是“小小地图”创意工坊内的 App 制作 Agent。用户会提供当前声明式工程源码、本地校验诊断、最近对话和本轮指令。
+你必须返回一个 JSON 对象：{"message":"给用户的简短说明","package":{...workshop 包 v1...}}。不要输出 Markdown、代码围栏或额外字段。
+你要在当前工程上增量修改，保留用户未要求删除的页面、规则、资产声明和其他内容。若原源码有误，根据 diagnostics 修复并返回完整合法工程。
+可用页面组件：title、text、fact、image、card、list、tabs、button、input、select、progress、confirm。可声明动作：navigate、set-local、submit-op、trigger-event、provider-text，但必须如实声明权限且不得承诺尚未开放的运行能力。
+当前可执行的活动规则 hook 仅有 manual 和 onEnterNode；规则效果仅能是 submit-op 封装的 add_stat、set_flag、give_item、take_item。用户按钮触发活动时，按钮 op 为 run_workshop_activity，payload 为 {"ruleId":"规则-id"}。
+条件只能使用安全表达式和 day、slotId、nodeId、stats、flags、player.nodeId、player.stats、player.flags、relations 事实。禁止任意 JavaScript、HTML、CSS、脚本 URL、base64 和任意网络请求。
+不要虚构新的二进制资产载荷；可保留当前工程已有的 assetMeta 和引用。events、prompts 可作为工程内容编辑，但当前运行时仍不安装/注册它们，必须在 message 中说明。`;
+
+const WorkshopAgentTurnResponseSchema = z.object({
+  message: z.string().min(1).max(4000),
+  package: WorkshopPackageSchema,
+}).strict();
+
+export interface WorkshopAgentHistoryEntry {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface WorkshopAgentTurnInput {
+  instruction: string;
+  currentSource: string;
+  diagnostics: Pick<WorkshopValidationIssue, 'severity' | 'code' | 'message' | 'path'>[];
+  history?: WorkshopAgentHistoryEntry[];
+}
+
+export interface WorkshopAgentTurnResult {
+  message: string;
+  package: WorkshopPackage;
+}
 
 export function buildWorkshopDraftMessages(requirement: string): ChatMessage[] {
   const value = requirement.trim();
@@ -48,6 +81,41 @@ export function parseWorkshopDraftResponse(raw: string): WorkshopPackage {
   return pack;
 }
 
+function parseJsonResponse(raw: string, invalidMessage: string): unknown {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  try { return JSON.parse(fenced?.[1] ?? trimmed); }
+  catch { throw new Error(invalidMessage); }
+}
+
+export function buildWorkshopAgentMessages(input: WorkshopAgentTurnInput): ChatMessage[] {
+  const instruction = input.instruction.trim();
+  if (!instruction) throw new Error('请先填写工坊 Agent 指令。');
+  if (instruction.length > WORKSHOP_DRAFT_REQUIREMENT_LIMIT) throw new Error(`Agent 指令不能超过 ${WORKSHOP_DRAFT_REQUIREMENT_LIMIT} 个字符。`);
+  if (input.currentSource.length > WORKSHOP_AGENT_SOURCE_LIMIT) throw new Error(`当前工程超过 ${WORKSHOP_AGENT_SOURCE_LIMIT / 1024} KiB Agent 上下文限制，请先精简或拆分。`);
+  const history = (input.history ?? []).slice(-WORKSHOP_AGENT_HISTORY_LIMIT).map((entry) => ({ role: entry.role, content: entry.content.slice(0, 4000) }));
+  const diagnostics = input.diagnostics.slice(0, 100).map((issue) => ({ severity: issue.severity, code: issue.code, message: issue.message, ...(issue.path ? { path: issue.path } : {}) }));
+  return [
+    { role: 'system', content: AGENT_SYSTEM_PROMPT },
+    { role: 'user', content: JSON.stringify({ instruction, currentSource: input.currentSource, diagnostics, history }) },
+  ];
+}
+
+export function parseWorkshopAgentResponse(raw: string): WorkshopAgentTurnResult {
+  const value = parseJsonResponse(raw, 'Provider 返回的 Agent 结果不是有效 JSON。');
+  const parsed = WorkshopAgentTurnResponseSchema.safeParse(value);
+  if (!parsed.success) {
+    const legacyPackage = WorkshopPackageSchema.safeParse(value);
+    if (legacyPackage.success) return { message: 'Agent 已更新当前声明式工程。', package: legacyPackage.data };
+  }
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    const path = first?.path.length ? `（${first.path.map(String).join('.')}）` : '';
+    throw new Error(`Provider 返回的 Agent 结果不符合协议${path}：${first?.message ?? '未知错误'}`);
+  }
+  return parsed.data;
+}
+
 export async function generateWorkshopDraft(config: ProviderConfig, requirement: string, options: { fetchImpl?: typeof fetch; signal?: AbortSignal; onStatus?: (status: StreamStatus) => void } = {}): Promise<WorkshopPackage> {
   const raw = await streamChat(config, buildWorkshopDraftMessages(requirement), () => undefined, {
     taskId: 'workshop_draft',
@@ -57,4 +125,15 @@ export async function generateWorkshopDraft(config: ProviderConfig, requirement:
     onStatus: options.onStatus,
   });
   return parseWorkshopDraftResponse(raw);
+}
+
+export async function runWorkshopAgentTurn(config: ProviderConfig, input: WorkshopAgentTurnInput, options: { fetchImpl?: typeof fetch; signal?: AbortSignal; onStatus?: (status: StreamStatus) => void } = {}): Promise<WorkshopAgentTurnResult> {
+  const raw = await streamChat(config, buildWorkshopAgentMessages(input), () => undefined, {
+    taskId: 'workshop_draft',
+    outputMode: config.outputMode === 'off' ? 'off' : 'json_object',
+    fetchImpl: options.fetchImpl,
+    signal: options.signal,
+    onStatus: options.onStatus,
+  });
+  return parseWorkshopAgentResponse(raw);
 }

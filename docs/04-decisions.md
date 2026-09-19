@@ -690,3 +690,10 @@
 **决定**：新增内部 `run_workshop_activity` op，已启用包可由用户按钮显式触发 `manual` 规则，或订阅现有 `onEnterNode` 钩子触发到场规则。规则条件继续使用安全表达式；效果首版只允许 `add_stat` / `set_flag` / `give_item` / `take_item`，每个效果都必须通过正式 op schema、限幅和权限复核。
 
 **原子性与状态**：整组效果先在克隆世界上执行，任一效果失败则整组不写入。`once` 与 `cooldownDays` 使用包 ID / 规则 ID 命名空间下的现有 `world.flags` / `world.stats` 记录，不新增业务数值字段，不升级 SaveFile。随机奖励、时间/体力成本、其他钩子、事件、Prompt 和 Provider 仍未开放；该切片纯本地且零 API。
+
+## D129 工坊制作流程演进为用户 API 驱动的多轮 Agent
+**关系**：本决策扩展 D127。D127 的单次、受限草稿生成仍作为新建工程入口；进入编辑器后改为用户每轮显式触发的 Agent 修改。
+
+**决定**：保留 `workshop_draft` 路由以兼容现有 Provider 配置，但产品语义升级为“工坊 Agent”。初稿进入编辑器后，用户可继续发送自然语言指令；每轮向用户配置的 API 发送当前工程源码、最近对话和本地校验诊断，要求返回说明与完整 workshop v1 工程。返回内容必须通过严格 schema，然后回到同一编辑器继续校验和预览；支持撤销上一次 Agent 修改，不自动安装或写世界状态。
+
+**成本与数据边界**：当前每次用户发送最多调用一次 API，不自动修复、不自动重试、不后台运行。请求不携带 SaveFile、已安装包、API key 本体或世界游玩状态；API key 仅按既有 Provider 机制用于用户端点鉴权。对话和草稿仍只存在当前页面，SaveFile 保持 v41，Content IndexedDB 保持 v12。真正的工具调用协议、局部 patch、可配步数/费用预算和自动修复循环必须作为后续独立切片。

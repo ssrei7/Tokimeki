@@ -4,6 +4,7 @@ import { listWorkshopBindings, listWorkshopPackages } from '../data/db/content';
 import { exportWorkshopPackage, importWorkshopPackage } from '../data/io/workshop-package';
 import { exportInstalledWorkshopPackage, installWorkshopPackage, setWorkshopPackageEnabled, uninstallWorkshopPackage, workshopPackageBindingSummary } from '../data/workshop-install';
 import { validateWorkshopPackage, type WorkshopBinding, type WorkshopPackage, type WorkshopPackageImport, type WorkshopPackageRecord, type WorkshopValidationIssue } from '../data/workshop';
+import type { WorkshopAgentTurnInput, WorkshopAgentTurnResult } from '../providers/workshop-draft';
 import { notifyWorkshopChanged } from '../ui/workshop-runtime';
 import { WorkshopEditor } from './workshop-editor';
 
@@ -30,7 +31,7 @@ function issueLabel(issue: WorkshopValidationIssue): string {
   return issue.severity === 'error' ? '错误' : issue.severity === 'warning' ? '警告' : '说明';
 }
 
-export function WorkshopManager({ save, draftProviderConfigured, onGenerateDraft }: { save: SaveFile; draftProviderConfigured: boolean; onGenerateDraft: (requirement: string, signal?: AbortSignal) => Promise<WorkshopPackage> }) {
+export function WorkshopManager({ save, draftProviderConfigured, onGenerateDraft, onAgentTurn }: { save: SaveFile; draftProviderConfigured: boolean; onGenerateDraft: (requirement: string, signal?: AbortSignal) => Promise<WorkshopPackage>; onAgentTurn: (input: WorkshopAgentTurnInput, signal?: AbortSignal) => Promise<WorkshopAgentTurnResult> }) {
   const saveId = save.meta.id;
   const [records, setRecords] = useState<WorkshopPackageRecord[]>([]);
   const [bindings, setBindings] = useState<WorkshopBinding[]>([]);
@@ -166,15 +167,15 @@ export function WorkshopManager({ save, draftProviderConfigured, onGenerateDraft
   return <div className="library-subpage-content workshop-manager">
     {notice && <div className={`feedback ${notice.tone}`} role="status">{notice.text}<button type="button" aria-label="关闭提示" onClick={() => setNotice(null)}>×</button></div>}
     <section className="workshop-content">
-      <div className="section-heading"><div><span className="eyebrow">声明式本地包</span><h2>创意工坊</h2></div><span className="io-scope">零 API · 不执行代码</span></div>
+      <div className="section-heading"><div><span className="eyebrow">声明式本地包</span><h2>创意工坊</h2></div><span className="io-scope">用户显式 API · 不执行代码</span></div>
       <div className="list-card">
         <div className="list-heading"><div><h3>导入、编辑与预览</h3><p className="io-scope">受限页面可读取已授权世界事实并保存本地 App 状态；已安装包可运行受限确定性活动，事件、Prompt 与 Provider 动作仍禁用。</p></div></div>
         <div className="button-row"><label className="file-button">选择工坊包<input type="file" accept=".zip,application/zip" disabled={busy} onChange={(event) => { void readPackage(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label><button type="button" className="secondary" disabled={busy} onClick={() => setEditor((current) => ({ key: (current?.key ?? 0) + 1 }))}>新建本地草稿</button></div>
       </div>
       <div className="list-card workshop-ai-draft">
-        <div className="list-heading"><div><h3>AI 生成草稿</h3><p className="io-scope">仅在点击后调用一次 <code>workshop_draft</code> Provider；请求内容仅含固定协议和下方需求，不含存档或已安装内容。</p></div><span className="io-scope">单次显式调用</span></div>
+        <div className="list-heading"><div><h3>Agent 新建工程</h3><p className="io-scope">仅在点击后调用一次 <code>workshop_draft</code> Provider；初稿进入编辑器后，可继续用多轮 Agent 指令增量修改。</p></div><span className="io-scope">用户 API</span></div>
         <label>描述想制作的终端 App<textarea aria-label="工坊 App 需求" maxLength={4000} placeholder="例如：制作一个旅行清单 App，可以记录本地备注，并只读显示当前日期和位置。" value={draftRequirement} onChange={(event) => setDraftRequirement(event.target.value)} /></label>
-        {!draftProviderConfigured && <p className="io-scope" role="alert">尚未配置可用文本 Provider。请先在“设置 → 路由”配置“工坊草稿”，或设置默认 Provider。</p>}
+        {!draftProviderConfigured && <p className="io-scope" role="alert">尚未配置可用文本 Provider。请先在“设置 → 路由”配置“工坊 Agent”，或设置默认 Provider。</p>}
         <div className="button-row"><button type="button" disabled={busy || generatingDraft || !draftProviderConfigured || !draftRequirement.trim()} onClick={() => void generateDraft()}>{generatingDraft ? '正在生成…' : '生成并送入编辑器'}</button></div>
       </div>
       {preview && <div className="list-card workshop-preview">
@@ -186,7 +187,7 @@ export function WorkshopManager({ save, draftProviderConfigured, onGenerateDraft
         {previewInstalled && <p role="alert" className="io-scope">本机已安装相同包 ID。首版不支持覆盖更新，请保留现有包或先卸载。</p>}
         <div className="button-row"><button type="button" disabled={busy || !preview.report.canInstall || previewInstalled} onClick={() => void installPreview()}>确认安装并启用</button><button type="button" className="secondary" disabled={busy} onClick={() => setEditor((current) => ({ key: (current?.key ?? 0) + 1, initial: preview }))}>在编辑器中打开</button><button type="button" className="secondary" disabled={busy} onClick={() => setPreview(null)}>取消</button></div>
       </div>}
-      {editor && <WorkshopEditor key={editor.key} save={save} installedIds={installedIds} initial={editor.initial} busy={busy} onInstall={installDraft} onExport={exportDraft} onClose={() => setEditor(null)} />}
+      {editor && <WorkshopEditor key={editor.key} save={save} installedIds={installedIds} initial={editor.initial} busy={busy} agentConfigured={draftProviderConfigured} onAgentTurn={onAgentTurn} onInstall={installDraft} onExport={exportDraft} onClose={() => setEditor(null)} />}
       <div className="list-card">
         <div className="list-heading"><div><h3>已安装包</h3><p className="io-scope">启用状态和 App 本地状态按世界隔离。停用不会删除包；全局卸载会保留本地状态和二进制资产。</p></div><span className="io-scope">{records.length} 个</span></div>
         {records.length ? <div className="event-package-list">{records.map((record) => {

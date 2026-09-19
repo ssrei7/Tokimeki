@@ -52,6 +52,8 @@ describe('workshop local editor', () => {
       save,
       installedIds: new Set<string>(),
       busy: false,
+      agentConfigured: false,
+      onAgentTurn: vi.fn(),
       onInstall: vi.fn(),
       onExport: vi.fn(),
       onClose: vi.fn(),
@@ -59,14 +61,16 @@ describe('workshop local editor', () => {
     expect(html).toContain('aria-label="工坊包 JSON"');
     expect(html).toContain('权限与冲突');
     expect(html).toContain('实时预览');
+    expect(html).toContain('工坊 Agent');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>发送给 Agent<\/button>/);
     expect(html).toContain('这是一个纯本地声明式 App。');
   });
 
   it('shows generation as a single explicit provider action and keeps it disabled without a route', () => {
     const save = seedScenario(createCurrentSaveScenario({ id: 'generation-world', title: 'Generation' }));
-    const html = renderToStaticMarkup(createElement(WorkshopManager, { save, draftProviderConfigured: false, onGenerateDraft: vi.fn() }));
-    expect(html).toContain('单次显式调用');
-    expect(html).toContain('不含存档或已安装内容');
+    const html = renderToStaticMarkup(createElement(WorkshopManager, { save, draftProviderConfigured: false, onGenerateDraft: vi.fn(), onAgentTurn: vi.fn() }));
+    expect(html).toContain('Agent 新建工程');
+    expect(html).toContain('用户 API');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>生成并送入编辑器<\/button>/);
   });
 });
