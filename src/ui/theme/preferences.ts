@@ -42,6 +42,20 @@ export const DEFAULT_THEME_APPEARANCE: ThemeAppearanceConfig = {
   mapCardBg: 'var(--gray-0)', mapCardBorder: 'var(--gray-100)', mapCardRadius: 8, mapCardShadow: '0 4px 16px rgb(63 63 63 / 0.05)', mapGap: 8,
 };
 
+export function themeAppearanceForTemplate(template: ThemeTemplate): ThemeAppearanceConfig {
+  const base = { ...DEFAULT_THEME_APPEARANCE };
+  if (template === 'soft') return { ...base, messageRadius: 16, messagePadding: 14, cardRadius: 14, listGap: 10, mapCardRadius: 14, mapGap: 10 };
+  if (template === 'compact') return { ...base, messageRadius: 3, messagePadding: 8, cardRadius: 4, listGap: 5, mapCardRadius: 4, mapGap: 5 };
+  return base;
+}
+
+export function themeAppearanceCssVariables(config: ThemeAppearanceConfig): Record<string, string> {
+  const parsed = parseThemeAppearance(config);
+  return {
+    '--theme-player-bubble-bg': parsed.playerBubbleBg, '--theme-player-bubble-fg': parsed.playerBubbleFg, '--theme-character-bubble-bg': parsed.characterBubbleBg, '--theme-character-bubble-fg': parsed.characterBubbleFg, '--theme-message-radius': `${parsed.messageRadius}px`, '--theme-message-padding': `${parsed.messagePadding}px`, '--theme-terminal-bg': parsed.terminalBg, '--theme-card-bg': parsed.cardBg, '--theme-card-border': parsed.cardBorder, '--theme-card-radius': `${parsed.cardRadius}px`, '--theme-card-shadow': parsed.cardShadow, '--theme-list-divider': parsed.listDivider, '--theme-terminal-input-bg': parsed.terminalInputBg, '--theme-button-bg': parsed.buttonBg, '--theme-selected-bg': parsed.selectedBg, '--theme-list-gap': `${parsed.listGap}px`, '--theme-map-card-bg': parsed.mapCardBg, '--theme-map-card-border': parsed.mapCardBorder, '--theme-map-card-radius': `${parsed.mapCardRadius}px`, '--theme-map-card-shadow': parsed.mapCardShadow, '--theme-map-gap': `${parsed.mapGap}px`,
+  };
+}
+
 export function parseThemeMode(value: unknown): ThemeMode {
   return typeof value === 'string' && (THEME_MODES as readonly string[]).includes(value) ? value as ThemeMode : 'system';
 }
@@ -80,9 +94,7 @@ export function writeThemeAppearance(storage: Pick<Storage, 'setItem' | 'removeI
   try { storage.setItem(THEME_APPEARANCE_STORAGE_KEY, JSON.stringify(parsed)); } catch { /* local preference unavailable */ }
 }
 export function applyThemeAppearance(config: ThemeAppearanceConfig, root: Pick<HTMLElement, 'style'> = document.documentElement): void {
-  const parsed = parseThemeAppearance(config); const vars: Record<string, string> = {
-    '--theme-player-bubble-bg': parsed.playerBubbleBg, '--theme-player-bubble-fg': parsed.playerBubbleFg, '--theme-character-bubble-bg': parsed.characterBubbleBg, '--theme-character-bubble-fg': parsed.characterBubbleFg, '--theme-message-radius': `${parsed.messageRadius}px`, '--theme-message-padding': `${parsed.messagePadding}px`, '--theme-terminal-bg': parsed.terminalBg, '--theme-card-bg': parsed.cardBg, '--theme-card-border': parsed.cardBorder, '--theme-card-radius': `${parsed.cardRadius}px`, '--theme-card-shadow': parsed.cardShadow, '--theme-list-divider': parsed.listDivider, '--theme-terminal-input-bg': parsed.terminalInputBg, '--theme-button-bg': parsed.buttonBg, '--theme-selected-bg': parsed.selectedBg, '--theme-list-gap': `${parsed.listGap}px`, '--theme-map-card-bg': parsed.mapCardBg, '--theme-map-card-border': parsed.mapCardBorder, '--theme-map-card-radius': `${parsed.mapCardRadius}px`, '--theme-map-card-shadow': parsed.mapCardShadow, '--theme-map-gap': `${parsed.mapGap}px`,
-  }; Object.entries(vars).forEach(([key, value]) => root.style.setProperty(key, value));
+  Object.entries(themeAppearanceCssVariables(config)).forEach(([key, value]) => root.style.setProperty(key, value));
 }
 export function parseDesktopTitleOverrides(value: unknown): DesktopTitleOverrides {
   if (!value || typeof value !== 'object') return {};

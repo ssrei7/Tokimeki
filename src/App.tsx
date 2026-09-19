@@ -81,7 +81,7 @@ import { MusicApp } from './components/music-app';
 import { PackageHelpButton } from './components/package-help-dialog';
 import { useMusicPlayer, type MusicPlayerController } from './features/music/player';
 import './ui/theme/app.css';
-import { applyCustomCss, applyTheme, applyThemeAppearance, applyThemeTemplate, DEFAULT_THEME_APPEARANCE, parseDesktopIconOverrides, parseDesktopTitleOverrides, parseThemeAppearance, readCustomCss, readDesktopIconOverrides, readDesktopTitleOverrides, readThemeAppearance, readThemeMode, readThemeTemplate, resolveTheme, THEME_APPEARANCE_STORAGE_KEY, THEME_STORAGE_KEY, THEME_TEMPLATE_STORAGE_KEY, type DesktopIconOverrides, type DesktopTitleOverrides, type ThemeAppearanceConfig, type ThemeMode, type ThemeTemplate, validateCustomCss, writeCustomCss, writeDesktopIconOverrides, writeDesktopTitleOverrides, writeThemeAppearance } from './ui/theme/preferences';
+import { applyCustomCss, applyTheme, applyThemeAppearance, applyThemeTemplate, DEFAULT_THEME_APPEARANCE, parseDesktopIconOverrides, parseDesktopTitleOverrides, parseThemeAppearance, readCustomCss, readDesktopIconOverrides, readDesktopTitleOverrides, readThemeAppearance, readThemeMode, readThemeTemplate, resolveTheme, THEME_APPEARANCE_STORAGE_KEY, THEME_STORAGE_KEY, THEME_TEMPLATE_STORAGE_KEY, themeAppearanceCssVariables, themeAppearanceForTemplate, type DesktopIconOverrides, type DesktopTitleOverrides, type ThemeAppearanceConfig, type ThemeMode, type ThemeTemplate, validateCustomCss, writeCustomCss, writeDesktopIconOverrides, writeDesktopTitleOverrides, writeThemeAppearance } from './ui/theme/preferences';
 import { DEFAULT_APP_NAME, PRODUCT_NAME, resolveAppDisplayName } from './ui/branding';
 
 type Tab = 'map' | 'day' | 'chat' | 'library' | 'settings';
@@ -448,7 +448,7 @@ export function App() {
     const media = window.matchMedia?.('(prefers-color-scheme: dark)');
     const update = () => { applyTheme(themeMode, media?.matches ?? false); };
     update();
-    const onThemeChange = () => setThemeMode(readThemeMode(window.localStorage));
+    const onThemeChange = () => { setThemeMode(readThemeMode(window.localStorage)); setThemeTemplate(readThemeTemplate(window.localStorage)); };
     window.addEventListener('tokimeki:theme-change', onThemeChange);
     media?.addEventListener?.('change', update);
     return () => { window.removeEventListener('tokimeki:theme-change', onThemeChange); media?.removeEventListener?.('change', update); };
@@ -5023,6 +5023,7 @@ function SettingsView(props: {
   const [settingsThemeTemplate, setSettingsThemeTemplate] = useState<ThemeTemplate>(() => typeof window === 'undefined' ? 'default' : readThemeTemplate(window.localStorage));
   const [desktopTitles, setDesktopTitles] = useState<DesktopTitleOverrides>(() => typeof window === 'undefined' ? {} : readDesktopTitleOverrides(window.localStorage));
   const [appearanceDraft, setAppearanceDraft] = useState<ThemeAppearanceConfig>(() => props.themeAppearance);
+  useEffect(() => { setAppearanceDraft(props.themeAppearance); }, [props.themeAppearance]);
   const settingsResolvedTheme = resolveTheme(settingsThemeMode, typeof window !== 'undefined' && (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false));
   const changeSettingsTheme = (mode: ThemeMode) => {
     setSettingsThemeMode(mode);
@@ -5032,9 +5033,13 @@ function SettingsView(props: {
     setSettingsThemeTemplate(template);
     applyThemeTemplate(template);
     try { window.localStorage.setItem(THEME_TEMPLATE_STORAGE_KEY, template); window.dispatchEvent(new CustomEvent('tokimeki:theme-change')); } catch { /* local preference unavailable */ }
+    const next = themeAppearanceForTemplate(template);
+    setAppearanceDraft(next);
+    props.onThemeAppearanceChange(next);
   };
   const applyAppearanceDraft = () => props.onThemeAppearanceChange(appearanceDraft);
   const resetAppearanceDraft = () => { const next = { ...DEFAULT_THEME_APPEARANCE }; setAppearanceDraft(next); props.onThemeAppearanceChange(next); };
+  const appearancePreviewStyle = themeAppearanceCssVariables(appearanceDraft) as CSSProperties;
   const setDesktopTitle = (launcherId: string, entryId: string, title: string) => {
     const next = parseDesktopTitleOverrides({ ...desktopTitles, [launcherId]: { ...desktopTitles[launcherId], [entryId]: title } });
     setDesktopTitles(next); writeDesktopTitleOverrides(window.localStorage, next); window.dispatchEvent(new CustomEvent('tokimeki:theme-change'));
@@ -5126,7 +5131,7 @@ function SettingsView(props: {
       <label>主题模式<select aria-label="主题模式" value={settingsThemeMode} onChange={(event) => changeSettingsTheme(event.target.value as ThemeMode)}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>
       <p className="io-scope">当前显示：{settingsResolvedTheme === 'dark' ? '深色' : '浅色'}。主题偏好只保存在本机浏览器，并会包含在全局备份的界面偏好中。</p>
       <label>组件模板<select aria-label="组件模板" value={settingsThemeTemplate} onChange={(event) => changeSettingsThemeTemplate(event.target.value as ThemeTemplate)}><option value="default">默认灰阶</option><option value="soft">柔和圆角</option><option value="compact">紧凑直角</option></select></label>
-      <p className="io-scope">模板会统一调整消息气泡、地图卡片和终端消息的圆角与间距，不改变内容或布局结构。</p>
+      <p className="io-scope">切换模板会立即载入并应用该模板的结构化参数；之后仍可逐项调整。</p>
       <h3>消息 App 外观</h3>
       <div className="theme-appearance-grid">
         <label>玩家气泡背景<input value={appearanceDraft.playerBubbleBg} onChange={(event) => setAppearanceDraft({ ...appearanceDraft, playerBubbleBg: event.target.value })} /></label>
@@ -5151,7 +5156,7 @@ function SettingsView(props: {
         <label>地图卡片阴影<input value={appearanceDraft.mapCardShadow} onChange={(event) => setAppearanceDraft({ ...appearanceDraft, mapCardShadow: event.target.value })} /></label>
         <label>地图面板间距（px）<input type="number" min="0" max="32" value={appearanceDraft.mapGap} onChange={(event) => setAppearanceDraft({ ...appearanceDraft, mapGap: Number(event.target.value) })} /></label>
       </div>
-      <div className="theme-appearance-preview"><div className="message user">玩家消息预览</div><div className="message assistant">角色消息预览</div><div className="list-card">终端 / 地图卡片预览</div></div>
+      <div className="theme-appearance-preview" style={appearancePreviewStyle}><div className="message user">玩家消息预览</div><div className="message assistant">角色消息预览</div><div className="list-card theme-preview-terminal-card"><strong>终端卡片预览</strong><input aria-label="终端输入区预览" readOnly value="输入区背景" /><button type="button" tabIndex={-1}>按钮预览</button></div><div className="theme-preview-map-card">地图卡片预览</div></div>
       <div className="button-row"><button type="button" onClick={applyAppearanceDraft}>应用外观</button><button type="button" className="secondary" onClick={resetAppearanceDraft}>恢复外观默认</button></div>
       <h3>自定义 CSS</h3>
       <textarea aria-label="自定义 CSS" spellCheck={false} value={props.customCssDraft} onChange={(event) => props.setCustomCssDraft(event.target.value)} placeholder="例如：.message { border-radius: 16px; }" />
