@@ -137,6 +137,7 @@ registerOp(def: OpDefinition<any>): void;
 | `make_appointment` | 5 | 约定四元组 |
 | `queue_event` | 7 | 向日历排程（导演专用） |
 | `promote_npc` | 6 | 随机 NPC 转正 |
+| `run_workshop_activity` | 工坊 | 内部活动调度；只组合已开放确定性效果，不向叙事 Provider 暴露 |
 
 ---
 

@@ -81,7 +81,20 @@ describe('workshop package protocol', () => {
     });
     const report = validateWorkshopPackage(pack);
     expect(report.requiredPermissions).toEqual(expect.arrayContaining(['world.read:player.stats', 'world.read:world.flags']));
-    expect(report.issues.filter((issue) => issue.code === 'permission-missing')).toHaveLength(2);
+    expect(report.issues.filter((issue) => issue.code === 'permission-missing')).toHaveLength(3);
+    expect(report.requiredPermissions).toContain('op.submit:run_workshop_activity');
+  });
+
+  it('accepts only manual or onEnterNode activity rules composed from the restricted effect ops', () => {
+    const pack = WorkshopPackageSchema.parse({
+      ...minimalPackage(),
+      manifest: { ...minimalPackage().manifest, permissions: [{ capability: 'op.submit', resources: ['run_workshop_activity', 'add_stat'] }] },
+      app: { entryPageId: 'home', pages: [{ id: 'home', title: '首页', components: [{ kind: 'button', label: '开始', action: { type: 'submit-op', op: 'run_workshop_activity', payload: { ruleId: 'fish' } } }] }] },
+      rules: { rules: [{ id: 'fish', actions: [{ type: 'submit-op', op: 'add_stat', payload: { target: 'player', key: 'fishing.skill', delta: 1 } }] }] },
+    });
+    expect(validateWorkshopPackage(pack).canInstall).toBe(true);
+    const unsafe = WorkshopPackageSchema.parse({ ...pack, rules: { rules: [{ id: 'fish', actions: [{ type: 'submit-op', op: 'move_player', payload: { nodeId: 'elsewhere' } }] }] } });
+    expect(validateWorkshopPackage(unsafe).issues).toContainEqual(expect.objectContaining({ code: 'unsupported-activity-op', severity: 'error' }));
   });
 
   it('keeps world bindings deterministic and isolated by save id', () => {

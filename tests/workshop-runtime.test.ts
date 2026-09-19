@@ -57,7 +57,18 @@ describe('workshop restricted runtime', () => {
     expect(html).toContain('本地文字');
     expect(html).toMatch(/<button[^>]*>本地完成<\/button>/);
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>改世界状态<\/button>/);
-    expect(html).toContain('状态动作将在确定性活动切片开放');
+    expect(html).toContain('该状态动作尚未开放');
+  });
+
+  it('only enables the registered manual activity entry in an installed runtime', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'activity-runtime', title: 'Activity Runtime' }));
+    const record = runtimeRecord();
+    record.package.manifest.permissions = [{ capability: 'op.submit', resources: ['run_workshop_activity', 'add_stat'] }];
+    record.package.rules.rules = [{ id: 'fish', hook: 'manual', actions: [{ type: 'submit-op', op: 'add_stat', payload: { target: 'player', key: 'fishing.skill', delta: 1 } }] }];
+    record.package.app.pages[0]!.components = [{ kind: 'button', label: '开始钓鱼', action: { type: 'submit-op', op: 'run_workshop_activity', payload: { ruleId: 'fish' } } }];
+    const html = renderToStaticMarkup(createElement(WorkshopPageRenderer, { record, save, pageId: 'home', values: {}, onPageChange: vi.fn(), onValueChange: vi.fn(), onRunActivity: vi.fn() }));
+    expect(html).toMatch(/<button[^>]*>开始钓鱼<\/button>/);
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>开始钓鱼<\/button>/);
   });
 
   it('rechecks declared permissions at render time', () => {

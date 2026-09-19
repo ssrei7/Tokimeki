@@ -6,7 +6,7 @@
 
 当前版本可在浏览器本地读取、校验、预览、安装、按世界启停、导出和卸载工坊包。当前世界已启用的包会作为动态图标出现在终端桌面；点击后由受限运行时渲染声明式页面。
 
-运行时只开放包内导航、按 `saveId + packageId` 隔离的本地 App 状态，以及经包权限逐项声明的世界事实只读视图。规则、事件、op、Prompt 和 Provider 动作仍不会执行；相关按钮会保持禁用并说明尚未开放。
+运行时开放包内导航、按 `saveId + packageId` 隔离的本地 App 状态、经包权限逐项声明的世界事实只读视图，以及首个确定性活动子集。事件、Prompt、Provider 和未开放 op 仍不会执行；相关按钮会保持禁用并说明边界。
 
 工坊页提供纯本地声明式编辑器。用户可以新建安全模板，或把已经导入并通过 ZIP 边界检查的包载入编辑器；完整包 JSON 每次变更都会重新经过 schema、权限、引用、已安装 ID 和资产载荷一致性检查，并使用同一受限运行时实时预览。草稿不会自动保存或覆盖已安装包，只有用户显式点击导出或确认安装才产生结果。
 
@@ -36,11 +36,11 @@ assets/*          可选
 
 v1 安装器会保存这些声明。受限运行时会将页面内容渲染为固定 React 组件，不解释 HTML 或 CSS，也不执行包内代码。任意代码、DOM 访问、自定义 CSS、动态 import、脚本 URL 和任意网络请求均没有协议入口。
 
-标题、正文、图片、卡片、列表、标签页、按钮、输入框、选择器、进度和确认框均可显示。当前仅 `navigate` 与 `set-local` 动作可运行，并且运行时会再次检查权限、页面引用和本地状态值；`submit-op`、`trigger-event` 与 `provider-text` 均明确禁用。世界事实始终来自打开页面时的当前 `SaveFile` 快照，页面不能写回这些事实。
+标题、正文、图片、卡片、列表、标签页、按钮、输入框、选择器、进度和确认框均可显示。`navigate` 与 `set-local` 可直接运行；`submit-op` 目前只开放内部 `run_workshop_activity`，且按钮只能引用包内 `manual` 规则。`trigger-event`、`provider-text` 和其他直接 op 按钮仍禁用。世界事实视图始终来自当前 `SaveFile`，只有通过活动内核复核的效果才能写回。
 
 AI 草稿通道进一步收窄：只接受无资产的 manifest / app / 空 rules，只允许受限页面组件、`navigate`、`set-local`，以及 `world.read`、`app.local-state`、`navigation.local` 权限。事件、Prompt、图片、非空规则和其他动作即使符合完整包 schema，也会在进入编辑器前被拒绝；用户仍可在纯本地编辑器中手工查看完整协议，但未开放动作保持禁用。
 
-`rules.json` 只保存声明式条件和白名单动作；条件必须通过项目现有 expr-eval 安全语法检查。`events.json` 复用当前 EventDef schema，事件内 op 名必须属于工坊白名单，未来运行时仍须再次经过正式 op schema 校验。`prompts.json` 的单块预算上限为 1024，总预算上限为 4096。
+`rules.json` 只保存声明式条件和白名单动作；条件必须通过项目现有 expr-eval 安全语法检查。当前 `hook` 只允许 `manual` 或 `onEnterNode`，效果只允许 `add_stat`、`set_flag`、`give_item`、`take_item`。整组效果先在克隆世界上通过正式 op schema 与限幅，任一项失败则不写入；`once` 和 `cooldownDays` 使用命名空间化的通用 flags/stats 记录。`events.json` 复用当前 EventDef schema，但尚不安装或执行。`prompts.json` 的单块预算上限为 1024，总预算上限为 4096，但尚不注册。
 
 ## 4. 权限
 

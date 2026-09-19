@@ -685,3 +685,8 @@
 **决定**：新增独立文本任务 `workshop_draft`，可在 Provider 路由中单独绑定。只有用户填写需求并点击生成时才调用一次，不后台生成、不自动重试；每次点击最多一次 Provider 请求。请求内容只包含固定声明式协议与该次需求，不发送 SaveFile、已安装包、预览状态或其他用户资料。
 
 **输出边界**：响应先经过严格 JSON 与工坊包 schema，再经过 AI 草稿专用子集检查；仅允许无资产页面、空 rules、包内导航、本地状态和只读事实权限。事件、Prompt、资产、非空规则、op/event/provider 动作均拒绝。通过后也只送入本地编辑器，必须再次显示权限与冲突并由用户显式安装；生成失败不改变现有草稿、包或世界状态。SaveFile 保持 v41，Content IndexedDB 保持 v12。
+
+## D128 工坊活动首切片只组合受限确定性效果
+**决定**：新增内部 `run_workshop_activity` op，已启用包可由用户按钮显式触发 `manual` 规则，或订阅现有 `onEnterNode` 钩子触发到场规则。规则条件继续使用安全表达式；效果首版只允许 `add_stat` / `set_flag` / `give_item` / `take_item`，每个效果都必须通过正式 op schema、限幅和权限复核。
+
+**原子性与状态**：整组效果先在克隆世界上执行，任一效果失败则整组不写入。`once` 与 `cooldownDays` 使用包 ID / 规则 ID 命名空间下的现有 `world.flags` / `world.stats` 记录，不新增业务数值字段，不升级 SaveFile。随机奖励、时间/体力成本、其他钩子、事件、Prompt 和 Provider 仍未开放；该切片纯本地且零 API。

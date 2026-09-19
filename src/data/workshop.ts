@@ -17,8 +17,11 @@ export const WORKSHOP_ALLOWED_OPS = [
   'add_stat', 'set_stat', 'set_flag', 'give_item', 'take_item', 'add_memory', 'add_node_memory',
   'advance_time', 'move_player', 'reveal_node', 'move_npc', 'unlock_topic', 'mark_topic_used',
   'set_mood', 'adjust_relation_axis', 'add_knot', 'resolve_knot', 'offer_gift', 'resolve_gift',
-  'make_appointment', 'queue_event', 'propose_departure', 'resolve_departure',
+  'make_appointment', 'queue_event', 'propose_departure', 'resolve_departure', 'run_workshop_activity',
 ] as const;
+
+export const WORKSHOP_ACTIVITY_EFFECT_OPS = ['add_stat', 'set_flag', 'give_item', 'take_item'] as const;
+export const WorkshopActivityHookSchema = z.enum(['manual', 'onEnterNode']);
 
 export const WorkshopOpNameSchema = z.enum(WORKSHOP_ALLOWED_OPS);
 export const WorkshopWorldReadResourceSchema = z.enum([
@@ -100,6 +103,7 @@ export const WorkshopAppSchema = z.object({
 export const WorkshopRulesSchema = z.object({
   rules: z.array(z.object({
     id: IdSchema,
+    hook: WorkshopActivityHookSchema.default('manual'),
     when: z.string().min(1).max(1000).optional(),
     actions: z.array(WorkshopActionSchema).min(1).max(32),
     once: z.boolean().optional(),
@@ -171,6 +175,8 @@ export const WorkshopLocalStateSchema = z.object({
 export type WorkshopManifest = z.infer<typeof WorkshopManifestSchema>;
 export type WorkshopPermission = z.infer<typeof WorkshopPermissionSchema>;
 export type WorkshopAction = z.infer<typeof WorkshopActionSchema>;
+export type WorkshopActivityHook = z.infer<typeof WorkshopActivityHookSchema>;
+export type WorkshopRule = z.infer<typeof WorkshopRulesSchema>['rules'][number];
 export type WorkshopComponent = z.infer<typeof WorkshopComponentSchema>;
 export type WorkshopPackage = z.infer<typeof WorkshopPackageSchema>;
 export type WorkshopPackageRecord = z.infer<typeof WorkshopPackageRecordSchema>;
@@ -256,6 +262,7 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
   const issues: WorkshopValidationIssue[] = [];
   const required = new Set<string>();
   const pages = new Set<string>();
+  const rules = new Map<string, WorkshopRule>();
   const events = new Set<string>();
   const promptBlocks = new Set<string>();
   const assets = new Set(pack.assetMeta?.assets.map((asset) => asset.id) ?? []);
@@ -272,6 +279,10 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
   const unique = (id: string, set: Set<string>, label: string, path: string) => { if (set.has(id)) addIssue('error', 'duplicate-id', `${label} ID 重复：${id}`, path); else set.add(id); };
 
   pack.app.pages.forEach((page, index) => unique(page.id, pages, '页面', `app.pages[${index}].id`));
+  pack.rules.rules.forEach((rule, index) => {
+    if (rules.has(rule.id)) addIssue('error', 'duplicate-id', `活动规则 ID 重复：${rule.id}`, `rules.rules[${index}].id`);
+    else rules.set(rule.id, rule);
+  });
   if (!pages.has(pack.app.entryPageId)) addIssue('error', 'missing-entry-page', `入口页面不存在：${pack.app.entryPageId}`, 'app.entryPageId');
   pack.events?.events.forEach((event, index) => unique(event.id, events, '事件', `events.events[${index}].id`));
   pack.prompts?.blocks.forEach((block, index) => unique(block.id, promptBlocks, 'Prompt block', `prompts.blocks[${index}].id`));
@@ -299,7 +310,16 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
       required.add('app.local-state');
       if (!WorkshopLocalValueSchema.safeParse(action.value).success) addIssue('error', 'invalid-local-state', '本地 App 状态只允许最多 2000 字符的字符串、有限数值、布尔值或 null。', `${path}.value`);
     }
-    else if (action.type === 'submit-op') required.add(permissionLabel('op.submit', action.op));
+    else if (action.type === 'submit-op') {
+      required.add(permissionLabel('op.submit', action.op));
+      if (action.op === 'run_workshop_activity') {
+        const ruleId = typeof action.payload.ruleId === 'string' ? action.payload.ruleId : undefined;
+        const rule = ruleId ? rules.get(ruleId) : undefined;
+        if (!ruleId) addIssue('error', 'invalid-activity-reference', '活动按钮必须在 payload.ruleId 中指定规则。', `${path}.payload.ruleId`);
+        else if (!rule) addIssue('error', 'missing-activity-rule', `活动按钮引用了不存在的规则：${ruleId}`, `${path}.payload.ruleId`);
+        else if (rule.hook !== 'manual') addIssue('error', 'activity-hook-mismatch', `按钮只能触发 manual 规则：${ruleId}`, `${path}.payload.ruleId`);
+      }
+    }
     else if (action.type === 'trigger-event') {
       required.add(permissionLabel('event.trigger', action.eventId));
       if (!events.has(action.eventId)) addIssue('error', 'missing-event', `动作引用了不存在的包内事件：${action.eventId}`, `${path}.eventId`);
@@ -309,9 +329,19 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
     }
   }
 
+  pack.rules.rules.forEach((rule, ruleIndex) => {
+    required.add(permissionLabel('op.submit', 'run_workshop_activity'));
+    rule.actions.forEach((action, actionIndex) => {
+      const path = `rules.rules[${ruleIndex}].actions[${actionIndex}]`;
+      if (action.type !== 'submit-op') addIssue('error', 'unsupported-activity-action', '活动规则只能组合已开放的确定性 op。', path);
+      else if (!WORKSHOP_ACTIVITY_EFFECT_OPS.includes(action.op as typeof WORKSHOP_ACTIVITY_EFFECT_OPS[number])) addIssue('error', 'unsupported-activity-op', `活动规则包含未开放的效果 op：${action.op}`, `${path}.op`);
+    });
+  });
+
   for (const event of pack.events?.events ?? []) required.add(permissionLabel('event.install', event.id));
   for (const { op, path } of eventOps(pack)) {
-    if (!WORKSHOP_ALLOWED_OPS.includes(op as typeof WORKSHOP_ALLOWED_OPS[number])) addIssue('error', 'unsupported-op', op ? `事件包含未开放的 op：${op}` : '事件 op 缺少字符串 op 名。', path);
+    if (op === 'run_workshop_activity') addIssue('error', 'unsupported-op', '事件不能直接调用内部工坊活动 op。', path);
+    else if (!WORKSHOP_ALLOWED_OPS.includes(op as typeof WORKSHOP_ALLOWED_OPS[number])) addIssue('error', 'unsupported-op', op ? `事件包含未开放的 op：${op}` : '事件 op 缺少字符串 op 名。', path);
     else required.add(permissionLabel('op.submit', op));
   }
 
@@ -345,7 +375,7 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
   for (const permission of required) if (!declared.has(permission)) addIssue('error', 'permission-missing', `缺少权限声明：${permission}`, 'manifest.permissions');
   for (const permission of declared) if (!required.has(permission)) addIssue('warning', 'permission-unused', `声明了当前包未使用的权限：${permission}`, 'manifest.permissions');
   if (promptTokenTotal > declaredPromptBudget) addIssue('error', 'prompt-permission-budget', `Prompt 实际预算 ${promptTokenTotal} 超过权限声明预算 ${declaredPromptBudget}。`, 'manifest.permissions');
-  if (required.size) addIssue('info', 'runtime-boundary', '受限页面仅运行包内导航、本地 App 状态和已授权的世界事实读取；规则、事件、op、Prompt 和 Provider 动作暂不运行。');
+  if (required.size) addIssue('info', 'runtime-boundary', '受限页面可运行包内导航、本地 App 状态、已授权的世界事实读取，以及 manual / onEnterNode 确定性活动；事件、Prompt、Provider 和其他 op 仍不运行。');
 
   return { canInstall: !issues.some((issue) => issue.severity === 'error'), issues, requiredPermissions: [...required].sort() };
 }
