@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { WorkshopEditor } from '../src/components/workshop-editor';
+import { WorkshopManager } from '../src/components/workshop-manager';
 import { WorkshopPackageSchema, type WorkshopAssetPayload } from '../src/data/workshop';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import { analyzeWorkshopDraft, createWorkshopEditorTemplate, workshopEditorSource } from '../src/ui/workshop-editor';
@@ -59,5 +60,13 @@ describe('workshop local editor', () => {
     expect(html).toContain('权限与冲突');
     expect(html).toContain('实时预览');
     expect(html).toContain('这是一个纯本地声明式 App。');
+  });
+
+  it('shows generation as a single explicit provider action and keeps it disabled without a route', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'generation-world', title: 'Generation' }));
+    const html = renderToStaticMarkup(createElement(WorkshopManager, { save, draftProviderConfigured: false, onGenerateDraft: vi.fn() }));
+    expect(html).toContain('单次显式调用');
+    expect(html).toContain('不含存档或已安装内容');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>生成并送入编辑器<\/button>/);
   });
 });

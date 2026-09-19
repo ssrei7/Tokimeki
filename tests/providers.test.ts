@@ -15,13 +15,15 @@ const ttsBase: TtsConfig = { id: 'tts-default', name: 'Default voice', enabled: 
 
 describe('provider adapters and routing', () => {
   it('formats OpenAI-compatible requests and extracts text', () => { const prepared = getAdapter('openai-compatible').prepare({ ...base, apiKey: 'secret' }, { messages: [{ role: 'user', content: 'hi' }] }); expect(prepared.url).toContain('/chat/completions'); expect(JSON.parse(String(prepared.init.body)).model).toBe('demo'); expect(getAdapter('openai-compatible').extractText(base, { choices: [{ message: { content: 'hello' } }] })).toBe('hello'); });
-  it('adds Structured Outputs only to topic tree requests and supports JSON mode fallback', () => {
+  it('adds task-scoped structured output modes without affecting narrative requests', () => {
     const adapter = getAdapter('openai-compatible');
     const structured = JSON.parse(String(adapter.prepare({ ...base, outputMode: 'auto' }, { taskId: 'topic_tree', outputMode: 'auto', messages: [{ role: 'user', content: 'hi' }] }).init.body));
     expect(structured.response_format.type).toBe('json_schema');
     expect(structured.response_format.json_schema.strict).toBe(true);
     const jsonMode = JSON.parse(String(adapter.prepare({ ...base, outputMode: 'json_object' }, { taskId: 'topic_tree', outputMode: 'json_object', messages: [{ role: 'user', content: 'hi' }] }).init.body));
     expect(jsonMode.response_format).toEqual({ type: 'json_object' });
+    const workshop = JSON.parse(String(adapter.prepare({ ...base }, { taskId: 'workshop_draft', outputMode: 'json_object', messages: [{ role: 'user', content: 'hi' }] }).init.body));
+    expect(workshop.response_format).toEqual({ type: 'json_object' });
     const narrative = JSON.parse(String(adapter.prepare({ ...base, outputMode: 'auto' }, { taskId: 'narrate_main', outputMode: 'auto', messages: [{ role: 'user', content: 'hi' }] }).init.body));
     expect(narrative.response_format).toBeUndefined();
   });

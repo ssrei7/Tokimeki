@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SaveFile } from '../data/schema/save';
 import { listWorkshopBindings, listWorkshopPackages } from '../data/db/content';
 import { exportWorkshopPackage, importWorkshopPackage } from '../data/io/workshop-package';
 import { exportInstalledWorkshopPackage, installWorkshopPackage, setWorkshopPackageEnabled, uninstallWorkshopPackage, workshopPackageBindingSummary } from '../data/workshop-install';
-import type { WorkshopBinding, WorkshopPackageImport, WorkshopPackageRecord, WorkshopValidationIssue } from '../data/workshop';
+import { validateWorkshopPackage, type WorkshopBinding, type WorkshopPackage, type WorkshopPackageImport, type WorkshopPackageRecord, type WorkshopValidationIssue } from '../data/workshop';
 import { notifyWorkshopChanged } from '../ui/workshop-runtime';
 import { WorkshopEditor } from './workshop-editor';
 
@@ -30,7 +30,7 @@ function issueLabel(issue: WorkshopValidationIssue): string {
   return issue.severity === 'error' ? '错误' : issue.severity === 'warning' ? '警告' : '说明';
 }
 
-export function WorkshopManager({ save }: { save: SaveFile }) {
+export function WorkshopManager({ save, draftProviderConfigured, onGenerateDraft }: { save: SaveFile; draftProviderConfigured: boolean; onGenerateDraft: (requirement: string, signal?: AbortSignal) => Promise<WorkshopPackage> }) {
   const saveId = save.meta.id;
   const [records, setRecords] = useState<WorkshopPackageRecord[]>([]);
   const [bindings, setBindings] = useState<WorkshopBinding[]>([]);
@@ -38,6 +38,9 @@ export function WorkshopManager({ save }: { save: SaveFile }) {
   const [editor, setEditor] = useState<{ key: number; initial?: WorkshopPackageImport } | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const [busy, setBusy] = useState(false);
+  const [draftRequirement, setDraftRequirement] = useState('');
+  const [generatingDraft, setGeneratingDraft] = useState(false);
+  const generationControllerRef = useRef<AbortController | null>(null);
   const installedIds = useMemo(() => new Set(records.map((record) => record.id)), [records]);
   const bindingByPackage = useMemo(() => new Map(bindings.filter((binding) => binding.saveId === saveId).map((binding) => [binding.packageId, binding])), [bindings, saveId]);
 
@@ -48,6 +51,29 @@ export function WorkshopManager({ save }: { save: SaveFile }) {
   }
 
   useEffect(() => { void refresh().catch((error) => setNotice({ tone: 'error', text: errorText(error, '读取工坊包失败。') })); }, [saveId]);
+  useEffect(() => () => generationControllerRef.current?.abort(), []);
+
+  async function generateDraft(): Promise<void> {
+    const requirement = draftRequirement.trim();
+    if (!requirement || generatingDraft) return;
+    if (editor && !window.confirm('生成成功后会用新结果替换当前页面中的编辑草稿。请先导出或安装需要保留的内容。是否继续？')) return;
+    const controller = new AbortController();
+    generationControllerRef.current = controller;
+    setGeneratingDraft(true);
+    setNotice({ tone: 'info', text: '正在请求一次工坊草稿生成；返回后仍需本地校验和确认。' });
+    try {
+      const pack = await onGenerateDraft(requirement, controller.signal);
+      if (controller.signal.aborted) return;
+      const imported: WorkshopPackageImport = { package: pack, assets: new Map(), report: validateWorkshopPackage(pack) };
+      setEditor((current) => ({ key: (current?.key ?? 0) + 1, initial: imported }));
+      setNotice({ tone: 'success', text: 'AI 草稿已进入本地编辑器；尚未安装，也未写入世界状态。' });
+    } catch (error) {
+      if (!controller.signal.aborted) setNotice({ tone: 'error', text: errorText(error, 'AI 草稿生成失败，现有内容未改变。') });
+    } finally {
+      if (generationControllerRef.current === controller) generationControllerRef.current = null;
+      setGeneratingDraft(false);
+    }
+  }
 
   async function readPackage(file?: File): Promise<void> {
     if (!file) return;
@@ -144,6 +170,12 @@ export function WorkshopManager({ save }: { save: SaveFile }) {
       <div className="list-card">
         <div className="list-heading"><div><h3>导入、编辑与预览</h3><p className="io-scope">受限页面可读取已授权世界事实并保存本地 App 状态；规则、事件、op、Prompt 与 Provider 动作暂不运行。</p></div></div>
         <div className="button-row"><label className="file-button">选择工坊包<input type="file" accept=".zip,application/zip" disabled={busy} onChange={(event) => { void readPackage(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label><button type="button" className="secondary" disabled={busy} onClick={() => setEditor((current) => ({ key: (current?.key ?? 0) + 1 }))}>新建本地草稿</button></div>
+      </div>
+      <div className="list-card workshop-ai-draft">
+        <div className="list-heading"><div><h3>AI 生成草稿</h3><p className="io-scope">仅在点击后调用一次 <code>workshop_draft</code> Provider；请求内容仅含固定协议和下方需求，不含存档或已安装内容。</p></div><span className="io-scope">单次显式调用</span></div>
+        <label>描述想制作的终端 App<textarea aria-label="工坊 App 需求" maxLength={4000} placeholder="例如：制作一个旅行清单 App，可以记录本地备注，并只读显示当前日期和位置。" value={draftRequirement} onChange={(event) => setDraftRequirement(event.target.value)} /></label>
+        {!draftProviderConfigured && <p className="io-scope" role="alert">尚未配置可用文本 Provider。请先在“设置 → 路由”配置“工坊草稿”，或设置默认 Provider。</p>}
+        <div className="button-row"><button type="button" disabled={busy || generatingDraft || !draftProviderConfigured || !draftRequirement.trim()} onClick={() => void generateDraft()}>{generatingDraft ? '正在生成…' : '生成并送入编辑器'}</button></div>
       </div>
       {preview && <div className="list-card workshop-preview">
         <div className="list-heading"><div><h3>{preview.package.manifest.name}</h3><p>{preview.package.manifest.id} · v{preview.package.manifest.version} · {preview.package.manifest.author}</p></div><span className="io-scope">包格式 v{preview.package.manifest.packageVersion}</span></div>

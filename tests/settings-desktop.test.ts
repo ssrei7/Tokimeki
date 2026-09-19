@@ -40,6 +40,7 @@ describe('settings desktop', () => {
     expect(SETTINGS_PAGE_DEFINITIONS.find((entry) => entry.id === 'voice')?.pageTitle).toBe('语音生成');
     expect(SETTINGS_PAGE_DEFINITIONS.find((entry) => entry.id === 'image')?.pageTitle).toBe('图像生成');
     expect(ROUTING_TASK_IDS).not.toContain('image');
+    expect(ROUTING_TASK_IDS).toContain('workshop_draft');
   });
 
   it('keeps standalone image and display settings visible without child-index drift', () => {

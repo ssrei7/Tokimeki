@@ -3,7 +3,7 @@ import { AssetRefSchema } from '../data/schema/save';
 
 export const TASK_IDS = [
   'narrate_main', 'narrate_daily', 'topic_tree', 'world_morning', 'world_gen',
-  'map_gen', 'npc_batch', 'extract_ops', 'summarize_memory', 'summarize_day', 'summarize_chapter', 'image', 'tts',
+  'map_gen', 'npc_batch', 'extract_ops', 'summarize_memory', 'summarize_day', 'summarize_chapter', 'workshop_draft', 'image', 'tts',
 ] as const;
 export const TaskIdSchema = z.enum(TASK_IDS);
 export type TaskId = z.infer<typeof TaskIdSchema>;

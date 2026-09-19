@@ -21,6 +21,8 @@ export const openAiAdapter: ProviderAdapter = {
     const body: Record<string, unknown> = { model: config.model, messages: request.messages, temperature: config.temperature, max_tokens: config.maxOutputTokens, stream: request.stream ?? false };
     if (request.taskId === 'topic_tree' && request.outputMode !== 'off') {
       body.response_format = request.outputMode === 'json_object' ? { type: 'json_object' } : { type: 'json_schema', json_schema: { name: 'topic_tree', strict: true, schema: TOPIC_TREE_RESPONSE_SCHEMA } };
+    } else if (request.taskId === 'workshop_draft' && request.outputMode !== 'off') {
+      body.response_format = { type: 'json_object' };
     }
     return { url: openAiChatUrl(config.endpoint), init: { method: 'POST', headers: headers(config), body: JSON.stringify(body) } };
   },

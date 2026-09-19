@@ -129,6 +129,9 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .workshop-editor-report ul { margin: 8px 0 0; padding-left: 20px; overflow-wrap: anywhere; }
 .workshop-editor-report small { color: var(--gray-500); }
 .workshop-editor-preview .section-heading { margin-bottom: 0; }
+.workshop-ai-draft { display: grid; gap: 12px; }
+.workshop-ai-draft > label { display: grid; gap: 6px; color: var(--gray-600); font-size: 13px; }
+.workshop-ai-draft textarea { min-height: 110px; resize: vertical; }
 @media (max-width: 640px) { .workshop-editor-grid { grid-template-columns: 1fr; } }
 @media (min-width: 700px) { :root { --desktop-grid-row-gap: 24px; --desktop-grid-column-gap: 14px; } .desktop-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
 @media (max-width: 399px) { :root { --desktop-icon-size: 50px; --desktop-grid-row-gap: 18px; --desktop-grid-column-gap: 6px; } .desktop-app-icon-label { font-size: 11px; } }

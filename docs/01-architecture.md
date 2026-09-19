@@ -226,6 +226,7 @@ type TaskId =
   | 'extract_ops'       // 二段式结构化抽取
   | 'summarize_day'     // 日记
   | 'summarize_chapter' // 章节压缩
+  | 'workshop_draft'    // 用户显式生成工坊声明式草稿
   | 'image' | 'tts';    // 阶段 10
 ```
 

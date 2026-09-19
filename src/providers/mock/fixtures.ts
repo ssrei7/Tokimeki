@@ -24,6 +24,7 @@ function repliesForTask(taskId: TaskId): Record<MockFixtureId, MockFixture> {
   if (taskId === 'topic_tree') return topicTreeFixtures();
   if (taskId === 'summarize_memory') return memorySummaryFixtures();
   if (taskId === 'world_morning') return morningFixtures();
+  if (taskId === 'workshop_draft') return workshopDraftFixtures();
   return {
     perfect: {
       id: 'perfect',
@@ -63,6 +64,18 @@ function repliesForTask(taskId: TaskId): Record<MockFixtureId, MockFixture> {
       chunks: [`${prefix} [说话人:塞伊尔] 谢谢你送来的礼物，我会好好珍惜。\n<ops>\n[{"op":"resolve_gift","giftId":"gift-placeholder","reaction":"liked"}]\n</ops>`],
     },
   };
+}
+
+function workshopDraftFixtures(): Record<MockFixtureId, MockFixture> {
+  const pack = JSON.stringify({
+    manifest: { type: 'workshop', packageVersion: 1, runtimeVersion: 1, id: 'mock.generated-app', name: 'Mock 草稿', author: 'Mock Provider', version: '1.0.0', permissions: [{ capability: 'app.local-state' }] },
+    app: { entryPageId: 'home', pages: [{ id: 'home', title: 'Mock 草稿', components: [{ kind: 'text', text: '这是一次显式生成的本地草稿。' }, { kind: 'input', key: 'note', label: '本地备注', maxLength: 200 }, { kind: 'button', label: '标记完成', action: { type: 'set-local', key: 'done', value: true } }] }] },
+    rules: { rules: [] },
+  });
+  return Object.fromEntries(MOCK_FIXTURE_IDS.map((id) => {
+    const chunks = id === 'malformed' ? ['{'] : id === 'fenced' ? [`\`\`\`json\n${pack}\n\`\`\``] : id === 'interrupted-stream' ? ['{"manifest":'] : [pack];
+    return [id, { id, chunks, ...(id === 'interrupted-stream' ? { errorAfterChunks: 'Mock workshop draft interrupted' } : {}) }];
+  })) as unknown as Record<MockFixtureId, MockFixture>;
 }
 
 function memorySummaryFixtures(): Record<MockFixtureId, MockFixture> {
