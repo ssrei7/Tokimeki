@@ -29,7 +29,8 @@ export interface NpcPromotionConversationContext {
   terminal: NpcPromotionConversationLine[];
 }
 
-const MAX_CONVERSATION_LINES_PER_SOURCE = 12;
+const MAX_CONVERSATION_LINES_TOTAL = 100;
+const BASE_CONVERSATION_LINES_PER_SOURCE = MAX_CONVERSATION_LINES_TOTAL / 2;
 const MAX_CONVERSATION_LINE_CHARS = 320;
 
 function conversationText(value: string | undefined): string | undefined {
@@ -42,19 +43,28 @@ export function createNpcPromotionConversationContext(
   faceToFaceMessages: readonly ChatMessage[],
   terminalMessages: readonly TerminalMessage[],
 ): NpcPromotionConversationContext {
-  const faceToFace = faceToFaceMessages.flatMap((message): NpcPromotionConversationLine[] => {
+  const allFaceToFace = faceToFaceMessages.flatMap((message): NpcPromotionConversationLine[] => {
     const text = conversationText(message.content);
     if (!text || message.role === 'system' || message.kind === 'narration') return [];
     if (message.role === 'user') return [{ speaker: 'player', text }];
     if (message.speakerId && message.speakerId !== characterId) return [];
     return [{ speaker: 'character', text }];
-  }).slice(-MAX_CONVERSATION_LINES_PER_SOURCE);
-  const terminal = terminalMessages.flatMap((message): NpcPromotionConversationLine[] => {
+  });
+  const allTerminal = terminalMessages.flatMap((message): NpcPromotionConversationLine[] => {
     if (message.type !== 'text' && message.type !== 'voice') return [];
     const text = conversationText(message.text);
     if (!text) return [];
     return [{ speaker: message.senderId === 'player' ? 'player' : 'character', text }];
-  }).slice(-MAX_CONVERSATION_LINES_PER_SOURCE);
+  });
+  let faceToFaceCount = Math.min(allFaceToFace.length, BASE_CONVERSATION_LINES_PER_SOURCE);
+  let terminalCount = Math.min(allTerminal.length, BASE_CONVERSATION_LINES_PER_SOURCE);
+  let remaining = MAX_CONVERSATION_LINES_TOTAL - faceToFaceCount - terminalCount;
+  const extraFaceToFace = Math.min(allFaceToFace.length - faceToFaceCount, remaining);
+  faceToFaceCount += extraFaceToFace;
+  remaining -= extraFaceToFace;
+  terminalCount += Math.min(allTerminal.length - terminalCount, remaining);
+  const faceToFace = allFaceToFace.slice(-faceToFaceCount);
+  const terminal = allTerminal.slice(-terminalCount);
   return { faceToFace, terminal };
 }
 

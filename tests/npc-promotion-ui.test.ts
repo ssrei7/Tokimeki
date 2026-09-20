@@ -79,9 +79,12 @@ describe('NPC promotion UI data', () => {
     });
     const prompt = buildNpcExpansionPrompt({ id: 'npc', name: '花店老板', tier: 'semi', facts: ['经营花店'], tags: ['细心'], lightMemory: [] }, { description: '简介', personality: '性格', scenario: '', firstMes: '', exampleDialogue: '' }, context);
     expect(JSON.parse(prompt[1].content).conversationExcerpts).toEqual(context);
-    const longMessages = Array.from({ length: 20 }, (_, index) => ({ role: 'user' as const, content: `${index}-${'字'.repeat(500)}` }));
+    const longMessages = Array.from({ length: 130 }, (_, index) => ({ role: 'user' as const, content: `${index}-${'字'.repeat(500)}` }));
     const bounded = createNpcPromotionConversationContext('npc', longMessages, []);
-    expect(bounded.faceToFace).toHaveLength(12);
+    expect(bounded.faceToFace).toHaveLength(100);
     expect(bounded.faceToFace.every((line) => line.text.length <= 320)).toBe(true);
+    const balanced = createNpcPromotionConversationContext('npc', longMessages.slice(0, 80), Array.from({ length: 80 }, (_, index) => ({ id: `t-${index}`, threadId: 'terminal-thread-npc', senderId: 'npc', type: 'text' as const, text: `终端-${index}`, createdDay: 1, createdSlotId: 'noon' })));
+    expect(balanced.faceToFace).toHaveLength(50);
+    expect(balanced.terminal).toHaveLength(50);
   });
 });
