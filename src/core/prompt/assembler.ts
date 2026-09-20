@@ -1,6 +1,6 @@
 export type PromptRole = 'system' | 'user' | 'assistant';
 export interface PromptFacts { [key: string]: unknown }
-export interface PromptBlock { id: string; role: PromptRole; priority: number; order: number; build: (facts: PromptFacts) => string | null; truncate?: (text: string, maxTokens: number) => string; tasks?: string[] }
+export interface PromptBlock { id: string; role: PromptRole; priority: number; order: number; build: (facts: PromptFacts) => string | null; truncate?: (text: string, maxTokens: number) => string; tasks?: string[]; maxTokens?: number }
 export interface PromptBlockResult { id: string; role: PromptRole; text: string; estimatedTokens: number; truncated: boolean; dropped: boolean; skipped: boolean }
 export interface AssembledPrompt { messages: Array<{ role: PromptRole; content: string }>; blocks: PromptBlockResult[]; estimatedTokens: number; budget: number }
 
@@ -16,9 +16,11 @@ export class PromptAssembler {
       const built = block.build(facts);
       if (!built) { results.push({ id: block.id, role: block.role, text: '', estimatedTokens: 0, truncated: false, dropped: false, skipped: true }); continue; }
       const fullTokens = estimateTokens(built);
-      if (fullTokens <= remaining) { results.push({ id: block.id, role: block.role, text: built, estimatedTokens: fullTokens, truncated: false, dropped: false, skipped: false }); remaining -= fullTokens; continue; }
-      if (remaining <= 0) { results.push({ id: block.id, role: block.role, text: '', estimatedTokens: 0, truncated: false, dropped: true, skipped: false }); continue; }
-      const text = block.truncate ? block.truncate(built, remaining) : truncateApprox(built, remaining); const tokens = estimateTokens(text);
+      const available = Math.min(remaining, block.maxTokens ?? remaining);
+      if (fullTokens <= available) { results.push({ id: block.id, role: block.role, text: built, estimatedTokens: fullTokens, truncated: false, dropped: false, skipped: false }); remaining -= fullTokens; continue; }
+      if (available <= 0) { results.push({ id: block.id, role: block.role, text: '', estimatedTokens: 0, truncated: false, dropped: true, skipped: false }); continue; }
+      let text = block.truncate ? block.truncate(built, available) : truncateApprox(built, available); let tokens = estimateTokens(text);
+      if (tokens > available) { text = truncateApprox(text, available); tokens = estimateTokens(text); }
       results.push({ id: block.id, role: block.role, text, estimatedTokens: tokens, truncated: true, dropped: tokens === 0, skipped: false }); remaining -= tokens;
     }
     results.sort((a, b) => (this.blocks.get(a.id)?.order ?? 0) - (this.blocks.get(b.id)?.order ?? 0));

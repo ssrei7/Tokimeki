@@ -32,7 +32,7 @@
 - Content IndexedDB：v12。
 - Assets IndexedDB：v3。
 - 角色包 schema：v1；世界包 schema：v1；预设包 schema：v2。
-- 最近一次完整验证：81 个测试文件、538 项测试通过；`npm run build` 与 `git diff --check` 通过。
+- 最近一次完整验证：82 个测试文件、544 项测试通过；`npm run build` 与 `git diff --check` 通过。
 - 当前已知构建提示：主 JavaScript 包约 1.28 MB，Vite 会提示超过 500 kB。它是非阻塞性能项，后续可通过页面级动态导入处理。
 - 阶段 10 最后的功能修复为：身份头像设置只在“设置 → 身份”挂载，不再出现在“设置 → 向量”。
 
@@ -157,8 +157,8 @@ AI 制作流程应为：
 14. **已完成成本/结果子切片**：活动可声明通用 stats/物品成本和成功/失败文案；成本先聚合检查，再与效果原子提交，不消耗时间或行动点。
 15. **已完成安全子集**：自动活动已扩展到携带确定性世界上下文的 `onTimeAdvance` / `onDaySettle`；不修改核心 payload，也不接入会递归或只服务 prompt 的钩子。
 16. **已完成事件子切片**：启用包的事件定义按来源同步到当前世界；同包 `trigger-event` 按钮可显式触发，事件本体和 choice 只组合能力目录公开的原子安全 ops，不进入导演随机池、不调用 API。
-17. **下一步**：开放有预算的包内 prompt block 注册；不要同时开放 Provider 动作。
-18. 再开放用户显式 Provider 动作。
+17. **已完成**：开放有预算的包内 prompt block 注册；仅接入现有 PromptAssembler 的 `narrate_main` / `topic_tree`，不增加 API 次数，也未开放 Provider 动作。
+18. **下一步**：开放用户显式 Provider 动作。
 19. 完成包更新、版本依赖、卸载保护、全局备份和完整性审计。
 20. 用官方示例验证 Agent 制作、安装、更新与分享全流程。
 

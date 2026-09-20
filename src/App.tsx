@@ -79,6 +79,7 @@ import { getSoftGoals } from './features/life';
 import { canAffordEnergy, energyCostForAction, getEnergyState, movementEnergyKind, registerEnergyOps } from './features/energy';
 import { registerWorkshopActivityHooks, runWorkshopActivity, workshopActivityResultMessage } from './features/workshop-activity';
 import { runWorkshopEvent, runWorkshopEventChoice, syncWorkshopEventDefinitions, workshopPackageIdFromEvent } from './features/workshop-event';
+import { registerWorkshopPromptBlocks } from './features/workshop-prompt';
 import type { WorkshopPackageRecord } from './data/workshop';
 import { AlertTriangle, ArrowLeft, Backpack, BookOpen, Bot, BrainCircuit, Bug, CalendarDays, Camera, Check, ChevronDown, ChevronUp, ContactRound, Download, FileArchive, Gift, History, House, Image as ImageIcon, LogOut, MessageCircle, Milestone, Music2, NotebookPen, Palette, Phone, PhoneIncoming, PhoneOff, Plus, ReceiptText, RefreshCw, Reply, Route, RotateCcw, Send, ShieldCheck, SlidersHorizontal, Smile, Sparkles, Target, UserRound, UsersRound, BriefcaseBusiness, Wrench, X } from 'lucide-react';
 import { DesktopLauncher, EmptyState, SubpageShell, type DesktopEntry } from './components/desktop-shell';
@@ -689,6 +690,8 @@ export function App() {
     for (const block of TOPIC_TREE_PROMPT_BLOCKS) instance.register(block);
     return instance;
   }, [opRegistry]);
+
+  useEffect(() => registerWorkshopPromptBlocks(assembler, enabledWorkshopPackages), [assembler, enabledWorkshopPackages]);
 
   useEffect(() => promptEvents.subscribe('onDaySettle', ({ day }) => {
     if (!pendingDiaryDaysRef.current.includes(day)) pendingDiaryDaysRef.current.push(day);

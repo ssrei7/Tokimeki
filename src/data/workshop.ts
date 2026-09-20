@@ -13,6 +13,7 @@ export const WORKSHOP_TEXT_TASKS = [
   'extract_ops', 'summarize_memory', 'summarize_day', 'summarize_chapter',
 ] as const;
 const WorkshopTextTaskSchema = z.enum(WORKSHOP_TEXT_TASKS);
+export const WORKSHOP_PROMPT_TASKS = ['narrate_main', 'topic_tree'] as const;
 
 export const WORKSHOP_ALLOWED_OPS = [
   'add_stat', 'set_stat', 'set_flag', 'give_item', 'take_item', 'add_memory', 'add_node_memory',
@@ -409,7 +410,10 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
   if (promptTokenTotal > 4096) addIssue('error', 'prompt-budget-exceeded', `Prompt block 总预算 ${promptTokenTotal} 超过 4096。`, 'prompts.blocks');
   if (pack.prompts?.blocks.length) {
     const tasks = new Set(pack.prompts.blocks.flatMap((block) => block.tasks));
-    tasks.forEach((task) => required.add(permissionLabel('prompt.register', task)));
+    tasks.forEach((task) => {
+      required.add(permissionLabel('prompt.register', task));
+      if (!WORKSHOP_PROMPT_TASKS.includes(task as typeof WORKSHOP_PROMPT_TASKS[number])) addIssue('error', 'unsupported-prompt-task', `当前运行时尚未开放 Prompt 任务：${task}`, 'prompts.blocks');
+    });
   }
 
   const declared = new Set<string>();
@@ -422,7 +426,7 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
   for (const permission of required) if (!declared.has(permission)) addIssue('error', 'permission-missing', `缺少权限声明：${permission}`, 'manifest.permissions');
   for (const permission of declared) if (!required.has(permission)) addIssue('warning', 'permission-unused', `声明了当前包未使用的权限：${permission}`, 'manifest.permissions');
   if (promptTokenTotal > declaredPromptBudget) addIssue('error', 'prompt-permission-budget', `Prompt 实际预算 ${promptTokenTotal} 超过权限声明预算 ${declaredPromptBudget}。`, 'manifest.permissions');
-  if (required.size) addIssue('info', 'runtime-boundary', '受限页面可运行包内导航、本地 App 状态、已授权的世界事实读取、白名单活动，以及用户显式触发的包内声明式事件；Prompt、Provider 和其他直接 op 仍不运行。');
+  if (required.size) addIssue('info', 'runtime-boundary', '受限页面可运行包内导航、本地 App 状态、已授权的世界事实读取、白名单活动、用户显式触发的包内声明式事件，以及 narrate_main/topic_tree 的有预算 Prompt block；Provider 动作和其他直接 op 仍不运行。');
 
   return { canInstall: !issues.some((issue) => issue.severity === 'error'), issues, requiredPermissions: [...required].sort() };
 }

@@ -9,11 +9,12 @@ import {
   WORKSHOP_BINDING_FORMATS,
   WORKSHOP_COMPONENT_KINDS,
   WORKSHOP_EVENT_EFFECT_OPS,
+  WORKSHOP_PROMPT_TASKS,
   WORKSHOP_TEXT_TASKS,
   WORKSHOP_WORLD_READ_RESOURCES,
 } from './workshop';
 
-export const WORKSHOP_CAPABILITY_CATALOG_VERSION = 5;
+export const WORKSHOP_CAPABILITY_CATALOG_VERSION = 6;
 
 export const WorkshopCapabilityCatalogSchema = z.object({
   catalogVersion: z.literal(WORKSHOP_CAPABILITY_CATALOG_VERSION),
@@ -54,6 +55,17 @@ export const WorkshopCapabilityCatalogSchema = z.object({
     automaticDirectorWeight: z.literal(false),
     promptNarration: z.literal(false),
     effectOps: z.array(z.string()),
+    requirement: z.string(),
+  }).strict(),
+  prompts: z.object({
+    enabled: z.boolean(),
+    tasks: z.array(z.string()),
+    roles: z.array(z.string()),
+    maxBlockTokens: z.number().int().positive(),
+    maxPackageTokens: z.number().int().positive(),
+    conditional: z.boolean(),
+    templates: z.boolean(),
+    additionalApiCalls: z.boolean(),
     requirement: z.string(),
   }).strict(),
   declaredOnly: z.object({
@@ -118,7 +130,18 @@ const CATALOG: WorkshopCapabilityCatalog = WorkshopCapabilityCatalogSchema.parse
     effectOps: [...WORKSHOP_EVENT_EFFECT_OPS],
     requirement: '启用包时把通过引用检查的事件定义同步到当前世界；weight 固定为 0，不进入导演随机池。用户按钮只能显式触发同包事件，事件和 choice 的 ops 在副本上完整通过正式 op 校验后原子提交。纯 prompt 事件暂不运行。',
   },
-  declaredOnly: { events: false, prompts: true, providerText: true, providerTextTasks: [...WORKSHOP_TEXT_TASKS] },
+  prompts: {
+    enabled: true,
+    tasks: [...WORKSHOP_PROMPT_TASKS],
+    roles: ['system', 'user'],
+    maxBlockTokens: 1024,
+    maxPackageTokens: 4096,
+    conditional: true,
+    templates: false,
+    additionalApiCalls: false,
+    requirement: '每个 block 和每个任务都必须声明 prompt.register；静态文本先受单块预算限制，再参与现有全局上下文预算。when 只能读取已授权的安全条件作用域。',
+  },
+  declaredOnly: { events: false, prompts: false, providerText: true, providerTextTasks: [...WORKSHOP_TEXT_TASKS] },
   assets: { acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'], agentMayCreateBinary: false, note: '可保留当前工程已有 assetMeta 和引用；Agent 不能虚构或生成二进制载荷。' },
   prohibited: ['javascript', 'typescript', 'react', 'html', 'css', 'eval', 'script-url', 'base64', 'arbitrary-network'],
 });

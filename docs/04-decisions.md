@@ -759,3 +759,9 @@
 **决定**：当前世界启用工坊包后，把通过完整包校验和当前世界引用检查的 `events.json` 定义同步进 `world.eventDefs`，并用包 ID 标记来源。包内 `trigger-event` 按钮只有在事件属于同包且逐项声明 `event.install` / `event.trigger` 时可用。触发继续复用正式事件条件、地点、时段、在场角色、关系阶段、once、cooldown、历史与 choice 机制；事件本体和 choice 的每个结果 op 还必须具有 `op.submit` 权限，并在世界副本上完整成功后才原子写回。
 
 **生命周期与调用边界**：工坊事件安装副本固定 `weight: 0`，不进入导演随机池；本切片只允许用户显式按钮触发。停用包会移除其事件定义和待触发排程，但保留已经形成的事件历史与其他已提交世界事实。事件 ID 与世界原有事件或其他启用包冲突时不覆盖；断裂地点、时段、角色、关系阶段或证物引用不安装。事件效果只开放能力目录列出的原子安全 op；`advance_time`、`move_player`、`move_npc`、`queue_event` 和内部 `run_workshop_activity` 不开放，避免在候选事务完成前广播钩子或留下跨事件排程。纯 prompt 事件不调用 Provider，并明确拒绝到后续 Prompt 切片。整个流程纯本地、零 API；不修改事件核心循环，不升级包 schema/runtime、SaveFile v41 或 Content IndexedDB v12。能力目录升级到 v5。
+
+## D140 工坊 Prompt block 只进入已有生成请求并受双层预算
+
+**决定**：已启用包的 `prompts.json` 通过正式 PromptAssembler 注册，运行时 ID 固定命名空间为 `workshop:<packageId>:<blockId>`，不能覆盖内置块或其他包。当前只开放确实经过该组装器的 `narrate_main` 与 `topic_tree`；旧 v1 数据结构仍可读取，但声明其他任务会在完整包校验中得到明确错误，避免安装数据静默丢失。每次注册都会重新执行记录 schema、完整权限、引用、条件与包预算校验。
+
+**条件、预算与调用边界**：block 文本为静态字符串，不执行模板替换。`when` 只接收日期、时段、地点、世界/玩家 stats 与 flags，以及关系阶段/轴的安全副本；异常或缺失事实只跳过该块。单块文本在进入全局 PromptAssembler 预算前先限制到自身 `tokenBudget`，同包预算总和不得超过 4096 或 manifest 声明的 `prompt.register.maxTokens` 合计。注册、停用和本地查看均为零 API；块只随用户原本触发的叙事或话题树请求进入同一次 Provider 调用，不改变 Provider、端点、输出 token、请求次数或世界状态。停用包立即注销。Provider 用户按钮仍留给下一切片。包 schema/runtime 保持 v1，SaveFile 保持 v41，Content IndexedDB 保持 v12；能力目录升级到 v6。

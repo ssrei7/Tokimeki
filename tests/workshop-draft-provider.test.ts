@@ -99,13 +99,23 @@ describe('workshop draft provider', () => {
     const first = queryWorkshopCapabilityCatalog();
     first.ui.components.pop();
     const second = queryWorkshopCapabilityCatalog();
-    expect(second.catalogVersion).toBe(5);
+    expect(second.catalogVersion).toBe(6);
     expect(second.ui.components).toContain('confirm');
     expect(second.ui.bindings).toMatchObject({ sources: ['local', 'world'], formats: ['auto', 'text', 'number', 'boolean', 'json'], maxPathDepth: 8 });
     expect(second.ui.bindings.targets).toContain('progress.value');
     expect(JSON.parse(second.ui.bindings.syntax.world)).toMatchObject({ source: 'world', resource: 'player.stats', path: ['energy'] });
     expect(second.worldRead.resources).toContain('player.inventory');
-    expect(second.declaredOnly).toMatchObject({ events: false, prompts: true, providerText: true });
+    expect(second.prompts).toMatchObject({
+      enabled: true,
+      tasks: ['narrate_main', 'topic_tree'],
+      roles: ['system', 'user'],
+      maxBlockTokens: 1024,
+      maxPackageTokens: 4096,
+      conditional: true,
+      templates: false,
+      additionalApiCalls: false,
+    });
+    expect(second.declaredOnly).toMatchObject({ events: false, prompts: false, providerText: true });
     expect(second.assets.agentMayCreateBinary).toBe(false);
     expect(WorkshopComponentSchema.options.map((schema) => schema.shape.kind.value)).toEqual(second.ui.components);
     expect(WorkshopActionSchema.options.map((schema) => schema.shape.type.value).sort()).toEqual([

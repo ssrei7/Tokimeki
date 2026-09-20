@@ -88,7 +88,7 @@ patch 只允许 `add`、`replace`、`remove`，单次最多 100 项；路径必�
   "capabilityQuery": {
     "name": "capabilities.list",
     "result": {
-      "catalogVersion": 5,
+      "catalogVersion": 6,
       "packageVersion": 1,
       "runtimeVersion": 1,
       "ui": { "components": [], "bindings": {}, "actions": {} },
@@ -228,7 +228,9 @@ AI 草稿通道进一步收窄：只接受无资产的 manifest / app / 空 rule
 
 `manual` 只由用户按钮显式触发；`onEnterNode` 在玩家到场后触发；`onTimeAdvance` 使用事件给出的结算前日期、目标时段与当前位置；`onDaySettle` 使用正在结算的日期和当前时段/地点。自动活动均为纯本地执行，并在成功后统一发出 `onOpsApply` 变更通知。当前不开放 `onDayStart`、`onEncounter` 或 `onDialogueEnd`，因为其 payload 没有确定性活动所需的世界上下文；不开放 `onOpsApply` 活动以避免递归，也不把 `beforePromptAssemble` 用作状态写入钩子。
 
-`events.json` 复用当前 EventDef schema。启用包时，运行时会检查地点、时段、角色、关系阶段、证物引用和事件 ID 冲突，再把事件以包来源标记同步到当前世界；工坊副本的 `weight` 固定为 0，不进入导演随机池。页面的 `trigger-event` 只能引用同包事件，并同时具备对应 `event.install` 与 `event.trigger` 权限。事件仍服从当前地点/时段、角色在场、关系阶段、条件、once 与 cooldown；事件本体和 choice 的 ops 必须来自能力目录公开的原子安全白名单、逐项声明 `op.submit`，并在隔离世界副本上全部成功后才连同历史原子写回。会在执行中广播其他流程钩子的 `advance_time`、`move_player`、`move_npc`，跨事件排程 `queue_event`，以及内部 `run_workshop_activity` 均不开放。停用包会移除其事件定义与待触发排程，不回滚已提交事实或删除历史。纯 prompt 事件不会暗中调用 API，当前明确拒绝执行。`prompts.json` 的单块预算上限为 1024，总预算上限为 4096，但尚不注册。
+`events.json` 复用当前 EventDef schema。启用包时，运行时会检查地点、时段、角色、关系阶段、证物引用和事件 ID 冲突，再把事件以包来源标记同步到当前世界；工坊副本的 `weight` 固定为 0，不进入导演随机池。页面的 `trigger-event` 只能引用同包事件，并同时具备对应 `event.install` 与 `event.trigger` 权限。事件仍服从当前地点/时段、角色在场、关系阶段、条件、once 与 cooldown；事件本体和 choice 的 ops 必须来自能力目录公开的原子安全白名单、逐项声明 `op.submit`，并在隔离世界副本上全部成功后才连同历史原子写回。会在执行中广播其他流程钩子的 `advance_time`、`move_player`、`move_npc`，跨事件排程 `queue_event`，以及内部 `run_workshop_activity` 均不开放。停用包会移除其事件定义与待触发排程，不回滚已提交事实或删除历史。纯 prompt 事件不会暗中调用 API，当前明确拒绝执行。
+
+`prompts.json` 当前只注册到已经经过统一 PromptAssembler 的 `narrate_main` 与 `topic_tree`。每个 block 必须逐项声明 `prompt.register:<task>`；单块 `tokenBudget` 上限为 1024，同包所有块的声明预算总和上限为 4096，并且不能超过 manifest 中 `prompt.register.maxTokens` 的合计。包块 ID 在运行时转换为 `workshop:<packageId>:<blockId>`，不会覆盖内置块或其他包。静态 `text` 不执行模板替换；`when` 只可读取 `day`、`slotId`、`nodeId`、世界/玩家 stats 与 flags，以及关系的 `stageId` / `axes`，对应世界事实必须另行声明 `world.read`。条件异常时跳过该块。文本先按自身预算本地裁剪，再进入现有全局上下文预算；只有用户原本触发叙事或话题树生成时才随同一次请求发送，启用、停用、浏览包或查看已有内容都不会调用 API。停用包会立即注销这些块。Provider 按钮仍未开放。
 
 ## 4. 权限
 
