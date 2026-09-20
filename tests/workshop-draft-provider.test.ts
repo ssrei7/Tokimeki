@@ -81,7 +81,8 @@ describe('workshop draft provider', () => {
     expect(messages[0]!.content).toContain('project.replace');
     expect(payload.history).toHaveLength(2);
     expect(payload.capabilityQuery.name).toBe('capabilities.list');
-    expect(payload.capabilityQuery.result.activities).toMatchObject({ hooks: ['manual', 'onEnterNode'], effectOps: ['add_stat', 'set_flag', 'give_item', 'take_item'] });
+    expect(payload.capabilityQuery.result.activities).toMatchObject({ hooks: ['manual', 'onEnterNode'], costKinds: ['stat', 'item'], effectOps: ['add_stat', 'set_flag', 'give_item', 'take_item'], resultMessages: true });
+    expect(JSON.parse(payload.capabilityQuery.result.activities.costSyntax.stat)).toMatchObject({ kind: 'stat', target: 'player', key: 'energy' });
     expect(payload.capabilityQuery.result.ui.actions.disabled).toEqual(['trigger-event', 'provider-text']);
     expect(payload.inspectionQuery.name).toBe('project.inspect');
     expect(payload.inspectionQuery.result.diagnostics[0].code).toBe('permission-missing');
@@ -95,7 +96,7 @@ describe('workshop draft provider', () => {
     const first = queryWorkshopCapabilityCatalog();
     first.ui.components.pop();
     const second = queryWorkshopCapabilityCatalog();
-    expect(second.catalogVersion).toBe(2);
+    expect(second.catalogVersion).toBe(3);
     expect(second.ui.components).toContain('confirm');
     expect(second.ui.bindings).toMatchObject({ sources: ['local', 'world'], formats: ['auto', 'text', 'number', 'boolean', 'json'], maxPathDepth: 8 });
     expect(second.ui.bindings.targets).toContain('progress.value');

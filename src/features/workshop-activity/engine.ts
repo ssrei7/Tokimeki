@@ -3,7 +3,7 @@ import { evaluateCondition, type ConditionScope } from '../../core/expr';
 import { createDefaultOpRegistry } from '../../core/ops';
 import { OpRegistry } from '../../core/ops/registry';
 import type { ApplyOpsResult, Change, OpContext, OpResult } from '../../core/ops/types';
-import type { WorkshopPackage, WorkshopPackageRecord, WorkshopRule } from '../../data/workshop';
+import type { WorkshopActivityCost, WorkshopPackage, WorkshopPackageRecord, WorkshopRule } from '../../data/workshop';
 import { validateWorkshopPackage, WORKSHOP_ACTIVITY_EFFECT_OPS } from '../../data/workshop';
 
 const RunWorkshopActivitySchema = z.object({
@@ -33,6 +33,16 @@ export function runWorkshopActivity(record: WorkshopPackageRecord, ruleId: strin
   return registry.applyAll([{ op: 'run_workshop_activity', packageId: record.id, ruleId, source }], context, 1);
 }
 
+export function workshopActivityResultMessage(record: WorkshopPackageRecord, ruleId: string, result: ApplyOpsResult): string {
+  const rule = record.package.rules.rules.find((candidate) => candidate.id === ruleId);
+  if (result.applied === 1) {
+    const base = rule?.result?.success ?? '活动已由确定性内核完成。';
+    return result.warnings.length ? `${base} 校验提示：${result.warnings.join(' ')}` : base;
+  }
+  const reason = result.rejected[0]?.reason ?? result.warnings[0] ?? '活动未能执行。';
+  return rule?.result?.failure ? `${rule.result.failure} 原因：${reason}` : reason;
+}
+
 function applyActivity(pack: WorkshopPackage | undefined, payload: z.infer<typeof RunWorkshopActivitySchema>, context: OpContext): OpResult {
   if (!pack || pack.manifest.id !== payload.packageId) return rejected('活动包未安装或未为当前世界启用。');
   const report = validateWorkshopPackage(pack);
@@ -55,16 +65,56 @@ function applyActivity(pack: WorkshopPackage | undefined, payload: z.infer<typeo
   });
   if (effects.some((effect) => effect === undefined)) return rejected('活动规则包含未开放的效果。');
 
+  const costError = validateActivityCosts(rule.costs, context);
+  if (costError) return rejected(costError);
+  const costs = rule.costs.map((cost) => activityCostOp(cost));
+
   const workingWorld = structuredClone(context.world);
   const effectRegistry = createDefaultOpRegistry();
-  const applied = effectRegistry.applyAll(effects, { ...context, world: workingWorld, events: undefined }, effects.length);
-  if (applied.applied !== effects.length || applied.rejected.length || applied.truncated) {
+  const operations = [...costs, ...effects];
+  const applied = effectRegistry.applyAll(operations, { ...context, world: workingWorld, events: undefined }, operations.length);
+  if (applied.applied !== operations.length || applied.rejected.length || applied.truncated) {
     return rejected(applied.rejected[0]?.reason ?? applied.warnings[0] ?? '活动效果未能完整应用。');
   }
 
   const stateChanges = recordActivityState(workingWorld.stats, workingWorld.flags, state, rule, context.day);
   replaceWorld(context.world, workingWorld);
   return { ok: true, changes: [...applied.changes, ...stateChanges], ...(applied.warnings.length ? { warning: applied.warnings.join(' ') } : {}) };
+}
+
+function activityCostOp(cost: WorkshopActivityCost): Record<string, unknown> {
+  return cost.kind === 'stat'
+    ? { op: 'add_stat', target: cost.target, key: cost.key, delta: -cost.amount }
+    : { op: 'take_item', id: cost.id, count: cost.count };
+}
+
+function validateActivityCosts(costs: readonly WorkshopActivityCost[], context: OpContext): string | undefined {
+  const statCosts = new Map<string, { target: 'player' | 'world'; key: string; amount: number; minimumAfter: number }>();
+  const itemCosts = new Map<string, number>();
+  for (const cost of costs) {
+    if (cost.kind === 'item') {
+      itemCosts.set(cost.id, (itemCosts.get(cost.id) ?? 0) + cost.count);
+      continue;
+    }
+    const id = `${cost.target}:${cost.key}`;
+    const current = statCosts.get(id);
+    statCosts.set(id, {
+      target: cost.target,
+      key: cost.key,
+      amount: (current?.amount ?? 0) + cost.amount,
+      minimumAfter: Math.max(current?.minimumAfter ?? Number.NEGATIVE_INFINITY, cost.minimumAfter),
+    });
+  }
+  for (const cost of statCosts.values()) {
+    const stats = cost.target === 'player' ? context.world.player.stats : context.world.stats;
+    const before = stats[cost.key] ?? 0;
+    if (before - cost.amount < cost.minimumAfter) return `活动成本不足：${cost.target}.stats.${cost.key} 需要 ${cost.amount}，扣除后不得低于 ${cost.minimumAfter}。`;
+  }
+  for (const [itemId, count] of itemCosts) {
+    const owned = context.world.player.inventory.find((item) => item.itemId === itemId)?.count ?? 0;
+    if (owned < count) return `活动成本不足：物品 ${context.world.items[itemId]?.name ?? itemId} 需要 ${count}，当前只有 ${owned}。`;
+  }
+  return undefined;
 }
 
 function matchesRule(rule: WorkshopRule, context: OpContext): boolean {

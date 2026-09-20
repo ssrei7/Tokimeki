@@ -115,6 +115,25 @@ describe('workshop package protocol', () => {
     expect(validateWorkshopPackage(unsafe).issues).toContainEqual(expect.objectContaining({ code: 'unsupported-activity-op', severity: 'error' }));
   });
 
+  it('derives cost op permissions and accepts generic activity result messages', () => {
+    const pack = WorkshopPackageSchema.parse({
+      ...minimalPackage(),
+      manifest: { ...minimalPackage().manifest, permissions: [{ capability: 'op.submit', resources: ['run_workshop_activity', 'give_item'] }] },
+      app: { entryPageId: 'home', pages: [{ id: 'home', title: '首页', components: [{ kind: 'button', label: '制作', action: { type: 'submit-op', op: 'run_workshop_activity', payload: { ruleId: 'craft' } } }] }] },
+      rules: { rules: [{
+        id: 'craft', hook: 'manual',
+        costs: [{ kind: 'stat', target: 'player', key: 'energy', amount: 2 }, { kind: 'item', id: 'wood', count: 1 }],
+        actions: [{ type: 'submit-op', op: 'give_item', payload: { id: 'chair', count: 1 } }],
+        result: { success: '制作完成。', failure: '材料不足。' },
+      }] },
+    });
+    const report = validateWorkshopPackage(pack);
+    expect(report.requiredPermissions).toEqual(expect.arrayContaining(['op.submit:add_stat', 'op.submit:take_item']));
+    expect(report.issues.filter((issue) => issue.code === 'permission-missing')).toHaveLength(2);
+    const declared = WorkshopPackageSchema.parse({ ...pack, manifest: { ...pack.manifest, permissions: [{ capability: 'op.submit', resources: ['run_workshop_activity', 'add_stat', 'take_item', 'give_item'] }] } });
+    expect(validateWorkshopPackage(declared).canInstall).toBe(true);
+  });
+
   it('keeps world bindings deterministic and isolated by save id', () => {
     expect(workshopBindingId('world-a', 'sample.activity')).toBe('world-a:sample.activity');
     expect(workshopBindingId('world-b', 'sample.activity')).not.toBe(workshopBindingId('world-a', 'sample.activity'));

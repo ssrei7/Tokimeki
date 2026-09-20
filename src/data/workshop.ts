@@ -24,6 +24,7 @@ export const WORKSHOP_ALLOWED_OPS = [
 export const WORKSHOP_ACTIVITY_EFFECT_OPS = ['add_stat', 'set_flag', 'give_item', 'take_item'] as const;
 export const WORKSHOP_ACTIVITY_HOOKS = ['manual', 'onEnterNode'] as const;
 export const WorkshopActivityHookSchema = z.enum(WORKSHOP_ACTIVITY_HOOKS);
+export const WORKSHOP_ACTIVITY_COST_KINDS = ['stat', 'item'] as const;
 
 export const WorkshopOpNameSchema = z.enum(WORKSHOP_ALLOWED_OPS);
 export const WORKSHOP_WORLD_READ_RESOURCES = [
@@ -126,7 +127,12 @@ export const WorkshopRulesSchema = z.object({
     id: IdSchema,
     hook: WorkshopActivityHookSchema.default('manual'),
     when: z.string().min(1).max(1000).optional(),
+    costs: z.array(z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('stat'), target: z.enum(['player', 'world']), key: z.string().min(1).max(120), amount: z.number().positive().max(10), minimumAfter: z.number().finite().default(0) }).strict(),
+      z.object({ kind: z.literal('item'), id: IdSchema, count: z.number().int().positive().max(99) }).strict(),
+    ])).max(16).default([]),
     actions: z.array(WorkshopActionSchema).min(1).max(32),
+    result: z.object({ success: z.string().min(1).max(500), failure: z.string().min(1).max(500).optional() }).strict().optional(),
     once: z.boolean().optional(),
     cooldownDays: z.number().int().nonnegative().max(100_000).optional(),
   }).strict()).max(200),
@@ -197,6 +203,7 @@ export type WorkshopPermission = z.infer<typeof WorkshopPermissionSchema>;
 export type WorkshopAction = z.infer<typeof WorkshopActionSchema>;
 export type WorkshopActivityHook = z.infer<typeof WorkshopActivityHookSchema>;
 export type WorkshopRule = z.infer<typeof WorkshopRulesSchema>['rules'][number];
+export type WorkshopActivityCost = WorkshopRule['costs'][number];
 export type WorkshopComponent = z.infer<typeof WorkshopComponentSchema>;
 export type WorkshopPackage = z.infer<typeof WorkshopPackageSchema>;
 export type WorkshopPackageRecord = z.infer<typeof WorkshopPackageRecordSchema>;
@@ -365,6 +372,7 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
 
   pack.rules.rules.forEach((rule, ruleIndex) => {
     required.add(permissionLabel('op.submit', 'run_workshop_activity'));
+    rule.costs.forEach((cost) => required.add(permissionLabel('op.submit', cost.kind === 'stat' ? 'add_stat' : 'take_item')));
     rule.actions.forEach((action, actionIndex) => {
       const path = `rules.rules[${ruleIndex}].actions[${actionIndex}]`;
       if (action.type !== 'submit-op') addIssue('error', 'unsupported-activity-action', '活动规则只能组合已开放的确定性 op。', path);

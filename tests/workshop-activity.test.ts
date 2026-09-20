@@ -2,12 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { EventBus } from '../src/core/events/bus';
 import { WorkshopPackageRecordSchema, type WorkshopPackageRecord } from '../src/data/workshop';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
-import { registerWorkshopActivityHooks, runWorkshopActivity } from '../src/features/workshop-activity';
+import { registerWorkshopActivityHooks, runWorkshopActivity, workshopActivityResultMessage } from '../src/features/workshop-activity';
 
-function activityRecord(options: { hook?: 'manual' | 'onEnterNode'; when?: string; once?: boolean; cooldownDays?: number; actions?: Array<{ type: 'submit-op'; op: 'add_stat' | 'set_flag' | 'give_item' | 'take_item'; payload: Record<string, unknown> }> } = {}): WorkshopPackageRecord {
+function activityRecord(options: { hook?: 'manual' | 'onEnterNode'; when?: string; once?: boolean; cooldownDays?: number; costs?: Array<{ kind: 'stat'; target: 'player' | 'world'; key: string; amount: number; minimumAfter?: number } | { kind: 'item'; id: string; count: number }>; result?: { success: string; failure?: string }; actions?: Array<{ type: 'submit-op'; op: 'add_stat' | 'set_flag' | 'give_item' | 'take_item'; payload: Record<string, unknown> }> } = {}): WorkshopPackageRecord {
   const hook = options.hook ?? 'manual';
   const actions = options.actions ?? [{ type: 'submit-op' as const, op: 'add_stat' as const, payload: { target: 'player', key: 'fishing.skill', delta: 2 } }];
-  const effectOps = [...new Set(actions.map((action) => action.op))];
+  const effectOps = [...new Set([...actions.map((action) => action.op), ...(options.costs ?? []).map((cost) => cost.kind === 'stat' ? 'add_stat' as const : 'take_item' as const)])];
   return WorkshopPackageRecordSchema.parse({
     id: 'activity.fishing',
     package: {
@@ -18,7 +18,7 @@ function activityRecord(options: { hook?: 'manual' | 'onEnterNode'; when?: strin
       app: {
         entryPageId: 'home', pages: [{ id: 'home', title: '钓鱼', components: hook === 'manual' ? [{ kind: 'button', label: '开始钓鱼', action: { type: 'submit-op', op: 'run_workshop_activity', payload: { ruleId: 'fish' } } }] : [{ kind: 'text', text: '到达时自动检查。' }] }],
       },
-      rules: { rules: [{ id: 'fish', hook, ...(options.when ? { when: options.when } : {}), actions, ...(options.once ? { once: true } : {}), ...(options.cooldownDays !== undefined ? { cooldownDays: options.cooldownDays } : {}) }] },
+      rules: { rules: [{ id: 'fish', hook, ...(options.when ? { when: options.when } : {}), ...(options.costs ? { costs: options.costs } : {}), actions, ...(options.result ? { result: options.result } : {}), ...(options.once ? { once: true } : {}), ...(options.cooldownDays !== undefined ? { cooldownDays: options.cooldownDays } : {}) }] },
     },
     assetBindings: {}, installedAt: '2026-09-20T00:00:00.000Z', updatedAt: '2026-09-20T00:00:00.000Z',
   });
@@ -57,6 +57,60 @@ describe('workshop deterministic activities', () => {
     expect(applied.applied).toBe(0);
     expect(save.world.player.stats['fishing.skill']).toBeUndefined();
     expect(save.world.player.inventory).toHaveLength(0);
+  });
+
+  it('checks aggregated stat and item costs before applying costs and rewards atomically', () => {
+    const record = activityRecord({
+      costs: [
+        { kind: 'stat', target: 'player', key: 'energy', amount: 2, minimumAfter: 0 },
+        { kind: 'item', id: 'bait', count: 1 },
+      ],
+      result: { success: '钓鱼完成，结果已经结算。', failure: '这次无法开始钓鱼。' },
+      actions: [{ type: 'submit-op', op: 'give_item', payload: { id: 'fish', count: 1 } }],
+    });
+    const { save, context } = setup(record);
+    save.world.player.stats.energy = 5;
+    save.world.player.inventory.push({ itemId: 'bait', count: 2 });
+    const applied = runWorkshopActivity(record, 'fish', 'manual', context);
+    expect(applied.applied).toBe(1);
+    expect(save.world.player.stats.energy).toBe(3);
+    expect(save.world.player.inventory).toEqual(expect.arrayContaining([
+      expect.objectContaining({ itemId: 'bait', count: 1 }),
+      expect.objectContaining({ itemId: 'fish', count: 1 }),
+    ]));
+    expect(workshopActivityResultMessage(record, 'fish', applied)).toBe('钓鱼完成，结果已经结算。');
+  });
+
+  it('rejects insufficient aggregated costs without consuming any resource or granting rewards', () => {
+    const record = activityRecord({
+      costs: [
+        { kind: 'stat', target: 'player', key: 'energy', amount: 2, minimumAfter: 0 },
+        { kind: 'stat', target: 'player', key: 'energy', amount: 2, minimumAfter: 0 },
+        { kind: 'item', id: 'bait', count: 2 },
+      ],
+      result: { success: '完成', failure: '资源不足' },
+      actions: [{ type: 'submit-op', op: 'give_item', payload: { id: 'fish', count: 1 } }],
+    });
+    const { save, context } = setup(record);
+    save.world.player.stats.energy = 3;
+    save.world.player.inventory.push({ itemId: 'bait', count: 2 });
+    const rejected = runWorkshopActivity(record, 'fish', 'manual', context);
+    expect(rejected.applied).toBe(0);
+    expect(save.world.player.stats.energy).toBe(3);
+    expect(save.world.player.inventory).toEqual([{ itemId: 'bait', count: 2 }]);
+    expect(workshopActivityResultMessage(record, 'fish', rejected)).toContain('资源不足 原因：活动成本不足');
+  });
+
+  it('rolls back valid costs when a later deterministic effect is rejected', () => {
+    const record = activityRecord({
+      costs: [{ kind: 'item', id: 'bait', count: 1 }],
+      actions: [{ type: 'submit-op', op: 'give_item', payload: { id: 'unknown-reward', count: 1 } }],
+    });
+    const { save, context } = setup(record);
+    save.world.player.inventory.push({ itemId: 'bait', count: 1 });
+    const rejected = runWorkshopActivity(record, 'fish', 'manual', context);
+    expect(rejected.applied).toBe(0);
+    expect(save.world.player.inventory).toEqual([{ itemId: 'bait', count: 1 }]);
   });
 
   it('runs enabled onEnterNode rules locally and reports their deterministic changes through onOpsApply', () => {

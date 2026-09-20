@@ -77,7 +77,7 @@ import { findMatchingHooks, syncLeadHooks, triggerHook } from './core/world/hook
 import { createEconomyOpRegistry, formatCurrency, getHousingTier, getHousingUpgradeOffer, getJobQuote, getJobShiftStatus, getRentalQuote, getShopOffer, getShopStatus, injectEconomyMorningAds, registerEconomyHooks } from './features/economy';
 import { getSoftGoals } from './features/life';
 import { canAffordEnergy, energyCostForAction, getEnergyState, movementEnergyKind, registerEnergyOps } from './features/energy';
-import { registerWorkshopActivityHooks, runWorkshopActivity } from './features/workshop-activity';
+import { registerWorkshopActivityHooks, runWorkshopActivity, workshopActivityResultMessage } from './features/workshop-activity';
 import { AlertTriangle, ArrowLeft, Backpack, BookOpen, Bot, BrainCircuit, Bug, CalendarDays, Camera, Check, ChevronDown, ChevronUp, ContactRound, Download, FileArchive, Gift, History, House, Image as ImageIcon, LogOut, MessageCircle, Milestone, Music2, NotebookPen, Palette, Phone, PhoneIncoming, PhoneOff, Plus, ReceiptText, RefreshCw, Reply, Route, RotateCcw, Send, ShieldCheck, SlidersHorizontal, Smile, Sparkles, Target, UserRound, UsersRound, BriefcaseBusiness, Wrench, X } from 'lucide-react';
 import { DesktopLauncher, EmptyState, SubpageShell, type DesktopEntry } from './components/desktop-shell';
 import { MusicApp } from './components/music-app';
@@ -3164,10 +3164,10 @@ export function App() {
       nodeId: next.world.player.nodeId,
       log: () => undefined,
     });
-    if (applied.applied !== 1) return { ok: false, message: applied.rejected[0]?.reason ?? applied.warnings[0] ?? '活动未能执行。' };
+    if (applied.applied !== 1) return { ok: false, message: workshopActivityResultMessage(record, ruleId, applied) };
     commitSave(next);
     if (applied.changes.length) promptEvents.emit('onOpsApply', { changes: applied.changes });
-    const message = applied.warnings.length ? `活动已完成，但有校验提示：${applied.warnings.join(' ')}` : '活动已由确定性内核完成。';
+    const message = workshopActivityResultMessage(record, ruleId, applied);
     setFeedback({ tone: applied.warnings.length ? 'info' : 'success', text: message });
     return { ok: true, message };
   }
