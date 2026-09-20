@@ -702,10 +702,16 @@
 
 **决定**：工坊 Agent 响应升级为版本化应用层 JSON 工具协议，不直接依赖任一厂商的原生 function calling。v1 响应包含 `protocolVersion: 1`、给用户的简短说明和恰好一个工具调用；当前唯一工具为 `project.replace`，参数是完整 workshop v1 工程。调用 ID、工具名、参数、协议版本和完整工程均经严格 schema 校验，未知工具、多工具调用、额外字段与非法工程全部拒绝。旧的 `{ message, package }` 和裸包响应暂时保留为迁移兼容输入，但新请求明确要求工具协议。
 
-**执行与成本边界**：`project.replace` 只生成待替换的内存编辑器草稿，结果仍走现有本地校验与预览；它不能安装包、写 SaveFile、修改世界事实、读取额外资料或发起网络请求。每条用户指令仍最多一次 API 请求，没有后续工具回传或自动循环。能力目录随后由 D131 补充；局部 patch、本地校验/预览工具、步骤预算与自动修复仍分别作为后续切片。SaveFile 保持 v41，Content IndexedDB 保持 v12。
+**执行与成本边界**：`project.replace` 只生成待替换的内存编辑器草稿，结果仍走现有本地校验与预览；它不能安装包、写 SaveFile、修改世界事实、读取额外资料或发起网络请求。每条用户指令仍最多一次 API 请求，没有后续工具回传或自动循环。能力目录随后由 D131 补充，局部 patch 由 D132 补充；本地校验/预览工具、步骤预算与自动修复仍分别作为后续切片。SaveFile 保持 v41，Content IndexedDB 保持 v12。
 
 ## D131 工坊 Agent 能力目录在请求前纯本地查询
 
 **决定**：新增版本化只读 `capabilities.list` 目录，由当前工坊包版本、运行时版本和 schema 常量构造。目录明确区分已启用 UI 动作、带条件的活动调度、当前禁用动作、可读取世界资源、活动 hook/效果、仅可声明但尚不运行的 events/prompts/Provider、资产限制与禁止项。Agent 系统提示不再自行维护组件、hook 和效果列表，而以请求中的 `capabilityQuery.result` 为权威来源。
 
-**调用与数据边界**：每次用户发送 Agent 指令前，本地同步查询一次目录，并合并到原有单次 Provider 请求；不产生额外 API、自动第二轮或后台调用。目录只含产品协议常量，不读取 SaveFile、已安装包、IndexedDB、Provider 配置、端点或密钥，也不执行任何写操作。局部 patch、校验/预览工具和自动多步循环仍是后续独立切片；SaveFile 保持 v41，Content IndexedDB 保持 v12。
+**调用与数据边界**：每次用户发送 Agent 指令前，本地同步查询一次目录，并合并到原有单次 Provider 请求；不产生额外 API、自动第二轮或后台调用。目录只含产品协议常量，不读取 SaveFile、已安装包、IndexedDB、Provider 配置、端点或密钥，也不执行任何写操作。局部 patch 随后由 D132 补充；校验/预览工具和自动多步循环仍是后续独立切片。SaveFile 保持 v41，Content IndexedDB 保持 v12。
+
+## D132 工坊 Agent 局部 patch 在副本上原子执行
+
+**决定**：Agent v1 新增 `project.patch`，与 `project.replace` 二选一且每轮仍只允许一个工具调用。patch 采用受限 JSON Pointer，只开放 `add`、`replace`、`remove`，单次最多 100 项；路径必须位于 `manifest`、`app`、`rules`、`events`、`prompts`、`assetMeta` 六个工程根下。禁止空路径段、无效转义、数组越界以及 `__proto__` / `prototype` / `constructor` 路径，`move`、`copy`、`test` 和任意脚本不属于协议。
+
+**原子性与降级**：本地先复制当前 JSON 工程，再按顺序应用全部操作；任一操作失败或最终结果未通过 `WorkshopPackageSchema`，整组结果都不进入编辑器。当前源码不是有效 JSON、需要整体重构或无法安全定位时，Agent 必须退回 `project.replace`。成功 patch 与完整替换共用编辑器撤销、校验和预览流程，不自动安装或写世界状态。patch 只减少单次响应体，不增加 API 次数；SaveFile 保持 v41，Content IndexedDB 保持 v12。

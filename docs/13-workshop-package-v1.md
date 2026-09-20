@@ -54,7 +54,30 @@ Agent v1 使用 Provider 无关的应用层 JSON 工具协议；不要求端点�
 }
 ```
 
-调用 ID 只能使用 1–64 个 ASCII 字母、数字、点、下划线或连字符。协议拒绝未知工具、多次调用、额外字段、错误版本和不符合 `WorkshopPackageSchema` 的工程。`project.replace` 只替换当前页面内的草稿，不安装、不持久化、不修改世界事实，也不会触发新的网络请求。为兼容已配置模型，旧 `{ "message", "package" }` 和裸包响应暂时仍可解析；新提示只要求 v1 工具协议。局部 patch、校验/预览工具和多步循环尚未开放。
+调用 ID 只能使用 1–64 个 ASCII 字母、数字、点、下划线或连字符。协议拒绝未知工具、多次调用、额外字段、错误版本和不符合 `WorkshopPackageSchema` 的工程。`project.replace` 只替换当前页面内的草稿，不安装、不持久化、不修改世界事实，也不会触发新的网络请求。为兼容已配置模型，旧 `{ "message", "package" }` 和裸包响应暂时仍可解析；新提示只要求 v1 工具协议。校验/预览工具和多步循环尚未开放。
+
+小范围修改应使用 `project.patch`，避免重复返回完整工程：
+
+```json
+{
+  "protocolVersion": 1,
+  "message": "已更新首页标题并增加说明。",
+  "toolCalls": [
+    {
+      "id": "patch-project",
+      "name": "project.patch",
+      "arguments": {
+        "operations": [
+          { "op": "replace", "path": "/app/pages/0/title", "value": "新首页" },
+          { "op": "add", "path": "/manifest/description", "value": "示例 App" }
+        ]
+      }
+    }
+  ]
+}
+```
+
+patch 只允许 `add`、`replace`、`remove`，单次最多 100 项；路径必须是绝对 JSON Pointer，并位于 `manifest`、`app`、`rules`、`events`、`prompts`、`assetMeta` 下。数组 `add` 可用 `-` 追加；`replace` / `remove` 必须指向已存在位置。空路径段、非法 `~` 转义、数组越界、缺失父路径、`__proto__` / `prototype` / `constructor` 均拒绝。所有操作先应用于当前工程副本，最后重新通过完整包 schema；任一步失败则不产生新草稿。当前源码不是有效 JSON 时不能 patch，应使用 `project.replace`。
 
 每次 Agent 请求组装时，本地会先执行一次只读 `capabilities.list`，并把结果放入用户消息的 `capabilityQuery`：
 
@@ -77,7 +100,7 @@ Agent v1 使用 Provider 无关的应用层 JSON 工具协议；不要求端点�
 }
 ```
 
-实际数组和限制由当前 schema/runtime 常量生成，示例中的空值只是结构缩写。目录会区分已启用动作、带条件的活动调度、当前禁用动作和只声明不运行的扩展。查询纯本地、零写入，不读取 SaveFile、已安装包、IndexedDB、Provider 配置或密钥，并与当前用户指令合并成同一次 API 请求；因此不会为“查能力”增加第二次调用。局部 patch、校验/预览工具与自动工具循环仍未开放。
+实际数组和限制由当前 schema/runtime 常量生成，示例中的空值只是结构缩写。目录会区分已启用动作、带条件的活动调度、当前禁用动作和只声明不运行的扩展。查询纯本地、零写入，不读取 SaveFile、已安装包、IndexedDB、Provider 配置或密钥，并与当前用户指令合并成同一次 API 请求；因此不会为“查能力”增加第二次调用。校验/预览工具与自动工具循环仍未开放。
 
 除用户显式触发的初稿生成与 Agent 指令外，工坊导入、编辑、校验、预览、安装、启停、导出和运行均为纯本地操作。Agent 请求不包含 SaveFile、已安装包、世界游玩状态或其他库内容；API key 只按现有 Provider 规则作为鉴权信息发送到用户配置的端点。
 

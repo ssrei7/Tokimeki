@@ -21,8 +21,9 @@ manifest.permissions 必须准确声明实际用到的 world.read resources、ap
 
 const AGENT_SYSTEM_PROMPT = `你是“小小地图”创意工坊内的 App 制作 Agent。用户会提供当前声明式工程源码、本地校验诊断、最近对话和本轮指令。
 请求中的 capabilityQuery 是本地只读 capabilities.list 的权威结果。只使用其中标为已启用或满足条件后可用的运行能力；declaredOnly 内容可以编辑，但必须在 message 中说明当前不会运行。
-你必须使用工坊 Agent v1 工具协议返回一个 JSON 对象：{"protocolVersion":1,"message":"给用户的简短说明","toolCalls":[{"id":"replace-project","name":"project.replace","arguments":{"package":{...完整 workshop 包 v1...}}}]}。不要输出 Markdown、代码围栏或额外字段。
-当前只开放一次 project.replace 工具调用。它只替换内存中的编辑器草稿，不安装包、不写世界状态、不调用网络。不要请求未列出的工具，也不要返回多个工具调用。
+你必须使用工坊 Agent v1 工具协议返回一个 JSON 对象，不要输出 Markdown、代码围栏或额外字段。每轮只能调用一次 project.patch 或 project.replace。
+小范围修改优先使用 project.patch：{"protocolVersion":1,"message":"简短说明","toolCalls":[{"id":"patch-project","name":"project.patch","arguments":{"operations":[{"op":"replace","path":"/app/pages/0/title","value":"新标题"}]}}]}。仅可使用 add、replace、remove 和绝对 JSON Pointer，最多 100 项；不能访问工程六个根字段之外的路径。
+当前工程不是有效 JSON、需要整体重构或无法安全定位路径时使用 project.replace，并在 arguments.package 返回完整 workshop v1 工程。这两个工具都只产生内存草稿，不安装包、不写世界状态、不调用网络。不要请求未列出的工具，也不要返回多个工具调用。
 你要在当前工程上增量修改，保留用户未要求删除的页面、规则、资产声明和其他内容。若原源码有误，根据 diagnostics 修复并返回完整合法工程。
 组件、动作、世界只读资源、活动 hook、效果 op 和扩展运行状态严格以 capabilityQuery.result 为准。用户按钮触发活动时，按钮 op 使用目录给出的 dispatchOp，payload 为 {"ruleId":"规则-id"}。
 条件只能使用安全表达式和 day、slotId、nodeId、stats、flags、player.nodeId、player.stats、player.flags、relations 事实。禁止任意 JavaScript、HTML、CSS、脚本 URL、base64 和任意网络请求。
@@ -49,6 +50,7 @@ export interface WorkshopAgentTurnResult {
   message: string;
   package: WorkshopPackage;
   toolCallId?: string;
+  toolName?: 'project.replace' | 'project.patch';
 }
 
 export function buildWorkshopDraftMessages(requirement: string): ChatMessage[] {
@@ -106,10 +108,17 @@ export function buildWorkshopAgentMessages(input: WorkshopAgentTurnInput): ChatM
   ];
 }
 
-export function parseWorkshopAgentResponse(raw: string): WorkshopAgentTurnResult {
+export function parseWorkshopAgentResponse(raw: string, currentSource?: string): WorkshopAgentTurnResult {
   const value = parseJsonResponse(raw, 'Provider 返回的 Agent 结果不是有效 JSON。');
   const protocol = WorkshopAgentProtocolResponseSchema.safeParse(value);
-  if (protocol.success) return executeWorkshopAgentToolCalls(protocol.data);
+  if (protocol.success) {
+    const call = protocol.data.toolCalls[0];
+    if (call?.name === 'project.patch' && currentSource === undefined) throw new Error('project.patch 需要当前工程作为本地基线。');
+    const currentProject = call?.name === 'project.patch'
+      ? parseJsonResponse(currentSource!, '当前工程不是有效 JSON，无法应用局部 patch；请让 Agent 使用 project.replace。')
+      : undefined;
+    return executeWorkshopAgentToolCalls(protocol.data, currentProject);
+  }
   const parsed = WorkshopAgentTurnResponseSchema.safeParse(value);
   if (!parsed.success) {
     const legacyPackage = WorkshopPackageSchema.safeParse(value);
@@ -142,5 +151,5 @@ export async function runWorkshopAgentTurn(config: ProviderConfig, input: Worksh
     signal: options.signal,
     onStatus: options.onStatus,
   });
-  return parseWorkshopAgentResponse(raw);
+  return parseWorkshopAgentResponse(raw, input.currentSource);
 }

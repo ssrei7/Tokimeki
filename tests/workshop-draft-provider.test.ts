@@ -3,7 +3,7 @@ import { createMockProviderConfig } from '../src/providers/adapters/mock';
 import { queryWorkshopCapabilityCatalog } from '../src/data/workshop-capabilities';
 import { WorkshopActionSchema, WorkshopComponentSchema } from '../src/data/workshop';
 import { buildWorkshopAgentMessages, buildWorkshopDraftMessages, generateWorkshopDraft, parseWorkshopAgentResponse, parseWorkshopDraftResponse, runWorkshopAgentTurn } from '../src/providers/workshop-draft';
-import { WORKSHOP_AGENT_PROTOCOL_VERSION, WorkshopAgentProtocolResponseSchema } from '../src/providers/workshop-agent-protocol';
+import { applyWorkshopProjectPatch, WORKSHOP_AGENT_PATCH_OPERATION_LIMIT, WORKSHOP_AGENT_PROTOCOL_VERSION, WorkshopAgentProtocolResponseSchema } from '../src/providers/workshop-agent-protocol';
 import type { ProviderConfig } from '../src/providers/types';
 
 const base: ProviderConfig = { id: 'draft', name: 'Draft', kind: 'openai-compatible', endpoint: 'https://example.test/v1', model: 'demo', contextWindow: 8192, maxOutputTokens: 2048, temperature: 0.2 };
@@ -98,7 +98,50 @@ describe('workshop draft provider', () => {
     expect(result.message).toContain('图鉴');
     expect(result.package.manifest.id).toBe('ai.sample');
     expect(result.toolCallId).toBe('replace-project');
+    expect(result.toolName).toBe('project.replace');
     expect(parseWorkshopAgentResponse(packageJson).message).toContain('已更新');
+  });
+
+  it('applies a validated local project patch atomically', () => {
+    const current = JSON.parse(packageJson);
+    const response = JSON.stringify({
+      protocolVersion: 1,
+      message: '已局部更新标题和内容。',
+      toolCalls: [{
+        id: 'patch-project',
+        name: 'project.patch',
+        arguments: { operations: [
+          { op: 'replace', path: '/app/pages/0/title', value: '图鉴' },
+          { op: 'add', path: '/app/pages/0/components/-', value: { kind: 'text', text: '新增内容' } },
+          { op: 'remove', path: '/app/pages/0/components/0' },
+          { op: 'add', path: '/manifest/description', value: '局部修改示例' },
+        ] },
+      }],
+    });
+    const result = parseWorkshopAgentResponse(response, JSON.stringify(current));
+    expect(result.toolName).toBe('project.patch');
+    expect(result.package.app.pages[0]).toMatchObject({ title: '图鉴', components: [{ kind: 'text', text: '新增内容' }] });
+    expect(result.package.manifest.description).toBe('局部修改示例');
+    expect(current.app.pages[0].title).toBe('首页');
+  });
+
+  it('rejects unsafe, out-of-range and schema-breaking project patches', () => {
+    const response = (operations: unknown[]) => JSON.stringify({ protocolVersion: 1, message: '修改', toolCalls: [{ id: 'patch', name: 'project.patch', arguments: { operations } }] });
+    const current = JSON.parse(packageJson);
+    expect(() => applyWorkshopProjectPatch(current, [
+      { op: 'replace', path: '/app/pages/0/title', value: '不会提交' },
+      { op: 'replace', path: '/app/pages/9/title', value: '越界' },
+    ])).toThrow('越界');
+    expect(current.app.pages[0].title).toBe('首页');
+    expect(() => parseWorkshopAgentResponse(response([{ op: 'add', path: '/app/__proto__/polluted', value: true }]), packageJson)).toThrow('不安全');
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(() => parseWorkshopAgentResponse(response([{ op: 'add', path: '/app/~2invalid', value: true }]), packageJson)).toThrow('无效 JSON Pointer');
+    expect(() => parseWorkshopAgentResponse(response([{ op: 'replace', path: '/app/pages/9/title', value: '越界' }]), packageJson)).toThrow('越界');
+    expect(() => parseWorkshopAgentResponse(response([{ op: 'replace', path: '/manifest/id', value: '非法 ID' }]), packageJson)).toThrow('不符合工坊包 schema');
+    expect(() => parseWorkshopAgentResponse(response([{ op: 'replace', path: '/manifest/description', value: '不存在' }]), packageJson)).toThrow('路径不存在');
+    expect(() => parseWorkshopAgentResponse(response([{ op: 'replace', path: '/app/pages/0/title', value: '标题' }]))).toThrow('需要当前工程');
+    expect(() => parseWorkshopAgentResponse(response([{ op: 'replace', path: '/app/pages/0/title', value: '标题' }]), '{')).toThrow('当前工程不是有效 JSON');
+    expect(WorkshopAgentProtocolResponseSchema.safeParse(JSON.parse(response(Array.from({ length: WORKSHOP_AGENT_PATCH_OPERATION_LIMIT + 1 }, () => ({ op: 'replace', path: '/app/entryPageId', value: 'home' }))))).success).toBe(false);
   });
 
   it('strictly rejects unknown, duplicated or malformed tool calls', () => {
@@ -112,6 +155,8 @@ describe('workshop draft provider', () => {
     expect(() => parseWorkshopAgentResponse(JSON.stringify({ protocolVersion: 2, message: '完成', toolCalls: [{ id: 'replace', name: 'project.replace', arguments: { package: pack } }] }))).toThrow('protocolVersion');
     expect(() => parseWorkshopAgentResponse(JSON.stringify({ protocolVersion: 1, message: '完成', toolCalls: [{ id: 'replace', name: 'project.replace', arguments: { package: pack } }], extra: true }))).toThrow('不符合工具协议');
     expect(() => parseWorkshopAgentResponse(JSON.stringify({ protocolVersion: 1, message: '完成', toolCalls: [{ id: 'replace', name: 'project.replace', arguments: { package: {} } }] }))).toThrow('不符合工具协议');
+    expect(() => parseWorkshopAgentResponse(JSON.stringify({ protocolVersion: 1, message: '完成', toolCalls: [{ id: 'patch', name: 'project.patch', arguments: { operations: [{ op: 'add', path: '/manifest/description' }] } }] }), packageJson)).toThrow('不符合工具协议');
+    expect(() => parseWorkshopAgentResponse(JSON.stringify({ protocolVersion: 1, message: '完成', toolCalls: [{ id: 'patch', name: 'project.patch', arguments: { operations: [{ op: 'move', path: '/manifest/name', from: '/manifest/author' }] } }] }), packageJson)).toThrow('不符合工具协议');
   });
 
   it('keeps the previous complete-project response compatible during protocol migration', () => {

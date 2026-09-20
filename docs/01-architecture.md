@@ -233,7 +233,7 @@ type TaskId =
 
 配置两层：`Provider`（endpoint / key / model / 参数 / contextWindow）与 `binding`（TaskId → providerId）。未绑定的任务回落到 `default` provider。
 
-工坊 Agent 在聊天文本之上使用 Provider 无关的应用层 JSON 工具协议。v1 每轮只接受一次 `project.replace`，参数必须是通过 `WorkshopPackageSchema` 的完整工程；本地执行器只把它转换为待写入编辑器的草稿，不安装包、不写 SaveFile 或世界状态。请求组装时会纯本地执行一次 `capabilities.list`，将由当前 schema/runtime 常量生成的只读能力目录合并进同一请求；它不增加网络调用。原生 function calling、多工具步骤和自动循环不是当前协议的一部分。
+工坊 Agent 在聊天文本之上使用 Provider 无关的应用层 JSON 工具协议。v1 每轮只接受一次 `project.replace` 或 `project.patch`；完整替换参数必须通过 `WorkshopPackageSchema`，局部修改只支持至多 100 个 `add` / `replace` / `remove` JSON Pointer 操作，并在副本上原子应用后校验完整工程。本地执行器只产生待写入编辑器的草稿，不安装包、不写 SaveFile 或世界状态。请求组装时会纯本地执行一次 `capabilities.list`，将由当前 schema/runtime 常量生成的只读能力目录合并进同一请求；它不增加网络调用。原生 function calling、多工具步骤和自动循环不是当前协议的一部分。
 
 `summarize_day` 只在一个游戏日首次完成结算后自动调用一次，不随行动次数增加；未配置 Provider、请求失败或返回空文本时保留确定性的本地事实摘要。当前没有其他夜间生成任务可合并，因此保持独立调用；阶段 6 的晨报发生在次日开始且使用不同事实边界，不与日记调用合并。
 

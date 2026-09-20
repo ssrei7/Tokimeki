@@ -32,7 +32,7 @@
 - Content IndexedDB：v12。
 - Assets IndexedDB：v3。
 - 角色包 schema：v1；世界包 schema：v1；预设包 schema：v2。
-- 最近一次完整验证：80 个测试文件、514 项测试通过；`npm run build` 与 `git diff --check` 通过。
+- 最近一次完整验证：80 个测试文件、516 项测试通过；`npm run build` 与 `git diff --check` 通过。
 - 当前已知构建提示：主 JavaScript 包约 1.28 MB，Vite 会提示超过 500 kB。它是非阻塞性能项，后续可通过页面级动态导入处理。
 - 阶段 10 最后的功能修复为：身份头像设置只在“设置 → 身份”挂载，不再出现在“设置 → 向量”。
 
@@ -79,9 +79,9 @@
 
 ### 创意工坊
 
-- 声明式工坊包 v1 已完成本地 ZIP 安装闭环、受限 UI 运行时、本地 JSON 编辑器、用户 API 驱动的初稿生成、首个多轮 Agent 闭环与 v1 工具协议，以及 `manual` / `onEnterNode` 确定性活动规则。
+- 声明式工坊包 v1 已完成本地 ZIP 安装闭环、受限 UI 运行时、本地 JSON 编辑器、用户 API 驱动的初稿生成、首个多轮 Agent 闭环、v1 工具协议、能力目录与原子局部 patch，以及 `manual` / `onEnterNode` 确定性活动规则。
 - 包定义、世界绑定和本地 App 状态位于 Content IndexedDB v12；绑定与状态均按 `saveId + packageId` 隔离，图片仍位于 Assets IndexedDB；SaveFile 保持 v41。
-- `workshop_draft` 现作为“工坊 Agent”路由：初稿生成仍只发送固定协议与需求；进入编辑器后，每次用户发送最多调用一次用户 API，并发送当前工程、最近对话、本地诊断和本地 `capabilities.list` 结果以便增量修改。Agent v1 使用 Provider 无关的 JSON 工具协议，每轮只允许一次 `project.replace`，严格校验后才替换内存草稿；旧完整工程响应暂时兼容。能力目录由当前 schema/runtime 常量生成，不读取世界或用户资料，也不增加 API 次数。返回项目重新过 schema 与编辑器校验，可撤销上次 Agent 修改，不自动重试、修复或安装。当前活动规则效果仅开放 `add_stat` / `set_flag` / `give_item` / `take_item`；事件、Prompt、Provider 包内动作和其他钩子仍禁用。协议说明见 `docs/13-workshop-package-v1.md`。
+- `workshop_draft` 现作为“工坊 Agent”路由：初稿生成仍只发送固定协议与需求；进入编辑器后，每次用户发送最多调用一次用户 API，并发送当前工程、最近对话、本地诊断和本地 `capabilities.list` 结果以便增量修改。Agent v1 使用 Provider 无关的 JSON 工具协议，每轮只允许一次 `project.replace` 或 `project.patch`；patch 最多 100 项，只支持受限 `add` / `replace` / `remove`，在副本上完整应用并通过 schema 后才替换内存草稿。旧完整工程响应暂时兼容。能力目录由当前 schema/runtime 常量生成，不读取世界或用户资料，也不增加 API 次数。返回项目重新过编辑器校验，可撤销上次 Agent 修改，不自动重试、修复或安装。当前活动规则效果仅开放 `add_stat` / `set_flag` / `give_item` / `take_item`；事件、Prompt、Provider 包内动作和其他钩子仍禁用。协议说明见 `docs/13-workshop-package-v1.md`。
 
 ---
 
@@ -149,10 +149,11 @@ AI 制作流程应为：
 6. **已完成首个子切片**：工坊 Agent 可读取当前工程、最近对话和校验诊断，通过用户 API 进行多轮完整工程修改，并支持撤销上次 Agent 修改。
 7. **已完成协议骨架**：Agent v1 使用版本化严格工具协议，当前每轮只允许一次完整工程 `project.replace`；旧响应暂时兼容。
 8. **已完成**：只读 `capabilities.list` 在每轮请求前纯本地查询，并入同一次 API 请求；目录不读取用户或世界数据。
-9. **下一步**：实现局部工程 patch，再实现本地校验和预览摘要；之后增加可配步数/费用预算和自动修复循环。
-10. 扩展通用 UI 数据绑定、活动成本/结果和更多钩子，让 Agent 组合能力而不是内置钓鱼、种田、开店专用系统。
-11. 完成事件、Prompt 与用户显式 Provider 动作，再完成包更新、版本依赖、卸载保护、全局备份和完整性审计。
-12. 用官方示例验证 Agent 制作、安装、更新与分享全流程。
+9. **已完成**：`project.patch` 支持有上限的局部 `add` / `replace` / `remove`，整组在工程副本上原子应用并重新过 schema。
+10. **下一步**：实现本地校验和预览摘要工具；之后增加可配步数/费用预算和自动修复循环。
+11. 扩展通用 UI 数据绑定、活动成本/结果和更多钩子，让 Agent 组合能力而不是内置钓鱼、种田、开店专用系统。
+12. 完成事件、Prompt 与用户显式 Provider 动作，再完成包更新、版本依赖、卸载保护、全局备份和完整性审计。
+13. 用官方示例验证 Agent 制作、安装、更新与分享全流程。
 
 创意工坊原始想法见 `docs/ideas.md` 的“用户创意工坊 / 玩法包”。正式编码前应先形成独立计划并确认包状态放置、权限模型、跨世界绑定和卸载语义。
 
