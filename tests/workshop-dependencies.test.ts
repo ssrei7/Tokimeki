@@ -72,6 +72,7 @@ describe('workshop package dependencies', () => {
     const app = record(pack('sample.app', '1.0.0', [{ id: 'shared.middle' }]));
     const allEnabled = [binding('world-a', 'shared.core', true), binding('world-a', 'shared.middle', true), binding('world-a', 'sample.app', true)];
     expect(resolveEnabledWorkshopPackages('world-a', [shared, middle, app], allEnabled).map((item) => item.id)).toEqual(['shared.core', 'shared.middle', 'sample.app']);
+    expect(resolveEnabledWorkshopPackages('world-a', [app, middle, shared], allEnabled).map((item) => item.id)).toEqual(['shared.core', 'shared.middle', 'sample.app']);
     expect(resolveEnabledWorkshopPackages('world-a', [shared, middle, app], allEnabled.filter((item) => item.packageId !== 'shared.core'))).toEqual([]);
 
     const left = record(pack('cycle.left', '1.0.0', [{ id: 'cycle.right' }]));

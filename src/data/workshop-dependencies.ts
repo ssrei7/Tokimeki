@@ -47,7 +47,7 @@ export function resolveEnabledWorkshopPackages(saveId: string, records: readonly
       changed = true;
     }
   }
-  return records.filter((record) => usable.has(record.id));
+  return [...usable.values()];
 }
 
 function findReachableCycle(startId: string, packages: ReadonlyMap<string, WorkshopPackage>): string[] | undefined {

@@ -100,11 +100,11 @@ export async function updateWorkshopPackage(imported: WorkshopPackageImport, tim
 }
 
 export async function exportInstalledWorkshopPackage(record: WorkshopPackageRecord): Promise<Blob> {
-  const assets = new Map<string, Blob>();
+  const assets = new Map<string, Uint8Array>();
   for (const [logicalId, reference] of Object.entries(record.assetBindings)) {
     const stored = await loadAsset(reference.assetId);
     if (!stored || stored.blob.size === 0) throw new Error(`工坊包资产缺失：${logicalId}`);
-    assets.set(logicalId, stored.blob);
+    assets.set(logicalId, new Uint8Array(await stored.blob.arrayBuffer()));
   }
   return exportWorkshopPackage(record.package, assets);
 }
