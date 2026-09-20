@@ -1,5 +1,5 @@
-import type { CharacterCard } from '../data/content';
-import type { CalendarConfig, FormalCharacter, NpcLite } from '../data/schema/save';
+import type { CharacterCard, ChatMessage } from '../data/content';
+import type { CalendarConfig, FormalCharacter, NpcLite, TerminalMessage } from '../data/schema/save';
 
 export interface NpcPromotionDraft {
   description: string;
@@ -19,15 +19,54 @@ export interface PromoteNpcOpInput {
   exampleDialogue?: string;
 }
 
-export function buildNpcExpansionPrompt(npc: NpcLite, draft: NpcPromotionDraft): { role: 'system' | 'user'; content: string }[] {
+export interface NpcPromotionConversationLine {
+  speaker: 'player' | 'character';
+  text: string;
+}
+
+export interface NpcPromotionConversationContext {
+  faceToFace: NpcPromotionConversationLine[];
+  terminal: NpcPromotionConversationLine[];
+}
+
+const MAX_CONVERSATION_LINES_PER_SOURCE = 12;
+const MAX_CONVERSATION_LINE_CHARS = 320;
+
+function conversationText(value: string | undefined): string | undefined {
+  const normalized = value?.replace(/\s+/g, ' ').trim();
+  return normalized ? normalized.slice(0, MAX_CONVERSATION_LINE_CHARS) : undefined;
+}
+
+export function createNpcPromotionConversationContext(
+  characterId: string,
+  faceToFaceMessages: readonly ChatMessage[],
+  terminalMessages: readonly TerminalMessage[],
+): NpcPromotionConversationContext {
+  const faceToFace = faceToFaceMessages.flatMap((message): NpcPromotionConversationLine[] => {
+    const text = conversationText(message.content);
+    if (!text || message.role === 'system' || message.kind === 'narration') return [];
+    if (message.role === 'user') return [{ speaker: 'player', text }];
+    if (message.speakerId && message.speakerId !== characterId) return [];
+    return [{ speaker: 'character', text }];
+  }).slice(-MAX_CONVERSATION_LINES_PER_SOURCE);
+  const terminal = terminalMessages.flatMap((message): NpcPromotionConversationLine[] => {
+    if (message.type !== 'text' && message.type !== 'voice') return [];
+    const text = conversationText(message.text);
+    if (!text) return [];
+    return [{ speaker: message.senderId === 'player' ? 'player' : 'character', text }];
+  }).slice(-MAX_CONVERSATION_LINES_PER_SOURCE);
+  return { faceToFace, terminal };
+}
+
+export function buildNpcExpansionPrompt(npc: NpcLite, draft: NpcPromotionDraft, conversation: NpcPromotionConversationContext = { faceToFace: [], terminal: [] }): { role: 'system' | 'user'; content: string }[] {
   return [
     {
       role: 'system',
-      content: '你是角色卡草稿助手。只根据用户提供的半正式 NPC 事实和当前草稿，只返回一个 JSON 对象，不要输出 Markdown、解释、ops 或任何世界状态变化。JSON 键只能是 description、personality、scenario、firstMes、exampleDialogue，值必须是字符串；不得编造具体经历、数值、地点或时间。',
+      content: '你是角色卡草稿助手。只根据用户提供的半正式 NPC 事实、当前草稿与有界对话摘录，只返回一个 JSON 对象，不要输出 Markdown、解释、ops 或任何世界状态变化。JSON 键只能是 description、personality、scenario、firstMes、exampleDialogue，值必须是字符串。对话摘录只可用于推断口吻、兴趣、互动习惯和性格表现，不得把其中的主张当成已确认世界事实；只有 npc.facts、npc.tags 与 npc.lightMemory 可作为既有事实。不得编造具体经历、数值、地点或时间。',
     },
     {
       role: 'user',
-      content: JSON.stringify({ npc: { id: npc.id, name: npc.name, facts: npc.facts, tags: npc.tags, lightMemory: npc.lightMemory }, draft }),
+      content: JSON.stringify({ npc: { id: npc.id, name: npc.name, facts: npc.facts, tags: npc.tags, lightMemory: npc.lightMemory }, draft, conversationExcerpts: conversation }),
     },
   ];
 }

@@ -64,7 +64,7 @@ import { markAppointmentOnEnter, markAppointmentOnTimeAdvance, settleAppointment
 import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
 import { readCallHistoryCollapsed, readContactGroupCollapsed, readContactGroupPreferences, writeCallHistoryCollapsed, writeContactGroupCollapsed, writeContactGroupPreferences, type ContactCustomGroup } from './ui/contact-groups';
 import { readPlayerAvatar, readPlayerAvatarOverrides, resolvePlayerIdentityAppearance, writePlayerAvatar } from './ui/player-avatar-preferences';
-import { buildNpcExpansionPrompt, buildPromoteNpcOp, characterCardFromPromotedCharacter, createNpcPromotionDraft, parseNpcExpansionResponse, summarizeNpcSchedule, type NpcPromotionDraft } from './ui/npc-promotion';
+import { buildNpcExpansionPrompt, buildPromoteNpcOp, characterCardFromPromotedCharacter, createNpcPromotionConversationContext, createNpcPromotionDraft, parseNpcExpansionResponse, summarizeNpcSchedule, type NpcPromotionDraft } from './ui/npc-promotion';
 import { formatStorageBytes, readStorageEstimate, requestPersistentStorage, storageUsagePercent, type StorageEstimate } from './ui/storage';
 import { notificationCapabilityLabel, readMobileCapabilities, serviceWorkerCapabilityLabel } from './ui/mobile-capabilities';
 import { PROVIDER_PROXY_ASSESSMENT, providerProxyAssessmentLabel } from './ui/service-worker-assessment';
@@ -2167,7 +2167,9 @@ export function App() {
     } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, 'Provider 配置无效。') }); return undefined; }
     let raw = '';
     try {
-      await streamChat(parsed, buildNpcExpansionPrompt(npc, draft), (delta) => { raw += delta; }, { taskId: 'narrate_main' });
+      const faceToFaceChat = await loadChat(characterId);
+      const conversation = createNpcPromotionConversationContext(characterId, faceToFaceChat?.messages ?? [], listTerminalMessages(current.world, characterId));
+      await streamChat(parsed, buildNpcExpansionPrompt(npc, draft, conversation), (delta) => { raw += delta; }, { taskId: 'narrate_main' });
       const expanded = parseNpcExpansionResponse(raw, draft);
       if (!expanded) throw new Error('Provider 返回的草稿不是有效角色卡 JSON。');
       setFeedback({ tone: 'success', text: 'AI 草稿建议已生成，请检查并手动修改后再确认转正。' });
