@@ -27,7 +27,7 @@
 
 - 产品名：小小地图。
 - 阶段 10 代码侧验收已通过，记录见 `docs/03-roadmap.md` 的“阶段 10 · 有生态”。
-- 当前世界 SaveFile schema：v41。没有必要时不得升级；升级必须在同一提交提供 migration 与 fixture 测试。
+- 当前世界 SaveFile schema：v42。没有必要时不得升级；升级必须在同一提交提供 migration 与 fixture 测试。v42 将 StoryScene 地点、日期、时段改为可选历史字段；新剧情的时间地点由用户在大纲中自由描述，不修改世界事实。
 - Provider IndexedDB：v9。
 - Content IndexedDB：v12。
 - Assets IndexedDB：v3。

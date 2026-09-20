@@ -356,6 +356,20 @@ describe('save migrations', () => {
     expect(migrated.world.relations.seir.memories[0]).toMatchObject({ id: 'memory-1', text: '保留' });
   });
 
+  it('migrates v41 StoryScenes without dropping their existing time and location anchors', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v41-story-scene', title: 'V41 StoryScene' }));
+    source.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '码头青年', personality: '安静' }, visuals: { portraits: [] } };
+    source.world.storyScenes = [{
+      id: 'anchored-scene', title: '旧剧情', intent: '保留旧坐标', outline: '旧大纲', participantIds: ['seir'],
+      nodeId: 'start', startDay: 1, startSlotId: 'morning', currentStageId: 'opening',
+      stages: [{ id: 'opening', title: '开场', content: '旧内容' }], readingStageId: 'opening', readStageIds: [],
+      status: 'draft', source: 'manual', createdDay: 1, updatedDay: 1,
+    }];
+    const migrated = migrateSave({ ...source, schemaVersion: 41 });
+    expect(migrated.schemaVersion).toBe(42);
+    expect(migrated.world.storyScenes[0]).toMatchObject({ nodeId: 'start', startDay: 1, startSlotId: 'morning' });
+  });
+
   it('migrates v34 saves with a stat-backed default job rule and no forced employment', () => {
     const source = seedScenario(createCurrentSaveScenario({ id: 'v34-job', title: 'v34 job', slotId: 'noon' }));
     const { jobRules: _jobRules, ...legacyEconomy } = source.world.economy;

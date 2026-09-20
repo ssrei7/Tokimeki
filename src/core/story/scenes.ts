@@ -7,7 +7,8 @@ export interface StorySceneDraftInput {
   intent: string;
   outline: string;
   participantIds: readonly string[];
-  nodeId: string;
+  /** Legacy v41 anchors are accepted for source compatibility but ignored for new drafts. */
+  nodeId?: string;
   startDay?: number;
   startSlotId?: string;
   currentStageId?: string;
@@ -26,16 +27,11 @@ export interface StorySceneStageResult extends StorySceneResult {
 }
 
 /** Validate deterministic facts required to persist a scene draft. */
-export function validateStorySceneDraft(world: WorldState, calendar: CalendarConfig, input: StorySceneDraftInput): string | undefined {
+export function validateStorySceneDraft(world: WorldState, _calendar: CalendarConfig, input: StorySceneDraftInput): string | undefined {
   if (!input.id.trim() || !input.title.trim() || !input.intent.trim() || !input.outline.trim()) return 'StoryScene 草案缺少必要文本。';
   if (input.participantIds.length === 0 || input.participantIds.length > 20) return 'StoryScene 参与者数量必须在 1 到 20 人之间。';
   if (new Set(input.participantIds).size !== input.participantIds.length) return 'StoryScene 参与者不能重复。';
   if (input.participantIds.some((charId) => !world.characters[charId])) return 'StoryScene 包含不存在的正式角色。';
-  if (!world.map.nodes[input.nodeId]) return 'StoryScene 地点不存在。';
-  const slotId = input.startSlotId ?? world.clock.slotId;
-  if (!calendar.slots.some((slot) => slot.id === slotId)) return 'StoryScene 时段不存在。';
-  const startDay = input.startDay ?? world.clock.day;
-  if (!Number.isInteger(startDay) || startDay < world.clock.day) return 'StoryScene 开始日期不能早于当前日期。';
   if (input.currentStageId !== undefined && !input.currentStageId.trim()) return 'StoryScene 阶段 ID 不能为空。';
   const stages = input.stages?.length ? input.stages : defaultStages(input.outline, input.currentStageId);
   if (new Set(stages.map((stage) => stage.id)).size !== stages.length) return 'StoryScene 阶段 ID 不能重复。';
@@ -56,9 +52,6 @@ export function createStorySceneDraft(world: WorldState, calendar: CalendarConfi
     intent: input.intent.trim(),
     outline: input.outline.trim(),
     participantIds: [...input.participantIds],
-    nodeId: input.nodeId,
-    startDay: input.startDay ?? day,
-    startSlotId: input.startSlotId ?? world.clock.slotId,
     currentStageId: input.currentStageId?.trim() || stages[0].id,
     stages,
     readingStageId: stages[0].id,
@@ -87,9 +80,6 @@ export function updateStorySceneDraft(world: WorldState, calendar: CalendarConfi
     intent: input.intent.trim(),
     outline: input.outline.trim(),
     participantIds: [...input.participantIds],
-    nodeId: input.nodeId,
-    startDay: input.startDay ?? scene.startDay,
-    startSlotId: input.startSlotId ?? scene.startSlotId,
     currentStageId: input.currentStageId?.trim() || stages[0].id,
     stages,
     readingStageId: stages.some((stage) => stage.id === scene.readingStageId) ? scene.readingStageId : stages[0].id,

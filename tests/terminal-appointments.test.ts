@@ -25,7 +25,7 @@ describe('terminal appointments', () => {
     legacy.schemaVersion = 40;
     delete ((legacy.world as Record<string, unknown>).terminal as Record<string, unknown>).appointmentRequests;
     const migrated = migrateSave(legacy);
-    expect(migrated.schemaVersion).toBe(41);
+    expect(migrated.schemaVersion).toBe(42);
     expect(migrated.world.terminal.appointmentRequests).toEqual([]);
     expect(migrated.world.terminal.messageThreads).toEqual(save.world.terminal.messageThreads);
   });

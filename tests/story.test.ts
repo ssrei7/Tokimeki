@@ -7,18 +7,20 @@ import { getReadableStorySceneStages } from '../src/ui/story-scene/StorySceneRea
 describe('local chapter summaries and milestones', () => {
   it('generates a deterministic reviewable StoryScene draft from a short intent without API calls', () => {
     const generated = generateStorySceneDraftInput({
-      id: 'generated-draft', intent: '寻找失踪的信件', participantIds: ['seir', 'rin'], participantNames: ['塞伊尔', '凛'], nodeId: 'start', nodeName: '旧码头',
+      id: 'generated-draft', intent: '寻找失踪的信件', participantIds: ['seir', 'rin'], participantNames: ['塞伊尔', '凛'],
     });
     expect(generated).toMatchObject({ id: 'generated-draft', source: 'keywords', title: '寻找失踪的信件', participantIds: ['seir', 'rin'] });
     expect(generated.outline).toContain('寻找失踪的信件');
-    expect(generated.outline).toContain('旧码头');
+    expect(generated).not.toHaveProperty('nodeId');
+    expect(generated).not.toHaveProperty('startDay');
+    expect(generated).not.toHaveProperty('startSlotId');
     expect(generated.stages).toHaveLength(3);
-    expect(generateStorySceneDraftInput({ id: 'generated-draft', intent: '寻找失踪的信件', participantIds: ['seir', 'rin'], participantNames: ['塞伊尔', '凛'], nodeId: 'start', nodeName: '旧码头' })).toEqual(generated);
+    expect(generateStorySceneDraftInput({ id: 'generated-draft', intent: '寻找失踪的信件', participantIds: ['seir', 'rin'], participantNames: ['塞伊尔', '凛'] })).toEqual(generated);
   });
 
   it('lets a detailed outline override the keyword template', () => {
     const generated = generateStorySceneDraftInput({
-      id: 'outline-draft', intent: '码头重逢', detailedOutline: '第一幕在雨中重逢，第二幕共同寻找避雨处。', participantIds: ['seir'], nodeId: 'start',
+      id: 'outline-draft', intent: '码头重逢', detailedOutline: '第一幕在雨中重逢，第二幕共同寻找避雨处。', participantIds: ['seir'],
     });
     expect(generated.source).toBe('outline');
     expect(generated.outline).toBe('第一幕在雨中重逢，第二幕共同寻找避雨处。');
@@ -38,8 +40,17 @@ describe('local chapter summaries and milestones', () => {
   it('passes generated StoryScene drafts through the existing deterministic validator', () => {
     const save = seedScenario(createCurrentSaveScenario({ id: 'generated-story-scene', title: 'Generated story scene' }));
     save.world.characters.seir = { id: 'seir', name: '塞伊尔', tier: 'formal', card: { description: '码头青年', personality: '安静' }, visuals: { portraits: [] } };
-    const generated = generateStorySceneDraftInput({ id: 'generated-valid', intent: '一起等待日出', participantIds: ['seir'], nodeId: 'start' });
-    expect(createStorySceneDraft(save.world, save.config.calendar, generated)).toMatchObject({ ok: true, scene: { status: 'draft', source: 'keywords' } });
+    const generated = generateStorySceneDraftInput({ id: 'generated-valid', intent: '一起等待日出', participantIds: ['seir'] });
+    const created = createStorySceneDraft(save.world, save.config.calendar, generated);
+    expect(created).toMatchObject({ ok: true, scene: { status: 'draft', source: 'keywords' } });
+    expect(created.scene?.nodeId).toBeUndefined();
+    expect(created.scene?.startDay).toBeUndefined();
+    expect(created.scene?.startSlotId).toBeUndefined();
+    const legacyInput = createStorySceneDraft(save.world, save.config.calendar, { ...generated, id: 'legacy-input-is-ignored', nodeId: 'missing', startDay: 0, startSlotId: 'missing' });
+    expect(legacyInput.ok).toBe(true);
+    expect(legacyInput.scene?.nodeId).toBeUndefined();
+    expect(legacyInput.scene?.startDay).toBeUndefined();
+    expect(legacyInput.scene?.startSlotId).toBeUndefined();
   });
 
   it('persists StoryScene reading progress separately from plot stage progression', () => {

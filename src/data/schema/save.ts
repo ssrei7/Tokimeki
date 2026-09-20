@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 41;
+export const CURRENT_SCHEMA_VERSION = 42;
 
 const IdSchema = z.string().min(1);
 
@@ -386,9 +386,9 @@ export const StorySceneSchema = z.object({
   intent: z.string().min(1).max(4000),
   outline: z.string().min(1).max(12000),
   participantIds: z.array(IdSchema).min(1).max(20),
-  nodeId: IdSchema,
-  startDay: z.number().int().positive(),
-  startSlotId: IdSchema,
+  nodeId: IdSchema.optional(),
+  startDay: z.number().int().positive().optional(),
+  startSlotId: IdSchema.optional(),
   currentStageId: IdSchema,
   stages: z.array(StorySceneStageSchema).min(1).max(50),
   readingStageId: IdSchema,

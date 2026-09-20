@@ -26,7 +26,7 @@ describe('terminal voice', () => {
     const legacy = structuredClone(save) as Record<string, unknown>;
     legacy.schemaVersion = 39;
     const migrated = migrateSave(legacy);
-    expect(migrated.schemaVersion).toBe(41);
+    expect(migrated.schemaVersion).toBe(42);
     expect(migrated.world.terminal.messageThreads).toEqual({});
     expect(migrated.world.player.stats.money).toBe(save.world.player.stats.money);
   });

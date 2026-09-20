@@ -22,10 +22,6 @@ export interface StorySceneDraftGenerationInput {
   detailedOutline?: string;
   participantIds: readonly string[];
   participantNames?: readonly string[];
-  nodeId: string;
-  nodeName?: string;
-  startDay?: number;
-  startSlotId?: string;
   preset?: StoryScenePreset;
 }
 
@@ -34,9 +30,9 @@ const BUILTIN_PRESETS: readonly StoryScenePreset[] = [
     id: 'builtin-story-three-act',
     name: '三幕短篇',
     titleTemplate: '{intent}',
-    outlineTemplate: '围绕“{intent}”，{participants}在{location}经历相遇、转折与收束。',
+    outlineTemplate: '围绕“{intent}”，{participants}经历相遇、转折与收束。',
     stages: [
-      { id: 'opening', title: '相遇', contentTemplate: '{participants}因“{intent}”在{location}聚到一起。' },
+      { id: 'opening', title: '相遇', contentTemplate: '{participants}因“{intent}”聚到一起。' },
       { id: 'turn', title: '转折', contentTemplate: '围绕“{intent}”出现新的发现或分歧。' },
       { id: 'ending', title: '收束', contentTemplate: '众人回应这次经历，并为之后留下空间。' },
     ],
@@ -45,10 +41,10 @@ const BUILTIN_PRESETS: readonly StoryScenePreset[] = [
   {
     id: 'builtin-story-quiet-night',
     name: '静夜谈心',
-    titleTemplate: '{location}的夜话',
-    outlineTemplate: '{participants}在{location}谈起“{intent}”，从试探走向坦诚。',
+    titleTemplate: '{intent} · 静夜谈心',
+    outlineTemplate: '{participants}谈起“{intent}”，从试探走向坦诚。',
     stages: [
-      { id: 'opening', title: '夜色', contentTemplate: '{participants}在{location}安静地坐下来。' },
+      { id: 'opening', title: '夜色', contentTemplate: '{participants}安静地坐下来。' },
       { id: 'conversation', title: '谈心', contentTemplate: '话题逐渐转向“{intent}”。' },
       { id: 'ending', title: '余韵', contentTemplate: '谈话告一段落，彼此留下新的理解。' },
     ],
@@ -80,7 +76,7 @@ export function generateStorySceneDraftInput(input: StorySceneDraftGenerationInp
   const variables = {
     intent,
     participants: input.participantNames?.filter((name) => name.trim()).join('、') || input.participantIds.join('、'),
-    location: input.nodeName?.trim() || input.nodeId,
+    location: '大纲中的场景',
   };
   const detailedOutline = input.detailedOutline?.trim();
   const outline = detailedOutline || renderTemplate(preset.outlineTemplate, variables);
@@ -90,9 +86,6 @@ export function generateStorySceneDraftInput(input: StorySceneDraftGenerationInp
     intent,
     outline,
     participantIds: [...input.participantIds],
-    nodeId: input.nodeId,
-    startDay: input.startDay,
-    startSlotId: input.startSlotId,
     stages: detailedOutline
       ? [{ id: 'opening', title: '开场', content: detailedOutline }]
       : preset.stages.map((stage) => ({ id: stage.id, title: stage.title, content: renderTemplate(stage.contentTemplate, variables) })),

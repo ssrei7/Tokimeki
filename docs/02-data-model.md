@@ -19,7 +19,7 @@ type Condition = string;   // expr-eval 表达式,禁止 eval
 - 时间坐标统一为 `(day, slotId)`，地点坐标统一为 `nodeId`。
 - 派生值（阶段标签、可达节点、当前在场者）可缓存但必须能重算，且不作为事实来源。
 
-`CURRENT_SCHEMA_VERSION = 41`
+`CURRENT_SCHEMA_VERSION = 42`
 
 ---
 
@@ -409,6 +409,12 @@ interface EventHistoryEntry {       // 事件回顾记录；字段由内核/用�
 ```
 
 事件坐标恒为三元组 `(nodeId, day, slotId)`。导演只往日历里排，不即时触发。
+
+### 8.1 StoryScene 自由场景坐标（v42）
+
+`StoryScene.nodeId`、`startDay` 与 `startSlotId` 从 v42 起为可选历史字段。新建多人剧情不再绑定地图节点、世界日期或时段；用户可在大纲中自由描述时间地点，但这些文字仅是叙事内容，不会修改玩家位置、世界时钟或事件坐标。参与者、阶段定义、阶段条件、阅读进度和生命周期仍由确定性内核校验。
+
+v41→v42 migration 只升级版本号，旧 StoryScene 已保存的三个坐标字段原样保留，避免丢失历史信息。
 
 ---
 
