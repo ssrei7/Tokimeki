@@ -747,3 +747,9 @@
 **决定**：活动规则新增通用 `stat` / `item` 成本和可选成功/失败展示文案。stats 成本只指定 `player|world`、通用键、正数 amount 与扣除后下限；同目标同键先聚合再检查。物品成本按物品 ID 聚合并检查当前库存。通过预检后，成本被转换成正式 `add_stat` / `take_item`，与既有效果一起在同一个世界副本上按 op schema、限幅和权限执行；任一项失败则成本、奖励和一次性/冷却状态全部不写回。
 
 **交互与扩展边界**：活动成本不包含时间或行动点，继续遵守“相遇与对话不收费”；更多钩子留在下一切片。成功文案只在内核确认整组提交后显示，失败文案必须附带内核拒绝原因，均不能充当状态事实或覆盖校验。能力目录升级到 v3并公开精确成本/结果语法。本切片纯本地、零 API，不新增业务数值字段；包 schema/runtime 仍为 v1，SaveFile 保持 v41，Content IndexedDB 保持 v12。
+
+## D138 工坊自动活动只扩展到具备确定性世界上下文的现有钩子
+
+**决定**：在既有 `manual` / `onEnterNode` 基础上开放 `onTimeAdvance` 与 `onDaySettle`。三种自动规则都复用同一个内部 `run_workshop_activity` op、完整包校验、安全条件、成本、一次性、冷却和原子提交路径。`onTimeAdvance` 使用事件给出的结算前日期与目标时段，`onDaySettle` 使用正在结算的日期及当前时段/地点；成功变更继续统一通过 `onOpsApply` 通知。
+
+**边界**：本切片不修改核心事件 payload。`onDayStart`、`onEncounter`、`onDialogueEnd` 当前没有携带执行确定性活动所需的 `world`，因此不开放；`beforePromptAssemble` 只用于 prompt 组装；`onOpsApply` 不注册活动以避免变更通知递归。自动钩子纯本地、零 API，不新增时间或行动点成本，不升级包 schema/runtime、SaveFile v41 或 Content IndexedDB v12。能力目录升级到 v4。

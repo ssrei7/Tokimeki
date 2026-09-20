@@ -22,7 +22,7 @@ export const WORKSHOP_ALLOWED_OPS = [
 ] as const;
 
 export const WORKSHOP_ACTIVITY_EFFECT_OPS = ['add_stat', 'set_flag', 'give_item', 'take_item'] as const;
-export const WORKSHOP_ACTIVITY_HOOKS = ['manual', 'onEnterNode'] as const;
+export const WORKSHOP_ACTIVITY_HOOKS = ['manual', 'onEnterNode', 'onTimeAdvance', 'onDaySettle'] as const;
 export const WorkshopActivityHookSchema = z.enum(WORKSHOP_ACTIVITY_HOOKS);
 export const WORKSHOP_ACTIVITY_COST_KINDS = ['stat', 'item'] as const;
 

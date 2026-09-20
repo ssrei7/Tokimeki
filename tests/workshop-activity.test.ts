@@ -4,7 +4,7 @@ import { WorkshopPackageRecordSchema, type WorkshopPackageRecord } from '../src/
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import { registerWorkshopActivityHooks, runWorkshopActivity, workshopActivityResultMessage } from '../src/features/workshop-activity';
 
-function activityRecord(options: { hook?: 'manual' | 'onEnterNode'; when?: string; once?: boolean; cooldownDays?: number; costs?: Array<{ kind: 'stat'; target: 'player' | 'world'; key: string; amount: number; minimumAfter?: number } | { kind: 'item'; id: string; count: number }>; result?: { success: string; failure?: string }; actions?: Array<{ type: 'submit-op'; op: 'add_stat' | 'set_flag' | 'give_item' | 'take_item'; payload: Record<string, unknown> }> } = {}): WorkshopPackageRecord {
+function activityRecord(options: { hook?: 'manual' | 'onEnterNode' | 'onTimeAdvance' | 'onDaySettle'; when?: string; once?: boolean; cooldownDays?: number; costs?: Array<{ kind: 'stat'; target: 'player' | 'world'; key: string; amount: number; minimumAfter?: number } | { kind: 'item'; id: string; count: number }>; result?: { success: string; failure?: string }; actions?: Array<{ type: 'submit-op'; op: 'add_stat' | 'set_flag' | 'give_item' | 'take_item'; payload: Record<string, unknown> }> } = {}): WorkshopPackageRecord {
   const hook = options.hook ?? 'manual';
   const actions = options.actions ?? [{ type: 'submit-op' as const, op: 'add_stat' as const, payload: { target: 'player', key: 'fishing.skill', delta: 2 } }];
   const effectOps = [...new Set([...actions.map((action) => action.op), ...(options.costs ?? []).map((cost) => cost.kind === 'stat' ? 'add_stat' as const : 'take_item' as const)])];
@@ -13,7 +13,7 @@ function activityRecord(options: { hook?: 'manual' | 'onEnterNode'; when?: strin
     package: {
       manifest: {
         type: 'workshop', packageVersion: 1, runtimeVersion: 1, id: 'activity.fishing', name: '钓鱼活动', author: 'Tester', version: '1.0.0',
-        permissions: [{ capability: 'op.submit', resources: ['run_workshop_activity', ...effectOps] }, ...(options.when ? [{ capability: 'world.read', resources: ['player.location'] as const }] : [])],
+        permissions: [{ capability: 'op.submit', resources: ['run_workshop_activity', ...effectOps] }, ...(options.when ? [{ capability: 'world.read', resources: ['clock', 'player.location'] as const }] : [])],
       },
       app: {
         entryPageId: 'home', pages: [{ id: 'home', title: '钓鱼', components: hook === 'manual' ? [{ kind: 'button', label: '开始钓鱼', action: { type: 'submit-op', op: 'run_workshop_activity', payload: { ruleId: 'fish' } } }] : [{ kind: 'text', text: '到达时自动检查。' }] }],
@@ -127,5 +127,51 @@ describe('workshop deterministic activities', () => {
     events.emit('onEnterNode', { fromNodeId: 'elsewhere', toNodeId: 'start', world: save.world });
     expect(save.world.player.stats['fishing.skill']).toBe(2);
     unsubscribe();
+  });
+
+  it('runs onTimeAdvance rules with the emitted day, destination slot, and current node', () => {
+    const record = activityRecord({ hook: 'onTimeAdvance', when: 'day == 3 and slotId == "noon" and nodeId == "start"' });
+    const { save } = setup(record);
+    const events = new EventBus();
+    const observed = vi.fn();
+    events.subscribe('onOpsApply', observed);
+    const unsubscribe = registerWorkshopActivityHooks(events, [record]);
+
+    events.emit('onDaySettle', { day: 3, world: save.world });
+    expect(save.world.player.stats['fishing.skill']).toBeUndefined();
+    events.emit('onTimeAdvance', { day: 3, fromSlotId: 'morning', toSlotId: 'noon', world: save.world });
+    expect(save.world.player.stats['fishing.skill']).toBe(2);
+    expect(observed).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    events.emit('onTimeAdvance', { day: 3, fromSlotId: 'noon', toSlotId: 'evening', world: save.world });
+    expect(save.world.player.stats['fishing.skill']).toBe(2);
+  });
+
+  it('runs onDaySettle rules with costs and cooldown at the settled day coordinate', () => {
+    const record = activityRecord({
+      hook: 'onDaySettle',
+      when: 'day == 3 and slotId == "morning" and nodeId == "start"',
+      cooldownDays: 1,
+      costs: [{ kind: 'stat', target: 'player', key: 'energy', amount: 1, minimumAfter: 0 }],
+    });
+    const { save } = setup(record);
+    save.world.player.stats.energy = 3;
+    const events = new EventBus();
+    const observed = vi.fn();
+    events.subscribe('onOpsApply', observed);
+    registerWorkshopActivityHooks(events, [record]);
+
+    events.emit('onTimeAdvance', { day: 3, fromSlotId: 'night', toSlotId: 'morning', world: save.world });
+    expect(save.world.player.stats.energy).toBe(3);
+    events.emit('onDaySettle', { day: 3, world: save.world });
+    expect(save.world.player.stats.energy).toBe(2);
+    expect(save.world.player.stats['fishing.skill']).toBe(2);
+    expect(save.world.stats['workshop.activity.activity.fishing.fish.last-day']).toBe(3);
+    expect(observed).toHaveBeenCalledTimes(1);
+
+    events.emit('onDaySettle', { day: 3, world: save.world });
+    expect(save.world.player.stats.energy).toBe(2);
+    expect(save.world.player.stats['fishing.skill']).toBe(2);
   });
 });

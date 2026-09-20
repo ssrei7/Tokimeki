@@ -88,7 +88,7 @@ patch 只允许 `add`、`replace`、`remove`，单次最多 100 项；路径必�
   "capabilityQuery": {
     "name": "capabilities.list",
     "result": {
-      "catalogVersion": 3,
+      "catalogVersion": 4,
       "packageVersion": 1,
       "runtimeVersion": 1,
       "ui": { "components": [], "bindings": {}, "actions": {} },
@@ -202,7 +202,7 @@ v1 安装器会保存这些声明。受限运行时会将页面内容渲染为�
 
 AI 草稿通道进一步收窄：只接受无资产的 manifest / app / 空 rules，只允许受限页面组件、`navigate`、`set-local`，以及 `world.read`、`app.local-state`、`navigation.local` 权限。事件、Prompt、图片、非空规则和其他动作即使符合完整包 schema，也会在进入编辑器前被拒绝；用户仍可在纯本地编辑器中手工查看完整协议，但未开放动作保持禁用。
 
-`rules.json` 只保存声明式条件、成本、结果文案和白名单动作；条件必须通过项目现有 expr-eval 安全语法检查。当前 `hook` 只允许 `manual` 或 `onEnterNode`，效果只允许 `add_stat`、`set_flag`、`give_item`、`take_item`。
+`rules.json` 只保存声明式条件、成本、结果文案和白名单动作；条件必须通过项目现有 expr-eval 安全语法检查。当前 `hook` 只允许 `manual`、`onEnterNode`、`onTimeAdvance` 或 `onDaySettle`，效果只允许 `add_stat`、`set_flag`、`give_item`、`take_item`。
 
 成本与结果示例：
 
@@ -224,7 +224,9 @@ AI 草稿通道进一步收窄：只接受无资产的 manifest / app / 空 rule
 }
 ```
 
-`stat` 成本只接受通用 `player/world stats` 键，单项 `amount` 最大 10，可用 `minimumAfter` 指定扣除后的最低值；同一键的多项成本会先聚合，不能靠拆分绕过余额检查。`item` 成本单项最多 99。成本对应的 `add_stat` / `take_item` 必须逐项声明 `op.submit` 权限。所有成本与效果先在克隆世界中通过正式 op schema 与限幅，任一成本不足或效果失败都不会写回；不消耗时间或行动点。`result.success` 只在整组提交成功后显示，`result.failure` 会与内核真实拒绝原因一起显示，不能改变结算事实。`once` 和 `cooldownDays` 继续使用命名空间化的通用 flags/stats 记录。`events.json` 复用当前 EventDef schema，但尚不安装或执行。`prompts.json` 的单块预算上限为 1024，总预算上限为 4096，但尚不注册。
+`stat` 成本只接受通用 `player/world stats` 键，单项 `amount` 最大 10，可用 `minimumAfter` 指定扣除后的最低值；同一键的多项成本会先聚合，不能靠拆分绕过余额检查。`item` 成本单项最多 99。成本对应的 `add_stat` / `take_item` 必须逐项声明 `op.submit` 权限。所有成本与效果先在克隆世界中通过正式 op schema 与限幅，任一成本不足或效果失败都不会写回；不消耗时间或行动点。`result.success` 只在整组提交成功后显示，`result.failure` 会与内核真实拒绝原因一起显示，不能改变结算事实。`once` 和 `cooldownDays` 继续使用命名空间化的通用 flags/stats 记录。
+
+`manual` 只由用户按钮显式触发；`onEnterNode` 在玩家到场后触发；`onTimeAdvance` 使用事件给出的结算前日期、目标时段与当前位置；`onDaySettle` 使用正在结算的日期和当前时段/地点。自动活动均为纯本地执行，并在成功后统一发出 `onOpsApply` 变更通知。当前不开放 `onDayStart`、`onEncounter` 或 `onDialogueEnd`，因为其 payload 没有确定性活动所需的世界上下文；不开放 `onOpsApply` 活动以避免递归，也不把 `beforePromptAssemble` 用作状态写入钩子。`events.json` 复用当前 EventDef schema，但尚不安装或执行。`prompts.json` 的单块预算上限为 1024，总预算上限为 4096，但尚不注册。
 
 ## 4. 权限
 

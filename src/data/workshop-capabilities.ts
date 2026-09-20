@@ -12,7 +12,7 @@ import {
   WORKSHOP_WORLD_READ_RESOURCES,
 } from './workshop';
 
-export const WORKSHOP_CAPABILITY_CATALOG_VERSION = 3;
+export const WORKSHOP_CAPABILITY_CATALOG_VERSION = 4;
 
 export const WorkshopCapabilityCatalogSchema = z.object({
   catalogVersion: z.literal(WORKSHOP_CAPABILITY_CATALOG_VERSION),
@@ -92,7 +92,7 @@ const CATALOG: WorkshopCapabilityCatalog = WorkshopCapabilityCatalogSchema.parse
     effectOps: [...WORKSHOP_ACTIVITY_EFFECT_OPS],
     resultMessages: true,
     resultSyntax: '{"success":"活动完成。","failure":"当前无法进行。"}',
-    requirement: 'manual 规则由用户按钮触发；onEnterNode 规则由到场钩子触发。stat/item 成本先聚合检查，再与效果整组原子提交；result 只提供成功/失败展示文案。AI 不能直接写世界事实。',
+    requirement: 'manual 规则由用户按钮触发；onEnterNode、onTimeAdvance、onDaySettle 规则由对应确定性钩子触发。stat/item 成本先聚合检查，再与效果整组原子提交；result 只提供成功/失败展示文案。AI 不能直接写世界事实。',
   },
   declaredOnly: { events: true, prompts: true, providerText: true, providerTextTasks: [...WORKSHOP_TEXT_TASKS] },
   assets: { acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'], agentMayCreateBinary: false, note: '可保留当前工程已有 assetMeta 和引用；Agent 不能虚构或生成二进制载荷。' },

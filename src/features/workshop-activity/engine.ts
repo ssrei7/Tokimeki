@@ -3,14 +3,14 @@ import { evaluateCondition, type ConditionScope } from '../../core/expr';
 import { createDefaultOpRegistry } from '../../core/ops';
 import { OpRegistry } from '../../core/ops/registry';
 import type { ApplyOpsResult, Change, OpContext, OpResult } from '../../core/ops/types';
-import type { WorkshopActivityCost, WorkshopPackage, WorkshopPackageRecord, WorkshopRule } from '../../data/workshop';
-import { validateWorkshopPackage, WORKSHOP_ACTIVITY_EFFECT_OPS } from '../../data/workshop';
+import type { WorkshopActivityCost, WorkshopActivityHook, WorkshopPackage, WorkshopPackageRecord, WorkshopRule } from '../../data/workshop';
+import { validateWorkshopPackage, WORKSHOP_ACTIVITY_EFFECT_OPS, WorkshopActivityHookSchema } from '../../data/workshop';
 
 const RunWorkshopActivitySchema = z.object({
   op: z.literal('run_workshop_activity'),
   packageId: z.string().min(1),
   ruleId: z.string().min(1),
-  source: z.enum(['manual', 'onEnterNode']),
+  source: WorkshopActivityHookSchema,
 }).strict();
 
 type PackageResolver = (packageId: string) => WorkshopPackage | undefined;
@@ -28,7 +28,7 @@ export function createWorkshopActivityOpRegistry(resolvePackage: PackageResolver
   return registry;
 }
 
-export function runWorkshopActivity(record: WorkshopPackageRecord, ruleId: string, source: 'manual' | 'onEnterNode', context: OpContext): ApplyOpsResult {
+export function runWorkshopActivity(record: WorkshopPackageRecord, ruleId: string, source: WorkshopActivityHook, context: OpContext): ApplyOpsResult {
   const registry = createWorkshopActivityOpRegistry((packageId) => packageId === record.id ? record.package : undefined);
   return registry.applyAll([{ op: 'run_workshop_activity', packageId: record.id, ruleId, source }], context, 1);
 }

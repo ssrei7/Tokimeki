@@ -161,6 +161,7 @@ subscribe<H extends Hook>(hook: H, fn: Handler<H>, priority?: number): Unsubscri
 - 处理器不得直接改 `WorldState`，只能派发 ops 或返回意图对象。保持单一写入路径。
 - 每个 feature 在自己的 `register.ts` 里挂钩子，`features/index.ts` 只做汇总注册。新功能 = 新目录，核心零改动。
 - 公共扩展钩子以 `AGENTS.md` 白名单为准。离开地点通过 `onEnterNode` payload 中的 `fromNodeId/toNodeId` 表达；对话开始通过 `onEncounter` 或 `beforePromptAssemble` 表达；物品与数值变化统一从 `onOpsApply` 的 `Change[]` 观察，不新增独立公共钩子。
+- 工坊自动活动当前只订阅携带确定性 `world` 上下文的 `onEnterNode`、`onTimeAdvance`、`onDaySettle`，并统一派发内部 `run_workshop_activity` op；`onOpsApply` 只接收执行后的变更通知，不反向触发活动。
 
 ---
 
