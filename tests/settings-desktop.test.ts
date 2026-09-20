@@ -81,6 +81,7 @@ describe('settings desktop', () => {
     const entries = Array.from({ length: 25 }, (_, index) => ({ id: `entry-${index}`, label: `项目${index}`, icon, tone: 'gray' as const }));
     for (const launcherId of ['terminal', 'settings']) {
       const html = renderToStaticMarkup(createElement(DesktopLauncher, { launcherId, title: launcherId === 'terminal' ? '终端' : '设置', appName: '我的世界', entries, onOpen: () => undefined }));
+      expect(html).toContain('desktop-launcher swipe-enabled paginated');
       expect((html.match(/class="desktop-app-icon"/g) ?? [])).toHaveLength(16);
       expect((html.match(/class="desktop-pagination/g) ?? [])).toHaveLength(1);
       expect((html.match(/aria-label="第 [12] 页"/g) ?? [])).toHaveLength(2);
@@ -98,7 +99,12 @@ describe('settings desktop', () => {
 
   it('uses four mobile columns and six wide-screen columns', () => {
     const css = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
+    const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     expect(css).toMatch(/\.desktop-grid\s*\{[^}]*grid-template-columns:\s*repeat\(4,/s);
+    expect(css).toContain('.screen.desktop-screen-host { overscroll-behavior-y: none; }');
+    expect(css).toContain('.desktop-launcher.swipe-enabled.paginated { touch-action: pan-y; }');
+    expect(css).toContain('.desktop-launcher.swipe-enabled.paginated .desktop-grid { grid-template-rows: repeat(4, minmax(calc(var(--desktop-icon-size) + 38px), auto)); }');
+    expect(app).toContain("desktopScreen ? 'desktop-screen-host' : ''");
     expect(css).toContain('@media (min-width: 700px)');
     expect(css).toContain('.desktop-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }');
     expect(css).toContain('@media (max-width: 399px)');
