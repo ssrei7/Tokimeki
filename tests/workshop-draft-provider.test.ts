@@ -5,7 +5,7 @@ import { queryWorkshopProjectInspection } from '../src/data/workshop-inspection'
 import { WorkshopActionSchema, WorkshopComponentSchema, WorkshopPackageSchema } from '../src/data/workshop';
 import { buildWorkshopAgentMessages, buildWorkshopDraftMessages, generateWorkshopDraft, parseWorkshopAgentResponse, parseWorkshopDraftResponse, runWorkshopAgentTurn } from '../src/providers/workshop-draft';
 import { applyWorkshopProjectPatch, WORKSHOP_AGENT_PATCH_OPERATION_LIMIT, WORKSHOP_AGENT_PROTOCOL_VERSION, WorkshopAgentProtocolResponseSchema } from '../src/providers/workshop-agent-protocol';
-import { DEFAULT_WORKSHOP_AGENT_BUDGET, prepareWorkshopAgentRequest } from '../src/providers/workshop-agent-budget';
+import { DEFAULT_WORKSHOP_AGENT_BUDGET, estimateWorkshopAgentInputTokens, prepareWorkshopAgentRequest } from '../src/providers/workshop-agent-budget';
 import type { ProviderConfig } from '../src/providers/types';
 
 const base: ProviderConfig = { id: 'draft', name: 'Draft', kind: 'openai-compatible', endpoint: 'https://example.test/v1', model: 'demo', contextWindow: 8192, maxOutputTokens: 2048, temperature: 0.2 };
@@ -88,6 +88,7 @@ describe('workshop draft provider', () => {
     expect(payload.inspectionQuery.result.preview).toMatchObject({ entryPageId: 'home', totals: { pages: 1, components: 1, actions: 0, rules: 0, events: 0, promptBlocks: 0, assets: 0 } });
     expect(payload.diagnostics).toBeUndefined();
     expect(payload.save).toBeUndefined();
+    expect(payload.budget).toBeUndefined();
   });
 
   it('queries a deterministic read-only capability catalog without world or provider data', () => {
@@ -156,6 +157,69 @@ describe('workshop draft provider', () => {
       budget: { ...DEFAULT_WORKSHOP_AGENT_BUDGET, maxOutputTokensPerRequest: 128, maxTotalOutputTokens: 128, safetyMarginTokens: 64 },
     }, { fetchImpl })).rejects.toThrow('上下文预检超限');
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('automatically repairs locally rejected output within the configured budgets', async () => {
+    const valid = JSON.stringify({ protocolVersion: 1, message: '第二步已修复。', toolCalls: [{ id: 'replace-project', name: 'project.replace', arguments: { package: JSON.parse(packageJson) } }] });
+    const invalidPackage = JSON.parse(packageJson);
+    invalidPackage.app.pages[0].components = [{ kind: 'fact', resource: 'clock' }];
+    const locallyInvalid = JSON.stringify({ protocolVersion: 1, message: '遗漏了权限。', toolCalls: [{ id: 'replace-project', name: 'project.replace', arguments: { package: invalidPackage } }] });
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const payload = JSON.parse(String(init?.body));
+      if (fetchImpl.mock.calls.length === 1) return new Response(JSON.stringify({ choices: [{ message: { content: locallyInvalid } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      const repair = JSON.parse(payload.messages[1].content).repair;
+      expect(repair.failedStep).toBe(1);
+      expect(repair.previousResponseExcerpt).toContain('遗漏了权限');
+      expect(repair.validationError).toContain('permission-missing');
+      return new Response(JSON.stringify({ choices: [{ message: { content: valid } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const result = await runWorkshopAgentTurn(base, {
+      instruction: '修复并完成', currentSource: packageJson, inspection: validInspection(),
+      budget: { ...DEFAULT_WORKSHOP_AGENT_BUDGET, maxSteps: 3, maxRequests: 3 },
+    }, { fetchImpl });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.message).toContain('第二步');
+    expect(result.repairAttempts).toBe(1);
+    expect(result.budgetReport).toMatchObject({ stepsUsed: 2, requestsUsed: 2, maxSteps: 3, maxRequests: 3 });
+  });
+
+  it('stops automatic repair at the request budget without changing the project', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: '{}' } }] }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await expect(runWorkshopAgentTurn(base, {
+      instruction: '修改', currentSource: packageJson, inspection: validInspection(),
+      budget: { ...DEFAULT_WORKSHOP_AGENT_BUDGET, maxSteps: 4, maxRequests: 1 },
+    }, { fetchImpl })).rejects.toThrow('1 步、1 次 API 后达到预算上限');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry transport failures', async () => {
+    const fetchImpl = vi.fn(async () => { throw new Error('network unavailable'); });
+    await expect(runWorkshopAgentTurn(base, {
+      instruction: '修改', currentSource: packageJson, inspection: validInspection(),
+      budget: { ...DEFAULT_WORKSHOP_AGENT_BUDGET, maxSteps: 4, maxRequests: 4 },
+    }, { fetchImpl })).rejects.toThrow('network unavailable');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('minifies valid source and drops oldest dialogue locally before the context preflight', async () => {
+    const prettySource = JSON.stringify(JSON.parse(packageJson), null, 2);
+    const history = [{ role: 'user' as const, content: '旧请求'.repeat(2000) }, { role: 'assistant' as const, content: '旧回复'.repeat(2000) }];
+    const noHistoryMessages = buildWorkshopAgentMessages({ instruction: '修改', currentSource: prettySource, inspection: validInspection(), history }, { historyLimit: 0 });
+    const response = JSON.stringify({ protocolVersion: 1, message: '已完成。', toolCalls: [{ id: 'replace-project', name: 'project.replace', arguments: { package: JSON.parse(packageJson) } }] });
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const payload = JSON.parse(String(init?.body));
+      const userPayload = JSON.parse(payload.messages[1].content);
+      expect(userPayload.currentSource).toBe(packageJson);
+      expect(userPayload.history).toEqual([]);
+      return new Response(JSON.stringify({ choices: [{ message: { content: response } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const outputTokens = 512;
+    const result = await runWorkshopAgentTurn({ ...base, contextWindow: estimateWorkshopAgentInputTokens(noHistoryMessages) + outputTokens, maxOutputTokens: outputTokens }, {
+      instruction: '修改', currentSource: prettySource, inspection: validInspection(), history,
+      budget: { ...DEFAULT_WORKSHOP_AGENT_BUDGET, maxOutputTokensPerRequest: outputTokens, maxTotalOutputTokens: outputTokens, safetyMarginTokens: 0 },
+    }, { fetchImpl });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.contextReport).toMatchObject({ sourceMinified: true, historyEntriesSent: 0, historyEntriesDropped: 2 });
   });
 
   it('applies a validated local project patch atomically', () => {

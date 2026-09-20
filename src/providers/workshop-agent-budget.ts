@@ -34,10 +34,20 @@ export const WorkshopAgentBudgetUsageSchema = z.object({
 export type WorkshopAgentBudgetUsage = z.infer<typeof WorkshopAgentBudgetUsageSchema>;
 
 export interface WorkshopAgentBudgetReport extends WorkshopAgentBudgetUsage {
+  maxSteps: number;
+  maxRequests: number;
+  maxTotalOutputTokens: number;
   estimatedInputTokens: number;
   inputTokenLimit: number;
   outputTokenLimit: number;
   estimatedOutputTokens: number;
+}
+
+export class WorkshopAgentContextBudgetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WorkshopAgentContextBudgetError';
+  }
 }
 
 interface WorkshopAgentRequestPlan {
@@ -70,8 +80,8 @@ export function prepareWorkshopAgentRequest(config: ProviderConfig, messages: re
   const outputTokenLimit = Math.min(config.maxOutputTokens, budget.maxOutputTokensPerRequest, remainingOutputTokens);
   const inputTokenLimit = config.contextWindow - outputTokenLimit - budget.safetyMarginTokens;
   const estimatedInputTokens = estimateWorkshopAgentInputTokens(messages);
-  if (inputTokenLimit <= 0) throw new Error(`工坊 Agent 预算无法容纳请求：Provider 上下文 ${config.contextWindow}，输出预留 ${outputTokenLimit}，安全余量 ${budget.safetyMarginTokens}。`);
-  if (estimatedInputTokens > inputTokenLimit) throw new Error(`工坊 Agent 上下文预检超限：预计输入 ${estimatedInputTokens} tokens，可用 ${inputTokenLimit} tokens。请精简工程、历史或降低输出/安全余量。`);
+  if (inputTokenLimit <= 0) throw new WorkshopAgentContextBudgetError(`工坊 Agent 预算无法容纳请求：Provider 上下文 ${config.contextWindow}，输出预留 ${outputTokenLimit}，安全余量 ${budget.safetyMarginTokens}。`);
+  if (estimatedInputTokens > inputTokenLimit) throw new WorkshopAgentContextBudgetError(`工坊 Agent 上下文预检超限：预计输入 ${estimatedInputTokens} tokens，可用 ${inputTokenLimit} tokens。请精简工程、历史或降低输出/安全余量。`);
 
   return {
     config: { ...config, maxOutputTokens: outputTokenLimit },
@@ -90,6 +100,9 @@ export function completeWorkshopAgentRequest(plan: WorkshopAgentRequestPlan, raw
     stepsUsed: plan.previousUsage.stepsUsed + 1,
     requestsUsed: plan.previousUsage.requestsUsed + 1,
     estimatedOutputTokensUsed: plan.previousUsage.estimatedOutputTokensUsed + estimatedOutputTokens,
+    maxSteps: plan.budget.maxSteps,
+    maxRequests: plan.budget.maxRequests,
+    maxTotalOutputTokens: plan.budget.maxTotalOutputTokens,
     estimatedInputTokens: plan.estimatedInputTokens,
     inputTokenLimit: plan.inputTokenLimit,
     outputTokenLimit: plan.outputTokenLimit,

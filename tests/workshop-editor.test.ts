@@ -106,7 +106,8 @@ describe('workshop local editor', () => {
     expect(html).toContain('校验/预览摘要');
     expect(html).toContain('运行预算（仅当前编辑器）');
     expect(html).toContain('aria-label="工坊 Agent 最大步骤数"');
-    expect(html).toContain('当前切片仍只执行 1 步、发起 1 次请求');
+    expect(html).toContain('只有 Provider 输出被本地校验拒绝时才继续');
+    expect(html).toContain('最多 4 次 API');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>发送给 Agent<\/button>/);
     expect(html).toContain('这是一个纯本地声明式 App。');
   });
