@@ -1,5 +1,5 @@
 import type { SaveFile } from '../data/schema/save';
-import type { WorkshopPackageRecord, WorkshopPermission } from '../data/workshop';
+import type { WorkshopLocalValue, WorkshopPackageRecord, WorkshopPermission, WorkshopValueBinding } from '../data/workshop';
 
 export const WORKSHOP_CHANGED_EVENT = 'tokimeki:workshop-change';
 export const WORKSHOP_ROUTE_PREFIX = 'workshop-app:';
@@ -28,6 +28,97 @@ export function hasWorkshopPermission(record: WorkshopPackageRecord, capability:
 export interface WorkshopFactView {
   label: string;
   lines: string[];
+}
+
+export type WorkshopBindingStatus = 'resolved' | 'missing' | 'unauthorized';
+export interface WorkshopBindingResult { status: WorkshopBindingStatus; value?: unknown }
+
+function workshopWorldResource(resource: Extract<WorkshopValueBinding, { source: 'world' }>['resource'], save: SaveFile): unknown {
+  const { world } = save;
+  switch (resource) {
+    case 'clock': return { day: world.clock.day, slotId: world.clock.slotId };
+    case 'world.stats': return { ...world.stats };
+    case 'world.flags': return { ...world.flags };
+    case 'player.identity': return { name: world.player.name, personaId: world.player.personaId ?? null };
+    case 'player.location': {
+      const node = world.map.nodes[world.player.nodeId];
+      return { nodeId: world.player.nodeId, name: node?.name ?? world.player.nodeId };
+    }
+    case 'player.stats': return { ...world.player.stats };
+    case 'player.flags': return { ...world.player.flags };
+    case 'player.inventory': return world.player.inventory.map((item) => ({ itemId: item.itemId, name: world.items[item.itemId]?.name ?? item.itemId, count: item.count }));
+    case 'map': return {
+      regions: Object.values(world.map.regions).map((region) => ({ id: region.id, name: region.name })),
+      nodes: Object.values(world.map.nodes).map((node) => ({ id: node.id, name: node.name })),
+    };
+    case 'characters': return Object.values(world.characters).map((character) => ({ id: character.id, name: character.name }));
+    case 'relations': return Object.entries(world.relations).map(([characterId, relation]) => ({ characterId, name: world.characters[characterId]?.name ?? characterId, stageId: relation.stageId ?? null, axes: { ...relation.axes } }));
+    case 'events': return { definitionCount: Object.keys(world.eventDefs).length, scheduledCount: world.director.scheduled.length, historyCount: world.eventHistory.length };
+    case 'economy': return {
+      defaultCurrencyId: world.economy.defaultCurrencyId,
+      defaultCurrencyName: world.economy.currencies[world.economy.defaultCurrencyId]?.name ?? world.economy.defaultCurrencyId,
+      jobRuleCount: Object.keys(world.economy.jobRules).length,
+      shopRuleCount: Object.keys(world.economy.shopRules).length,
+    };
+    default: return undefined;
+  }
+}
+
+function selectWorkshopBindingPath(root: unknown, path: readonly (string | number)[]): unknown {
+  let current = root;
+  for (const segment of path) {
+    const key = String(segment);
+    if (['__proto__', 'prototype', 'constructor'].includes(key) || current === null || typeof current !== 'object' || !Object.prototype.hasOwnProperty.call(current, key)) return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
+}
+
+export function resolveWorkshopBinding(binding: WorkshopValueBinding, record: WorkshopPackageRecord, save: SaveFile, values: Readonly<Record<string, WorkshopLocalValue>>): WorkshopBindingResult {
+  let root: unknown;
+  if (binding.source === 'local') {
+    if (!hasWorkshopPermission(record, 'app.local-state')) return { status: 'unauthorized' };
+    root = values[binding.key];
+  } else {
+    if (!hasWorkshopPermission(record, 'world.read', binding.resource)) return { status: 'unauthorized' };
+    root = workshopWorldResource(binding.resource, save);
+  }
+  const selected = selectWorkshopBindingPath(root, binding.path ?? []);
+  if (selected !== undefined) return { status: 'resolved', value: selected };
+  return 'fallback' in binding ? { status: 'resolved', value: binding.fallback } : { status: 'missing' };
+}
+
+function plainWorkshopValue(value: unknown, format: WorkshopValueBinding['format']): string | undefined {
+  if (format === 'number') return typeof value === 'number' && Number.isFinite(value) ? String(value) : undefined;
+  if (format === 'boolean') return typeof value === 'boolean' ? (value ? '是' : '否') : undefined;
+  if (format === 'json') {
+    try { return JSON.stringify(value); } catch { return undefined; }
+  }
+  if (value === null) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (format === 'text') return undefined;
+  try { return JSON.stringify(value); } catch { return undefined; }
+}
+
+export function formatWorkshopBinding(binding: WorkshopValueBinding, result: WorkshopBindingResult, fallback: string): string {
+  if (result.status !== 'resolved') return fallback;
+  const text = plainWorkshopValue(result.value, binding.format ?? 'auto');
+  if (text === undefined) return fallback;
+  return `${binding.prefix ?? ''}${text}${binding.suffix ?? ''}`.slice(0, 10_000);
+}
+
+export function listWorkshopBinding(binding: WorkshopValueBinding, result: WorkshopBindingResult, fallback: readonly string[]): string[] {
+  if (result.status !== 'resolved') return [...fallback];
+  const value = result.value;
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return Object.entries(value).slice(0, 100).map(([key, item]) => `${binding.prefix ?? ''}${key}: ${plainWorkshopValue(item, binding.format ?? 'auto') ?? ''}${binding.suffix ?? ''}`.slice(0, 1000));
+  }
+  const items = Array.isArray(value) ? value : [value];
+  return items.slice(0, 100).map((item) => `${binding.prefix ?? ''}${plainWorkshopValue(item, binding.format ?? 'auto') ?? ''}${binding.suffix ?? ''}`.slice(0, 1000));
+}
+
+export function numberWorkshopBinding(binding: WorkshopValueBinding | undefined, result: WorkshopBindingResult | undefined, fallback: number): number {
+  return binding && result?.status === 'resolved' && typeof result.value === 'number' && Number.isFinite(result.value) ? result.value : fallback;
 }
 
 function entries(value: Record<string, string | number | boolean>): string[] {

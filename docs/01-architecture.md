@@ -233,7 +233,7 @@ type TaskId =
 
 配置两层：`Provider`（endpoint / key / model / 参数 / contextWindow）与 `binding`（TaskId → providerId）。未绑定的任务回落到 `default` provider。
 
-工坊 Agent 在聊天文本之上使用 Provider 无关的应用层 JSON 工具协议。v1 每步只接受一次 `project.replace` 或 `project.patch`；完整替换参数必须通过 `WorkshopPackageSchema`，局部修改只支持至多 100 个 `add` / `replace` / `remove` JSON Pointer 操作，并在副本上原子应用后校验完整工程。本地执行器只产生待写入编辑器的候选草稿，不安装包、不写 SaveFile 或世界状态。请求组装时会纯本地执行 `capabilities.list` 与 `project.inspect`，将能力目录及当前工程的校验/结构摘要合并进同一次 Provider 请求；摘要不含正文、世界事实值、已安装包 ID 或资产二进制，也不增加网络调用。编辑器 Agent 另有页面级步骤、请求、单次/总输出 token 与安全余量预算：执行层在联网前近似计算完整输入，以 Provider 上下文窗口预检，并把本次输出限制收紧为 Provider、单次和剩余总预算的最小值。只有输出未通过 JSON、协议、patch、schema 或正式包校验时才顺序进入下一修复步，并携带本地错误和有界失败输出摘录；网络错误不重试，达到任一预算即停止，失败候选不进入编辑器。
+工坊 Agent 在聊天文本之上使用 Provider 无关的应用层 JSON 工具协议。v1 每步只接受一次 `project.replace` 或 `project.patch`；完整替换参数必须通过 `WorkshopPackageSchema`，局部修改只支持至多 100 个 `add` / `replace` / `remove` JSON Pointer 操作，并在副本上原子应用后校验完整工程。本地执行器只产生待写入编辑器的候选草稿，不安装包、不写 SaveFile 或世界状态。请求组装时会纯本地执行 `capabilities.list` 与 `project.inspect`，将能力目录及当前工程的校验/结构摘要合并进同一次 Provider 请求；能力目录 v2 包含只读 UI 数据绑定的目标与精确语法，摘要不含正文、世界事实值、已安装包 ID 或资产二进制，也不增加网络调用。绑定运行时只从包内本地标量或逐项授权的世界安全快照取展示值，不能改变动作或世界事实。编辑器 Agent 另有页面级步骤、请求、单次/总输出 token 与安全余量预算：执行层在联网前近似计算完整输入，以 Provider 上下文窗口预检，并把本次输出限制收紧为 Provider、单次和剩余总预算的最小值。只有输出未通过 JSON、协议、patch、schema 或正式包校验时才顺序进入下一修复步，并携带本地错误和有界失败输出摘录；网络错误不重试，达到任一预算即停止，失败候选不进入编辑器。
 
 `summarize_day` 只在一个游戏日首次完成结算后自动调用一次，不随行动次数增加；未配置 Provider、请求失败或返回空文本时保留确定性的本地事实摘要。当前没有其他夜间生成任务可合并，因此保持独立调用；阶段 6 的晨报发生在次日开始且使用不同事实边界，不与日记调用合并。
 

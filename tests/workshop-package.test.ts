@@ -85,6 +85,24 @@ describe('workshop package protocol', () => {
     expect(report.requiredPermissions).toContain('op.submit:run_workshop_activity');
   });
 
+  it('derives scoped permissions from generic UI bindings', () => {
+    const pack = WorkshopPackageSchema.parse({
+      ...minimalPackage(),
+      app: { entryPageId: 'home', pages: [{ id: 'home', title: '首页', components: [
+        { kind: 'text', text: '未填写', binding: { source: 'local', key: 'note' } },
+        { kind: 'progress', label: '声望', value: 0, valueBinding: { source: 'world', resource: 'world.stats', path: ['reputation'], format: 'number' }, max: 100 },
+      ] }] },
+    });
+    const report = validateWorkshopPackage(pack);
+    expect(report.requiredPermissions).toEqual(expect.arrayContaining(['app.local-state', 'world.read:world.stats']));
+    expect(report.issues.filter((issue) => issue.code === 'permission-missing')).toHaveLength(2);
+    const declared = WorkshopPackageSchema.parse({
+      ...pack,
+      manifest: { ...pack.manifest, permissions: [{ capability: 'app.local-state' }, { capability: 'world.read', resources: ['world.stats'] }] },
+    });
+    expect(validateWorkshopPackage(declared).canInstall).toBe(true);
+  });
+
   it('accepts only manual or onEnterNode activity rules composed from the restricted effect ops', () => {
     const pack = WorkshopPackageSchema.parse({
       ...minimalPackage(),

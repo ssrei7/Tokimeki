@@ -34,6 +34,7 @@ export const WorkshopWorldReadResourceSchema = z.enum(WORKSHOP_WORLD_READ_RESOUR
 
 export const WORKSHOP_COMPONENT_KINDS = ['title', 'text', 'fact', 'image', 'card', 'list', 'tabs', 'button', 'input', 'select', 'progress', 'confirm'] as const;
 export const WORKSHOP_ACTION_TYPES = ['navigate', 'set-local', 'submit-op', 'trigger-event', 'provider-text'] as const;
+export const WORKSHOP_BINDING_FORMATS = ['auto', 'text', 'number', 'boolean', 'json'] as const;
 
 export const WorkshopPermissionSchema = z.discriminatedUnion('capability', [
   z.object({ capability: z.literal('world.read'), resources: z.array(WorkshopWorldReadResourceSchema).min(1).max(20) }).strict(),
@@ -73,18 +74,32 @@ export const WorkshopActionSchema = z.discriminatedUnion('type', [
   WorkshopProviderTextActionSchema,
 ]);
 
-const WorkshopTitleComponentSchema = z.object({ kind: z.literal('title'), text: z.string().min(1).max(240), level: z.number().int().min(1).max(3).default(2) }).strict();
-const WorkshopTextComponentSchema = z.object({ kind: z.literal('text'), text: TextSchema }).strict();
+export const WorkshopLocalValueSchema = z.union([z.string().max(2000), z.number().finite(), z.boolean(), z.null()]);
+const WorkshopBindingPathSegmentSchema = z.union([z.string().min(1).max(120), z.number().int().nonnegative().max(10_000)]).refine((segment) => !['__proto__', 'prototype', 'constructor'].includes(String(segment)), '绑定路径包含不安全字段。');
+const WorkshopBindingPresentationSchema = z.object({
+  path: z.array(WorkshopBindingPathSegmentSchema).max(8).optional(),
+  format: z.enum(WORKSHOP_BINDING_FORMATS).default('auto'),
+  prefix: z.string().max(120).optional(),
+  suffix: z.string().max(120).optional(),
+  fallback: WorkshopLocalValueSchema.optional(),
+}).strict();
+export const WorkshopValueBindingSchema = z.discriminatedUnion('source', [
+  WorkshopBindingPresentationSchema.extend({ source: z.literal('local'), key: IdSchema }).strict(),
+  WorkshopBindingPresentationSchema.extend({ source: z.literal('world'), resource: WorkshopWorldReadResourceSchema }).strict(),
+]);
+
+const WorkshopTitleComponentSchema = z.object({ kind: z.literal('title'), text: z.string().min(1).max(240), binding: WorkshopValueBindingSchema.optional(), level: z.number().int().min(1).max(3).default(2) }).strict();
+const WorkshopTextComponentSchema = z.object({ kind: z.literal('text'), text: TextSchema, binding: WorkshopValueBindingSchema.optional() }).strict();
 const WorkshopFactComponentSchema = z.object({ kind: z.literal('fact'), resource: WorkshopWorldReadResourceSchema, label: z.string().max(120).optional() }).strict();
 const WorkshopImageComponentSchema = z.object({ kind: z.literal('image'), assetId: IdSchema, alt: z.string().max(240).default('') }).strict();
-const WorkshopCardComponentSchema = z.object({ kind: z.literal('card'), title: z.string().max(240).optional(), body: TextSchema.optional(), imageAssetId: IdSchema.optional() }).strict();
-const WorkshopListComponentSchema = z.object({ kind: z.literal('list'), items: z.array(z.string().max(1000)).max(100) }).strict();
+const WorkshopCardComponentSchema = z.object({ kind: z.literal('card'), title: z.string().max(240).optional(), titleBinding: WorkshopValueBindingSchema.optional(), body: TextSchema.optional(), bodyBinding: WorkshopValueBindingSchema.optional(), imageAssetId: IdSchema.optional() }).strict();
+const WorkshopListComponentSchema = z.object({ kind: z.literal('list'), items: z.array(z.string().max(1000)).max(100), binding: WorkshopValueBindingSchema.optional() }).strict();
 const WorkshopTabsComponentSchema = z.object({ kind: z.literal('tabs'), tabs: z.array(z.object({ id: IdSchema, label: z.string().min(1).max(80), pageId: IdSchema }).strict()).min(1).max(12) }).strict();
-const WorkshopButtonComponentSchema = z.object({ kind: z.literal('button'), label: z.string().min(1).max(120), action: WorkshopActionSchema }).strict();
+const WorkshopButtonComponentSchema = z.object({ kind: z.literal('button'), label: z.string().min(1).max(120), labelBinding: WorkshopValueBindingSchema.optional(), action: WorkshopActionSchema }).strict();
 const WorkshopInputComponentSchema = z.object({ kind: z.literal('input'), key: IdSchema, label: z.string().min(1).max(120), placeholder: z.string().max(240).optional(), maxLength: z.number().int().positive().max(2000).default(500) }).strict();
 const WorkshopSelectComponentSchema = z.object({ kind: z.literal('select'), key: IdSchema, label: z.string().min(1).max(120), options: z.array(z.object({ value: z.string().max(240), label: z.string().min(1).max(120) }).strict()).min(1).max(100) }).strict();
-const WorkshopProgressComponentSchema = z.object({ kind: z.literal('progress'), label: z.string().max(120).optional(), value: z.number().finite(), max: z.number().finite().positive() }).strict();
-const WorkshopConfirmComponentSchema = z.object({ kind: z.literal('confirm'), label: z.string().min(1).max(120), message: z.string().min(1).max(1000), action: WorkshopActionSchema }).strict();
+const WorkshopProgressComponentSchema = z.object({ kind: z.literal('progress'), label: z.string().max(120).optional(), labelBinding: WorkshopValueBindingSchema.optional(), value: z.number().finite(), valueBinding: WorkshopValueBindingSchema.optional(), max: z.number().finite().positive(), maxBinding: WorkshopValueBindingSchema.optional() }).strict();
+const WorkshopConfirmComponentSchema = z.object({ kind: z.literal('confirm'), label: z.string().min(1).max(120), labelBinding: WorkshopValueBindingSchema.optional(), message: z.string().min(1).max(1000), messageBinding: WorkshopValueBindingSchema.optional(), action: WorkshopActionSchema }).strict();
 
 export const WorkshopComponentSchema = z.discriminatedUnion('kind', [
   WorkshopTitleComponentSchema,
@@ -169,7 +184,6 @@ export const WorkshopBindingSchema = z.object({
   updatedAt: z.string().datetime(),
 }).strict();
 
-export const WorkshopLocalValueSchema = z.union([z.string().max(2000), z.number().finite(), z.boolean(), z.null()]);
 export const WorkshopLocalStateSchema = z.object({
   id: z.string().min(1),
   saveId: IdSchema,
@@ -188,6 +202,7 @@ export type WorkshopPackage = z.infer<typeof WorkshopPackageSchema>;
 export type WorkshopPackageRecord = z.infer<typeof WorkshopPackageRecordSchema>;
 export type WorkshopBinding = z.infer<typeof WorkshopBindingSchema>;
 export type WorkshopLocalValue = z.infer<typeof WorkshopLocalValueSchema>;
+export type WorkshopValueBinding = z.infer<typeof WorkshopValueBindingSchema>;
 export type WorkshopLocalState = z.infer<typeof WorkshopLocalStateSchema>;
 
 export interface WorkshopAssetPayload {
@@ -227,6 +242,15 @@ function actionList(pack: WorkshopPackage): Array<{ action: WorkshopAction; path
   }
   for (const [ruleIndex, rule] of pack.rules.rules.entries()) rule.actions.forEach((action, actionIndex) => actions.push({ action, path: `rules.rules[${ruleIndex}].actions[${actionIndex}]` }));
   return actions;
+}
+
+function componentBindings(component: WorkshopComponent): WorkshopValueBinding[] {
+  if (component.kind === 'title' || component.kind === 'text' || component.kind === 'list') return component.binding ? [component.binding] : [];
+  if (component.kind === 'card') return [component.titleBinding, component.bodyBinding].filter((binding): binding is WorkshopValueBinding => Boolean(binding));
+  if (component.kind === 'button') return component.labelBinding ? [component.labelBinding] : [];
+  if (component.kind === 'progress') return [component.labelBinding, component.valueBinding, component.maxBinding].filter((binding): binding is WorkshopValueBinding => Boolean(binding));
+  if (component.kind === 'confirm') return [component.labelBinding, component.messageBinding].filter((binding): binding is WorkshopValueBinding => Boolean(binding));
+  return [];
 }
 
 function eventOps(pack: WorkshopPackage): Array<{ op: string; path: string }> {
@@ -306,6 +330,10 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
     }
     if (component.kind === 'input' || component.kind === 'select') required.add('app.local-state');
     if (component.kind === 'fact') required.add(permissionLabel('world.read', component.resource));
+    for (const binding of componentBindings(component)) {
+      if (binding.source === 'local') required.add('app.local-state');
+      else required.add(permissionLabel('world.read', binding.resource));
+    }
   }
 
   for (const { action, path } of actionList(pack)) {

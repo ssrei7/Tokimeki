@@ -4,7 +4,7 @@ import { loadAsset } from '../data/db/assets';
 import { listWorkshopBindings, listWorkshopPackages, loadWorkshopLocalState, saveWorkshopLocalState } from '../data/db/content';
 import type { AssetRef } from '../data/schema/save';
 import { WorkshopLocalValueSchema, type WorkshopAction, type WorkshopComponent, type WorkshopLocalValue, type WorkshopPackageRecord } from '../data/workshop';
-import { hasWorkshopPermission, resolveWorkshopFact, WORKSHOP_CHANGED_EVENT } from '../ui/workshop-runtime';
+import { formatWorkshopBinding, hasWorkshopPermission, listWorkshopBinding, numberWorkshopBinding, resolveWorkshopBinding, resolveWorkshopFact, WORKSHOP_CHANGED_EVENT } from '../ui/workshop-runtime';
 
 export function useEnabledWorkshopPackages(saveId: string): WorkshopPackageRecord[] {
   const [records, setRecords] = useState<WorkshopPackageRecord[]>([]);
@@ -83,26 +83,49 @@ export function WorkshopPageRenderer({ record, save, pageId, values, assetUrls =
     const key = `${component.kind}-${index}`;
     if (component.kind === 'title') {
       const Tag = component.level === 1 ? 'h2' : component.level === 2 ? 'h3' : 'h4';
-      return <Tag key={key}>{component.text}</Tag>;
+      const text = component.binding ? formatWorkshopBinding(component.binding, resolveWorkshopBinding(component.binding, record, save, values), component.text) : component.text;
+      return <Tag key={key}>{text}</Tag>;
     }
-    if (component.kind === 'text') return <p key={key}>{component.text}</p>;
+    if (component.kind === 'text') {
+      const text = component.binding ? formatWorkshopBinding(component.binding, resolveWorkshopBinding(component.binding, record, save, values), component.text) : component.text;
+      return <p key={key}>{text}</p>;
+    }
     if (component.kind === 'fact') {
       if (!hasWorkshopPermission(record, 'world.read', component.resource)) return <p className="empty" key={key}>未授权读取：{component.resource}</p>;
       const fact = resolveWorkshopFact(component.resource, save);
       return <section className="surface-card workshop-fact" key={key}><strong>{component.label || fact.label}</strong><ul>{fact.lines.map((line, lineIndex) => <li key={`${line}-${lineIndex}`}>{line}</li>)}</ul></section>;
     }
     if (component.kind === 'image') return <WorkshopAssetImage key={key} reference={record.assetBindings[component.assetId]} previewSrc={assetUrls[component.assetId]} alt={component.alt} className="workshop-content-image" />;
-    if (component.kind === 'card') return <article className="surface-card workshop-content-card" key={key}>{component.imageAssetId && <WorkshopAssetImage reference={record.assetBindings[component.imageAssetId]} previewSrc={assetUrls[component.imageAssetId]} alt={component.title ?? ''} />}{component.title && <h3>{component.title}</h3>}{component.body && <p>{component.body}</p>}</article>;
-    if (component.kind === 'list') return <ul key={key}>{component.items.map((item, itemIndex) => <li key={`${itemIndex}-${item}`}>{item}</li>)}</ul>;
+    if (component.kind === 'card') {
+      const title = component.titleBinding ? formatWorkshopBinding(component.titleBinding, resolveWorkshopBinding(component.titleBinding, record, save, values), component.title ?? '') : component.title;
+      const body = component.bodyBinding ? formatWorkshopBinding(component.bodyBinding, resolveWorkshopBinding(component.bodyBinding, record, save, values), component.body ?? '') : component.body;
+      return <article className="surface-card workshop-content-card" key={key}>{component.imageAssetId && <WorkshopAssetImage reference={record.assetBindings[component.imageAssetId]} previewSrc={assetUrls[component.imageAssetId]} alt={title ?? ''} />}{title && <h3>{title}</h3>}{body && <p>{body}</p>}</article>;
+    }
+    if (component.kind === 'list') {
+      const items = component.binding ? listWorkshopBinding(component.binding, resolveWorkshopBinding(component.binding, record, save, values), component.items) : component.items;
+      return <ul key={key}>{items.map((item, itemIndex) => <li key={`${itemIndex}-${item}`}>{item}</li>)}</ul>;
+    }
     if (component.kind === 'tabs') return <nav className="button-row workshop-tabs" aria-label="App 页面" key={key}>{component.tabs.map((tab) => {
       const enabled = hasWorkshopPermission(record, 'navigation.local') && pages.has(tab.pageId);
       return <button type="button" className={pageId === tab.pageId ? 'selected' : 'secondary'} aria-current={pageId === tab.pageId ? 'page' : undefined} disabled={!enabled} title={!enabled ? '当前包未声明包内导航权限' : undefined} key={tab.id} onClick={() => { if (enabled) onPageChange(tab.pageId); }}>{tab.label}</button>;
     })}</nav>;
-    if (component.kind === 'button') return <button type="button" key={key} disabled={activityBusy || !isRunnableAction(record, component.action, Boolean(onRunActivity))} title={!isRunnableAction(record, component.action, Boolean(onRunActivity)) ? blockedActionLabel(component.action) : undefined} onClick={() => runAction(component.action)}>{component.label}</button>;
+    if (component.kind === 'button') {
+      const label = component.labelBinding ? formatWorkshopBinding(component.labelBinding, resolveWorkshopBinding(component.labelBinding, record, save, values), component.label) : component.label;
+      return <button type="button" key={key} disabled={activityBusy || !isRunnableAction(record, component.action, Boolean(onRunActivity))} title={!isRunnableAction(record, component.action, Boolean(onRunActivity)) ? blockedActionLabel(component.action) : undefined} onClick={() => runAction(component.action)}>{label}</button>;
+    }
     if (component.kind === 'input') return <label key={key}>{component.label}<input value={typeof values[component.key] === 'string' ? values[component.key] as string : ''} placeholder={component.placeholder} maxLength={component.maxLength} disabled={!hasWorkshopPermission(record, 'app.local-state')} onChange={(event) => onValueChange(component.key, event.target.value)} /></label>;
     if (component.kind === 'select') return <label key={key}>{component.label}<select value={typeof values[component.key] === 'string' ? values[component.key] as string : ''} disabled={!hasWorkshopPermission(record, 'app.local-state')} onChange={(event) => onValueChange(component.key, event.target.value)}><option value="">请选择</option>{component.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
-    if (component.kind === 'progress') return <label className="workshop-progress" key={key}>{component.label && <span>{component.label}</span>}<progress value={Math.max(0, Math.min(component.value, component.max))} max={component.max} /></label>;
-    if (component.kind === 'confirm') return <button type="button" key={key} disabled={activityBusy || !isRunnableAction(record, component.action, Boolean(onRunActivity))} title={!isRunnableAction(record, component.action, Boolean(onRunActivity)) ? blockedActionLabel(component.action) : undefined} onClick={() => { if (window.confirm(component.message)) runAction(component.action); }}>{component.label}</button>;
+    if (component.kind === 'progress') {
+      const label = component.labelBinding ? formatWorkshopBinding(component.labelBinding, resolveWorkshopBinding(component.labelBinding, record, save, values), component.label ?? '') : component.label;
+      const max = Math.max(Number.EPSILON, numberWorkshopBinding(component.maxBinding, component.maxBinding ? resolveWorkshopBinding(component.maxBinding, record, save, values) : undefined, component.max));
+      const value = numberWorkshopBinding(component.valueBinding, component.valueBinding ? resolveWorkshopBinding(component.valueBinding, record, save, values) : undefined, component.value);
+      return <label className="workshop-progress" key={key}>{label && <span>{label}</span>}<progress value={Math.max(0, Math.min(value, max))} max={max} /></label>;
+    }
+    if (component.kind === 'confirm') {
+      const label = component.labelBinding ? formatWorkshopBinding(component.labelBinding, resolveWorkshopBinding(component.labelBinding, record, save, values), component.label) : component.label;
+      const message = component.messageBinding ? formatWorkshopBinding(component.messageBinding, resolveWorkshopBinding(component.messageBinding, record, save, values), component.message) : component.message;
+      return <button type="button" key={key} disabled={activityBusy || !isRunnableAction(record, component.action, Boolean(onRunActivity))} title={!isRunnableAction(record, component.action, Boolean(onRunActivity)) ? blockedActionLabel(component.action) : undefined} onClick={() => { if (window.confirm(message)) runAction(component.action); }}>{label}</button>;
+    }
     return null;
   };
 

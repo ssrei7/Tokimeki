@@ -95,8 +95,11 @@ describe('workshop draft provider', () => {
     const first = queryWorkshopCapabilityCatalog();
     first.ui.components.pop();
     const second = queryWorkshopCapabilityCatalog();
-    expect(second.catalogVersion).toBe(1);
+    expect(second.catalogVersion).toBe(2);
     expect(second.ui.components).toContain('confirm');
+    expect(second.ui.bindings).toMatchObject({ sources: ['local', 'world'], formats: ['auto', 'text', 'number', 'boolean', 'json'], maxPathDepth: 8 });
+    expect(second.ui.bindings.targets).toContain('progress.value');
+    expect(JSON.parse(second.ui.bindings.syntax.world)).toMatchObject({ source: 'world', resource: 'player.stats', path: ['energy'] });
     expect(second.worldRead.resources).toContain('player.inventory');
     expect(second.declaredOnly).toMatchObject({ events: true, prompts: true, providerText: true });
     expect(second.assets.agentMayCreateBinary).toBe(false);

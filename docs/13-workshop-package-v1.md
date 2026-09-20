@@ -88,10 +88,10 @@ patch 只允许 `add`、`replace`、`remove`，单次最多 100 项；路径必�
   "capabilityQuery": {
     "name": "capabilities.list",
     "result": {
-      "catalogVersion": 1,
+      "catalogVersion": 2,
       "packageVersion": 1,
       "runtimeVersion": 1,
-      "ui": { "components": [], "actions": {} },
+      "ui": { "components": [], "bindings": {}, "actions": {} },
       "worldRead": {},
       "activities": {},
       "declaredOnly": {},
@@ -102,7 +102,7 @@ patch 只允许 `add`、`replace`、`remove`，单次最多 100 项；路径必�
 }
 ```
 
-实际数组和限制由当前 schema/runtime 常量生成，示例中的空值只是结构缩写。目录会区分已启用动作、带条件的活动调度、当前禁用动作和只声明不运行的扩展。查询纯本地、零写入，不读取 SaveFile、已安装包、IndexedDB、Provider 配置或密钥，并与当前用户指令合并成同一次 API 请求；因此不会为“查能力”增加第二次调用。自动工具循环仍未开放。
+实际数组和限制由当前 schema/runtime 常量生成，示例中的空值只是结构缩写。目录会区分 UI 绑定语法、已启用动作、带条件的活动调度、当前禁用动作和只声明不运行的扩展。查询纯本地、零写入，不读取 SaveFile、已安装包、IndexedDB、Provider 配置或密钥，并与当前用户指令合并成同一次 API 请求；因此不会为“查能力”增加第二次调用。本地拒绝候选后的修复请求仍受步骤、请求和 token 预算约束。
 
 同一请求还会携带本地 `project.inspect` 结果：
 
@@ -165,6 +165,40 @@ assets/*          可选
 v1 安装器会保存这些声明。受限运行时会将页面内容渲染为固定 React 组件，不解释 HTML 或 CSS，也不执行包内代码。任意代码、DOM 访问、自定义 CSS、动态 import、脚本 URL 和任意网络请求均没有协议入口。
 
 标题、正文、图片、卡片、列表、标签页、按钮、输入框、选择器、进度和确认框均可显示。`navigate` 与 `set-local` 可直接运行；`submit-op` 目前只开放内部 `run_workshop_activity`，且按钮只能引用包内 `manual` 规则。`trigger-event`、`provider-text` 和其他直接 op 按钮仍禁用。世界事实视图始终来自当前 `SaveFile`，只有通过活动内核复核的效果才能写回。
+
+标题/正文、卡片标题与正文、列表项、按钮文案、进度标签/数值/上限，以及确认按钮文案/提示可声明统一的只读数据绑定。静态字段始终保留为绑定缺失、类型不符或运行时权限被撤销时的回退：
+
+```json
+{
+  "kind": "text",
+  "text": "尚未填写备注",
+  "binding": {
+    "source": "local",
+    "key": "note",
+    "format": "text"
+  }
+}
+```
+
+```json
+{
+  "kind": "progress",
+  "label": "体力",
+  "value": 0,
+  "valueBinding": {
+    "source": "world",
+    "resource": "player.stats",
+    "path": ["energy"],
+    "format": "number",
+    "fallback": 0
+  },
+  "max": 100
+}
+```
+
+`local` 只能读取当前 `saveId + packageId` 下的标量 App 状态，并要求 `app.local-state`；`world` 只能读取 manifest 已逐项声明的 `world.read` 安全快照。`path` 是最多 8 段的字符串/非负整数数组，拒绝 `__proto__`、`prototype` 和 `constructor`，不执行表达式、模板、JSONPath 或代码。格式只允许 `auto`、`text`、`number`、`boolean`、`json`，可加固定 `prefix` / `suffix` 和标量 `fallback`。列表最多显示 100 项、单项最多 1000 字符，其他绑定文本最多 10000 字符。
+
+世界安全快照只包含对应权限内的展示事实：时间的 day/slotId，世界或玩家 stats/flags，玩家名称与身份 ID，当前位置 ID/名称，背包的物品 ID/名称/数量，地图地点与区域 ID/名称，正式角色 ID/名称，关系阶段与通用关系轴，以及事件/经济的计数和默认货币摘要。绑定无法访问完整 SaveFile、对话、Provider、密钥、二进制或任意未声明资源；也不能改变动作 payload 或写入世界事实。
 
 AI 草稿通道进一步收窄：只接受无资产的 manifest / app / 空 rules，只允许受限页面组件、`navigate`、`set-local`，以及 `world.read`、`app.local-state`、`navigation.local` 权限。事件、Prompt、图片、非空规则和其他动作即使符合完整包 schema，也会在进入编辑器前被拒绝；用户仍可在纯本地编辑器中手工查看完整协议，但未开放动作保持禁用。
 

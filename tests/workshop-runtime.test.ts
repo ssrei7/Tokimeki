@@ -2,9 +2,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { WorkshopPageRenderer } from '../src/components/workshop-runtime';
-import { WorkshopLocalStateSchema, WorkshopPackageRecordSchema } from '../src/data/workshop';
+import { WorkshopLocalStateSchema, WorkshopPackageRecordSchema, WorkshopValueBindingSchema } from '../src/data/workshop';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
-import { hasWorkshopPermission, resolveWorkshopFact, workshopPackageIdFromRoute, workshopRoute } from '../src/ui/workshop-runtime';
+import { formatWorkshopBinding, hasWorkshopPermission, listWorkshopBinding, resolveWorkshopBinding, resolveWorkshopFact, workshopPackageIdFromRoute, workshopRoute } from '../src/ui/workshop-runtime';
 
 function runtimeRecord() {
   return WorkshopPackageRecordSchema.parse({
@@ -89,6 +89,47 @@ describe('workshop restricted runtime', () => {
     expect(resolveWorkshopFact('world.stats', save).lines).toContain('reputation: 7');
     expect(resolveWorkshopFact('player.stats', save).lines).toContain('money: 12');
     expect(resolveWorkshopFact('player.location', save).lines[0]).toBe('起点街区');
+  });
+
+  it('binds local and authorized world values into declarative display components', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'bindings', title: 'Bindings', day: 6, slotId: 'night' }));
+    save.world.player.stats.energy = 7;
+    const record = runtimeRecord();
+    record.package.manifest.permissions = [
+      { capability: 'app.local-state' },
+      { capability: 'world.read', resources: ['clock', 'player.stats', 'player.inventory'] },
+    ];
+    record.package.app.pages[0]!.components = [
+      { kind: 'title', text: '无标题', binding: { source: 'local', key: 'headline', format: 'text' }, level: 2 },
+      { kind: 'text', text: '无时间', binding: { source: 'world', resource: 'clock', path: ['day'], format: 'number', prefix: '第 ', suffix: ' 天' } },
+      { kind: 'card', title: '体力', body: '未知', bodyBinding: { source: 'world', resource: 'player.stats', path: ['energy'], format: 'number', suffix: ' 点' } },
+      { kind: 'list', items: ['空背包'], binding: { source: 'world', resource: 'player.inventory', format: 'json' } },
+      { kind: 'progress', label: '进度', value: 0, valueBinding: { source: 'local', key: 'progress', format: 'number' }, max: 10 },
+      { kind: 'button', label: '默认按钮', labelBinding: { source: 'local', key: 'buttonLabel', format: 'text' }, action: { type: 'set-local', key: 'done', value: true } },
+    ];
+    const html = renderToStaticMarkup(createElement(WorkshopPageRenderer, { record, save, pageId: 'home', values: { headline: '今晚计划', progress: 4, buttonLabel: '完成记录' }, onPageChange: vi.fn(), onValueChange: vi.fn() }));
+    expect(html).toContain('今晚计划');
+    expect(html).toContain('第 6 天');
+    expect(html).toContain('7 点');
+    expect(html).toContain('<progress value="4" max="10"></progress>');
+    expect(html).toContain('完成记录');
+    expect(html).not.toContain('默认按钮');
+  });
+
+  it('rechecks binding permissions, safe paths and deterministic formatting', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'binding-permissions', title: 'Bindings' }));
+    save.world.stats.reputation = 9;
+    const record = runtimeRecord();
+    const worldBinding = WorkshopValueBindingSchema.parse({ source: 'world', resource: 'world.stats', path: ['reputation'], format: 'number', prefix: '+', fallback: 0 });
+    expect(resolveWorkshopBinding(worldBinding, record, save, {}).status).toBe('unauthorized');
+    record.package.manifest.permissions.push({ capability: 'world.read', resources: ['world.stats'] });
+    const result = resolveWorkshopBinding(worldBinding, record, save, {});
+    expect(formatWorkshopBinding(worldBinding, result, '未知')).toBe('+9');
+    const missing = WorkshopValueBindingSchema.parse({ source: 'world', resource: 'world.stats', path: ['missing'], fallback: 3, format: 'number' });
+    expect(formatWorkshopBinding(missing, resolveWorkshopBinding(missing, record, save, {}), '未知')).toBe('3');
+    const list = WorkshopValueBindingSchema.parse({ source: 'world', resource: 'world.stats' });
+    expect(listWorkshopBinding(list, resolveWorkshopBinding(list, record, save, {}), [])).toContain('reputation: 9');
+    expect(() => WorkshopValueBindingSchema.parse({ source: 'world', resource: 'world.stats', path: ['__proto__'] })).toThrow('不安全字段');
   });
 
   it('limits local state to small scalar values', () => {
