@@ -721,3 +721,9 @@
 **决定**：新增版本化本地 `project.inspect`，复用编辑器同一份分析结果，不重复建立第二套校验器。结果区分 JSON 语法、包 schema、完整校验、预览可用性和导出状态；携带最多 100 条诊断、最多 200 项所需权限，并提供包 ID/名称/版本、入口页、页面标题、组件/动作计数、规则 hook 与 events/prompts/assets 数量。预览摘要不包含组件正文、表单值或渲染后的世界事实。
 
 **隐私与调用边界**：`package-id-conflict` 在构造 inspection 时过滤，避免向 Provider 暴露本机已安装包 ID；其他权限、引用和资产载荷诊断继续保留。每次用户发送前，本地同步生成一次 inspection，与当前源码、历史和能力目录合并进原有单次 API 请求；不额外调用 Provider，不渲染页面，不读取 SaveFile 世界事实值，不发送资产二进制，也不写入任何状态。自动读取修改后结果、再次调用模型和修复循环仍须等待步骤/费用预算切片；SaveFile 保持 v41，Content IndexedDB 保持 v12。
+
+## D134 工坊 Agent 预算由 Provider 执行层强制
+
+**决定**：编辑器内的工坊 Agent 提供仅在当前页面生效的最大步骤数、最大 API 请求数、单次输出 token、总输出 token 和上下文安全余量。每次请求前使用项目既有近似 token 算法计算完整 system/user 消息；可用输入为 `contextWindow - 本次输出上限 - safetyMargin`。若步骤、请求、总输出或输入上下文超限，执行层在联网前拒绝；实际发送给适配器的 `maxOutputTokens` 取 Provider 配置、单次预算和剩余总预算三者中的最小值，返回超出该限制的结果也不进入编辑器。
+
+**调用与费用边界**：当前 Agent 指令仍只执行 1 步并最多调用 1 次 API，初稿生成入口仍沿用原有单次 Provider 限制；较大的步骤/请求上限只为下一切片的有界自动修复循环提供执行契约，不代表本切片会自动追加请求。页面只报告近似输入/输出 token 和请求次数，不虚构不同端点、模型或渠道的货币价格。预算、用量和 Agent 对话都不持久化，不写 SaveFile 或 IndexedDB；SaveFile 保持 v41，Content IndexedDB 保持 v12。

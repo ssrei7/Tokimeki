@@ -5,6 +5,7 @@ import { queryWorkshopProjectInspection } from '../src/data/workshop-inspection'
 import { WorkshopActionSchema, WorkshopComponentSchema, WorkshopPackageSchema } from '../src/data/workshop';
 import { buildWorkshopAgentMessages, buildWorkshopDraftMessages, generateWorkshopDraft, parseWorkshopAgentResponse, parseWorkshopDraftResponse, runWorkshopAgentTurn } from '../src/providers/workshop-draft';
 import { applyWorkshopProjectPatch, WORKSHOP_AGENT_PATCH_OPERATION_LIMIT, WORKSHOP_AGENT_PROTOCOL_VERSION, WorkshopAgentProtocolResponseSchema } from '../src/providers/workshop-agent-protocol';
+import { DEFAULT_WORKSHOP_AGENT_BUDGET, prepareWorkshopAgentRequest } from '../src/providers/workshop-agent-budget';
 import type { ProviderConfig } from '../src/providers/types';
 
 const base: ProviderConfig = { id: 'draft', name: 'Draft', kind: 'openai-compatible', endpoint: 'https://example.test/v1', model: 'demo', contextWindow: 8192, maxOutputTokens: 2048, temperature: 0.2 };
@@ -121,6 +122,40 @@ describe('workshop draft provider', () => {
     expect(result.toolCallId).toBe('replace-project');
     expect(result.toolName).toBe('project.replace');
     expect(parseWorkshopAgentResponse(packageJson).message).toContain('已更新');
+  });
+
+  it('enforces request and token budgets in the provider execution layer', async () => {
+    const response = JSON.stringify({ protocolVersion: 1, message: '已按预算修改。', toolCalls: [{ id: 'replace-project', name: 'project.replace', arguments: { package: JSON.parse(packageJson) } }] });
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.max_tokens).toBe(256);
+      return new Response(JSON.stringify({ choices: [{ message: { content: response } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const result = await runWorkshopAgentTurn(base, {
+      instruction: '按预算修改',
+      currentSource: packageJson,
+      inspection: validInspection(),
+      budget: { ...DEFAULT_WORKSHOP_AGENT_BUDGET, maxSteps: 2, maxRequests: 2, maxOutputTokensPerRequest: 512, maxTotalOutputTokens: 256 },
+    }, { fetchImpl });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.budgetReport).toMatchObject({ stepsUsed: 1, requestsUsed: 1, outputTokenLimit: 256 });
+    expect(result.budgetReport!.estimatedInputTokens).toBeLessThanOrEqual(result.budgetReport!.inputTokenLimit);
+
+    const messages = buildWorkshopAgentMessages({ instruction: '继续', currentSource: packageJson, inspection: validInspection() });
+    expect(() => prepareWorkshopAgentRequest(base, messages, DEFAULT_WORKSHOP_AGENT_BUDGET, { stepsUsed: 4, requestsUsed: 1, estimatedOutputTokensUsed: 10 })).toThrow('达到 4 步');
+    expect(() => prepareWorkshopAgentRequest(base, messages, DEFAULT_WORKSHOP_AGENT_BUDGET, { stepsUsed: 1, requestsUsed: 4, estimatedOutputTokensUsed: 10 })).toThrow('达到 4 次 API');
+    expect(() => prepareWorkshopAgentRequest(base, messages, DEFAULT_WORKSHOP_AGENT_BUDGET, { stepsUsed: 1, requestsUsed: 1, estimatedOutputTokensUsed: 8192 })).toThrow('用尽总输出 token');
+  });
+
+  it('rejects an oversized agent context before making a provider request', async () => {
+    const fetchImpl = vi.fn();
+    await expect(runWorkshopAgentTurn({ ...base, contextWindow: 512 }, {
+      instruction: '修改',
+      currentSource: packageJson,
+      inspection: validInspection(),
+      budget: { ...DEFAULT_WORKSHOP_AGENT_BUDGET, maxOutputTokensPerRequest: 128, maxTotalOutputTokens: 128, safetyMarginTokens: 64 },
+    }, { fetchImpl })).rejects.toThrow('上下文预检超限');
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('applies a validated local project patch atomically', () => {

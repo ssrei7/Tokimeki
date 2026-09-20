@@ -135,6 +135,9 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .workshop-agent-panel { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--gray-200); border-radius: var(--radius-md); background: var(--gray-50); }
 .workshop-agent-panel > label { display: grid; gap: 6px; color: var(--gray-600); font-size: 13px; }
 .workshop-agent-panel textarea { min-height: 96px; resize: vertical; }
+.workshop-agent-budget { min-width: 0; }
+.workshop-agent-budget-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
+.workshop-agent-budget-grid label { display: grid; gap: 5px; color: var(--gray-600); font-size: 12px; }
 .workshop-agent-history { display: grid; gap: 8px; max-height: 280px; overflow: auto; }
 .workshop-agent-message { padding: 10px 12px; border-radius: var(--radius-md); background: var(--gray-0); }
 .workshop-agent-message.assistant { border-left: 3px solid var(--accent); }

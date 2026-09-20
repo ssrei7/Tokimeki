@@ -5,6 +5,7 @@ import { WorkshopPackageSchema, type WorkshopPackage } from '../data/workshop';
 import { streamChat, type StreamStatus } from './stream';
 import type { ChatMessage, ProviderConfig } from './types';
 import { executeWorkshopAgentToolCalls, WORKSHOP_AGENT_PROTOCOL_VERSION, WorkshopAgentProtocolResponseSchema } from './workshop-agent-protocol';
+import { completeWorkshopAgentRequest, DEFAULT_WORKSHOP_AGENT_BUDGET, prepareWorkshopAgentRequest, type WorkshopAgentBudget, type WorkshopAgentBudgetReport, type WorkshopAgentBudgetUsage } from './workshop-agent-budget';
 
 export const WORKSHOP_DRAFT_REQUIREMENT_LIMIT = 4000;
 export const WORKSHOP_AGENT_SOURCE_LIMIT = 512 * 1024;
@@ -46,6 +47,8 @@ export interface WorkshopAgentTurnInput {
   currentSource: string;
   inspection: WorkshopProjectInspection;
   history?: WorkshopAgentHistoryEntry[];
+  budget?: WorkshopAgentBudget;
+  budgetUsage?: WorkshopAgentBudgetUsage;
 }
 
 export interface WorkshopAgentTurnResult {
@@ -53,6 +56,7 @@ export interface WorkshopAgentTurnResult {
   package: WorkshopPackage;
   toolCallId?: string;
   toolName?: 'project.replace' | 'project.patch';
+  budgetReport?: WorkshopAgentBudgetReport;
 }
 
 export function buildWorkshopDraftMessages(requirement: string): ChatMessage[] {
@@ -146,12 +150,15 @@ export async function generateWorkshopDraft(config: ProviderConfig, requirement:
 }
 
 export async function runWorkshopAgentTurn(config: ProviderConfig, input: WorkshopAgentTurnInput, options: { fetchImpl?: typeof fetch; signal?: AbortSignal; onStatus?: (status: StreamStatus) => void } = {}): Promise<WorkshopAgentTurnResult> {
-  const raw = await streamChat(config, buildWorkshopAgentMessages(input), () => undefined, {
+  const messages = buildWorkshopAgentMessages(input);
+  const requestPlan = prepareWorkshopAgentRequest(config, messages, input.budget ?? DEFAULT_WORKSHOP_AGENT_BUDGET, input.budgetUsage);
+  const raw = await streamChat(requestPlan.config, messages, () => undefined, {
     taskId: 'workshop_draft',
     outputMode: config.outputMode === 'off' ? 'off' : 'json_object',
     fetchImpl: options.fetchImpl,
     signal: options.signal,
     onStatus: options.onStatus,
   });
-  return parseWorkshopAgentResponse(raw, input.currentSource);
+  const budgetReport = completeWorkshopAgentRequest(requestPlan, raw);
+  return { ...parseWorkshopAgentResponse(raw, input.currentSource), budgetReport };
 }

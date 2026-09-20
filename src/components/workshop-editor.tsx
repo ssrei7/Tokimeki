@@ -3,6 +3,7 @@ import type { SaveFile } from '../data/schema/save';
 import type { WorkshopAssetPayload, WorkshopLocalValue, WorkshopPackageImport, WorkshopPackageRecord, WorkshopValidationIssue } from '../data/workshop';
 import { queryWorkshopProjectInspection } from '../data/workshop-inspection';
 import type { WorkshopAgentHistoryEntry, WorkshopAgentTurnInput, WorkshopAgentTurnResult } from '../providers/workshop-draft';
+import { DEFAULT_WORKSHOP_AGENT_BUDGET, WORKSHOP_AGENT_MAX_REQUESTS, WORKSHOP_AGENT_MAX_SAFETY_MARGIN, WORKSHOP_AGENT_MAX_STEPS, WORKSHOP_AGENT_MAX_TOKEN_BUDGET, type WorkshopAgentBudget, type WorkshopAgentBudgetReport } from '../providers/workshop-agent-budget';
 import { analyzeWorkshopDraft, createWorkshopEditorTemplate, WORKSHOP_EDITOR_SOURCE_LIMIT, workshopEditorSource } from '../ui/workshop-editor';
 import { WorkshopPageRenderer } from './workshop-runtime';
 
@@ -31,6 +32,8 @@ export function WorkshopEditor({ save, installedIds, initial, busy, agentConfigu
   const [agentBusy, setAgentBusy] = useState(false);
   const [agentError, setAgentError] = useState<string>();
   const [agentUndoSource, setAgentUndoSource] = useState<string>();
+  const [agentBudget, setAgentBudget] = useState<WorkshopAgentBudget>(DEFAULT_WORKSHOP_AGENT_BUDGET);
+  const [lastBudgetReport, setLastBudgetReport] = useState<WorkshopAgentBudgetReport>();
   const agentControllerRef = useRef<AbortController | null>(null);
   const analysis = useMemo(() => analyzeWorkshopDraft(source, installedIds, assets), [assets, installedIds, source]);
   const draftAssets = useMemo(() => {
@@ -66,11 +69,12 @@ export function WorkshopEditor({ save, installedIds, initial, busy, agentConfigu
     setAgentError(undefined);
     try {
       const inspection = queryWorkshopProjectInspection(analysis);
-      const result = await onAgentTurn({ instruction, currentSource: source, inspection, history: agentHistory }, controller.signal);
+      const result = await onAgentTurn({ instruction, currentSource: source, inspection, history: agentHistory, budget: agentBudget }, controller.signal);
       if (controller.signal.aborted) return;
       setAgentUndoSource(source);
       setSource(workshopEditorSource(result.package));
       setAgentHistory((current) => [...current, { role: 'user' as const, content: instruction }, { role: 'assistant' as const, content: result.message }].slice(-8));
+      setLastBudgetReport(result.budgetReport);
       setAgentInstruction('');
     } catch (error) {
       if (!controller.signal.aborted) setAgentError(error instanceof Error ? error.message : '工坊 Agent 调用失败。');
@@ -84,7 +88,19 @@ export function WorkshopEditor({ save, installedIds, initial, busy, agentConfigu
   return <div className="list-card workshop-editor">
     <div className="list-heading"><div><h3>声明式包编辑器</h3><p className="io-scope">草稿仅保留在当前页面；请显式导出或安装。不执行任意代码；只有用户发送 Agent 指令时才调用已配置 API。</p></div><button type="button" className="secondary" disabled={busy || agentBusy} onClick={onClose}>关闭编辑器</button></div>
     <section className="workshop-agent-panel" aria-label="工坊 Agent">
-      <div className="list-heading"><div><h4>工坊 Agent</h4><p className="io-scope">每次发送调用一次用户配置的 <code>workshop_draft</code> API；发送当前草稿、最近对话、本地能力目录及校验/预览摘要，不发送 SaveFile、世界事实值或已安装包。</p></div><span className="io-scope">本轮最多 1 次 API</span></div>
+      <div className="list-heading"><div><h4>工坊 Agent</h4><p className="io-scope">每次发送调用一次用户配置的 <code>workshop_draft</code> API；发送当前草稿、最近对话、本地能力目录及校验/预览摘要，不发送 SaveFile、世界事实值或已安装包。</p></div><span className="io-scope">当前单步 · 1 次 API</span></div>
+      <details className="workshop-agent-budget">
+        <summary>运行预算（仅当前编辑器）</summary>
+        <div className="workshop-agent-budget-grid">
+          <label>最大步骤数<input aria-label="工坊 Agent 最大步骤数" type="number" min={1} max={WORKSHOP_AGENT_MAX_STEPS} value={agentBudget.maxSteps} disabled={agentBusy} onChange={(event) => setAgentBudget((current) => ({ ...current, maxSteps: Number(event.target.value) }))} /></label>
+          <label>最大 API 请求数<input aria-label="工坊 Agent 最大 API 请求数" type="number" min={1} max={WORKSHOP_AGENT_MAX_REQUESTS} value={agentBudget.maxRequests} disabled={agentBusy} onChange={(event) => setAgentBudget((current) => ({ ...current, maxRequests: Number(event.target.value) }))} /></label>
+          <label>单次输出 token<input aria-label="工坊 Agent 单次输出 token" type="number" min={1} max={WORKSHOP_AGENT_MAX_TOKEN_BUDGET} step={128} value={agentBudget.maxOutputTokensPerRequest} disabled={agentBusy} onChange={(event) => setAgentBudget((current) => ({ ...current, maxOutputTokensPerRequest: Number(event.target.value) }))} /></label>
+          <label>总输出 token<input aria-label="工坊 Agent 总输出 token" type="number" min={1} max={WORKSHOP_AGENT_MAX_TOKEN_BUDGET} step={128} value={agentBudget.maxTotalOutputTokens} disabled={agentBusy} onChange={(event) => setAgentBudget((current) => ({ ...current, maxTotalOutputTokens: Number(event.target.value) }))} /></label>
+          <label>上下文安全余量<input aria-label="工坊 Agent 上下文安全余量" type="number" min={0} max={WORKSHOP_AGENT_MAX_SAFETY_MARGIN} step={128} value={agentBudget.safetyMarginTokens} disabled={agentBusy} onChange={(event) => setAgentBudget((current) => ({ ...current, safetyMarginTokens: Number(event.target.value) }))} /></label>
+        </div>
+        <p className="io-scope">当前切片仍只执行 1 步、发起 1 次请求；较大的步骤与请求上限将供后续有界修复循环使用。执行层会按 Provider 上下文、单次与总输出预算取更严格上限，并在联网前做近似 token 预检。实际货币费用由用户端点定价决定。</p>
+        {lastBudgetReport && <p className="io-scope" role="status">上次执行：{lastBudgetReport.stepsUsed} 步 / {lastBudgetReport.requestsUsed} 次 API；输入约 {lastBudgetReport.estimatedInputTokens} / {lastBudgetReport.inputTokenLimit} tokens；输出约 {lastBudgetReport.estimatedOutputTokens} / {lastBudgetReport.outputTokenLimit} tokens。</p>}
+      </details>
       {agentHistory.length > 0 && <div className="workshop-agent-history" aria-label="Agent 最近对话">{agentHistory.map((entry, index) => <div className={`workshop-agent-message ${entry.role}`} key={`${entry.role}-${index}`}><strong>{entry.role === 'user' ? '你' : 'Agent'}</strong><p>{entry.content}</p></div>)}</div>}
       <label>告诉 Agent 要创建或修改什么<textarea aria-label="工坊 Agent 指令" maxLength={4000} placeholder="例如：增加一个鱼类图鉴页，保留现有首页，并修复当前权限错误。" value={agentInstruction} onChange={(event) => setAgentInstruction(event.target.value)} /></label>
       {!agentConfigured && <p className="io-scope" role="alert">尚未配置可用文本 Provider。请先在“设置 → 路由”配置“工坊 Agent”，或设置默认 Provider。</p>}
