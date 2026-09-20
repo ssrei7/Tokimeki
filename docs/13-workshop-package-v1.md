@@ -6,7 +6,7 @@
 
 当前版本可在浏览器本地读取、校验、预览、安装、按世界启停、导出和卸载工坊包。当前世界已启用的包会作为动态图标出现在终端桌面；点击后由受限运行时渲染声明式页面。
 
-运行时开放包内导航、按 `saveId + packageId` 隔离的本地 App 状态、经包权限逐项声明的世界事实只读视图、确定性活动子集，以及用户显式触发的包内声明式事件。Prompt、Provider 和未开放 op 仍不会执行；相关按钮会保持禁用并说明边界。
+运行时开放包内导航、按 `saveId + packageId` 隔离的本地 App 状态、经包权限逐项声明的世界事实只读视图、确定性活动子集、用户显式触发的包内声明式事件、有预算 Prompt，以及用户点击后单次调用的文本 Provider 动作。未开放 op 仍不会执行；相关按钮会保持禁用并说明边界。
 
 工坊页提供纯本地声明式编辑器。用户可以新建安全模板，或把已经导入并通过 ZIP 边界检查的包载入编辑器；完整包 JSON 每次变更都会重新经过 schema、权限、引用、已安装 ID 和资产载荷一致性检查，并使用同一受限运行时实时预览。草稿不会自动保存或覆盖已安装包，只有用户显式点击导出或确认安装才产生结果。
 
@@ -88,7 +88,7 @@ patch 只允许 `add`、`replace`、`remove`，单次最多 100 项；路径必�
   "capabilityQuery": {
     "name": "capabilities.list",
     "result": {
-      "catalogVersion": 6,
+      "catalogVersion": 7,
       "packageVersion": 1,
       "runtimeVersion": 1,
       "ui": { "components": [], "bindings": {}, "actions": {} },
@@ -164,7 +164,7 @@ assets/*          可选
 
 v1 安装器会保存这些声明。受限运行时会将页面内容渲染为固定 React 组件，不解释 HTML 或 CSS，也不执行包内代码。任意代码、DOM 访问、自定义 CSS、动态 import、脚本 URL 和任意网络请求均没有协议入口。
 
-标题、正文、图片、卡片、列表、标签页、按钮、输入框、选择器、进度和确认框均可显示。`navigate` 与 `set-local` 可直接运行；`submit-op` 目前只开放内部 `run_workshop_activity`，且按钮只能引用包内 `manual` 规则。`trigger-event` 可由已安装且启用的包显式触发同包事件；`provider-text` 和其他直接 op 按钮仍禁用。世界事实视图始终来自当前 `SaveFile`，只有通过确定性内核复核的效果才能写回。
+标题、正文、图片、卡片、列表、标签页、按钮、输入框、选择器、进度和确认框均可显示。`navigate` 与 `set-local` 可直接运行；`submit-op` 目前只开放内部 `run_workshop_activity`，且按钮只能引用包内 `manual` 规则。`trigger-event` 可由已安装且启用的包显式触发同包事件。`provider-text` 只有在已安装 App 内由用户点击按钮时才调用一次用户配置的文本 Provider；其他直接 op 按钮仍禁用。世界事实视图始终来自当前 `SaveFile`，只有通过确定性内核复核的效果才能写回。
 
 标题/正文、卡片标题与正文、列表项、按钮文案、进度标签/数值/上限，以及确认按钮文案/提示可声明统一的只读数据绑定。静态字段始终保留为绑定缺失、类型不符或运行时权限被撤销时的回退：
 
@@ -230,7 +230,9 @@ AI 草稿通道进一步收窄：只接受无资产的 manifest / app / 空 rule
 
 `events.json` 复用当前 EventDef schema。启用包时，运行时会检查地点、时段、角色、关系阶段、证物引用和事件 ID 冲突，再把事件以包来源标记同步到当前世界；工坊副本的 `weight` 固定为 0，不进入导演随机池。页面的 `trigger-event` 只能引用同包事件，并同时具备对应 `event.install` 与 `event.trigger` 权限。事件仍服从当前地点/时段、角色在场、关系阶段、条件、once 与 cooldown；事件本体和 choice 的 ops 必须来自能力目录公开的原子安全白名单、逐项声明 `op.submit`，并在隔离世界副本上全部成功后才连同历史原子写回。会在执行中广播其他流程钩子的 `advance_time`、`move_player`、`move_npc`，跨事件排程 `queue_event`，以及内部 `run_workshop_activity` 均不开放。停用包会移除其事件定义与待触发排程，不回滚已提交事实或删除历史。纯 prompt 事件不会暗中调用 API，当前明确拒绝执行。
 
-`prompts.json` 当前只注册到已经经过统一 PromptAssembler 的 `narrate_main` 与 `topic_tree`。每个 block 必须逐项声明 `prompt.register:<task>`；单块 `tokenBudget` 上限为 1024，同包所有块的声明预算总和上限为 4096，并且不能超过 manifest 中 `prompt.register.maxTokens` 的合计。包块 ID 在运行时转换为 `workshop:<packageId>:<blockId>`，不会覆盖内置块或其他包。静态 `text` 不执行模板替换；`when` 只可读取 `day`、`slotId`、`nodeId`、世界/玩家 stats 与 flags，以及关系的 `stageId` / `axes`，对应世界事实必须另行声明 `world.read`。条件异常时跳过该块。文本先按自身预算本地裁剪，再进入现有全局上下文预算；只有用户原本触发叙事或话题树生成时才随同一次请求发送，启用、停用、浏览包或查看已有内容都不会调用 API。停用包会立即注销这些块。Provider 按钮仍未开放。
+`prompts.json` 当前只把 `narrate_main` 与 `topic_tree` 自动注册到统一 PromptAssembler；其他受支持文本任务只能作为同包显式 `provider-text` 动作的 Prompt。每个 block 必须逐项声明 `prompt.register:<task>`；单块 `tokenBudget` 上限为 1024，同包所有块的声明预算总和上限为 4096，并且不能超过 manifest 中 `prompt.register.maxTokens` 的合计。包块 ID 在运行时转换为 `workshop:<packageId>:<blockId>`，不会覆盖内置块或其他包。静态 `text` 不执行模板替换；`when` 只可读取 `day`、`slotId`、`nodeId`、世界/玩家 stats 与 flags，以及关系的 `stageId` / `axes`，对应世界事实必须另行声明 `world.read`。条件异常时跳过该块。文本先按自身预算本地裁剪，再进入现有全局上下文预算；只有用户原本触发叙事或话题树生成时才随同一次请求发送，启用、停用、浏览包或查看已有内容都不会调用 API。停用包会立即注销自动块。
+
+`provider-text` 动作使用 `taskId` 与 `promptBlockId`，可选 `inputKey` 和 `resultKey`。它必须逐项声明 `provider.explicit-text:<task>`，所引用 Prompt 必须包含同一任务并由 `prompt.register:<task>` 授权；使用任一 key 时还必须声明 `app.local-state`。`inputKey` 只读取该包、当前世界下最多 2000 字符的本地标量，不读取完整 SaveFile、聊天、其他包状态或 Provider 密钥；Prompt 的 `when` 仍只看到前述授权安全条件副本。点击后按现有任务路由选择用户自己的 Provider，每次点击最多一次请求，不后台运行、不自动重试，并在联网前检查 Provider 上下文窗口。固定系统契约明确响应只能作为展示文本，不能改变世界事实。返回内容不会解析或应用 `<ops>`；可在页面显示，并可把前 2000 字符写入 `resultKey`，供已有本地绑定继续展示。关闭 App 不取消已保存的本地结果，停用包保留本地状态。
 
 ## 4. 权限
 

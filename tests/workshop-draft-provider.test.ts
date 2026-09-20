@@ -83,7 +83,7 @@ describe('workshop draft provider', () => {
     expect(payload.capabilityQuery.name).toBe('capabilities.list');
     expect(payload.capabilityQuery.result.activities).toMatchObject({ hooks: ['manual', 'onEnterNode', 'onTimeAdvance', 'onDaySettle'], costKinds: ['stat', 'item'], effectOps: ['add_stat', 'set_flag', 'give_item', 'take_item'], resultMessages: true });
     expect(JSON.parse(payload.capabilityQuery.result.activities.costSyntax.stat)).toMatchObject({ kind: 'stat', target: 'player', key: 'energy' });
-    expect(payload.capabilityQuery.result.ui.actions.disabled).toEqual(['provider-text']);
+    expect(payload.capabilityQuery.result.ui.actions.conditional).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'provider-text' })]));
     expect(payload.capabilityQuery.result.events).toMatchObject({ enabled: true, action: 'trigger-event', automaticDirectorWeight: false, promptNarration: false });
     expect(payload.capabilityQuery.result.events.effectOps).toContain('set_flag');
     expect(payload.capabilityQuery.result.events.effectOps).not.toContain('advance_time');
@@ -99,7 +99,7 @@ describe('workshop draft provider', () => {
     const first = queryWorkshopCapabilityCatalog();
     first.ui.components.pop();
     const second = queryWorkshopCapabilityCatalog();
-    expect(second.catalogVersion).toBe(6);
+    expect(second.catalogVersion).toBe(7);
     expect(second.ui.components).toContain('confirm');
     expect(second.ui.bindings).toMatchObject({ sources: ['local', 'world'], formats: ['auto', 'text', 'number', 'boolean', 'json'], maxPathDepth: 8 });
     expect(second.ui.bindings.targets).toContain('progress.value');
@@ -115,7 +115,8 @@ describe('workshop draft provider', () => {
       templates: false,
       additionalApiCalls: false,
     });
-    expect(second.declaredOnly).toMatchObject({ events: false, prompts: false, providerText: true });
+    expect(second.providerText).toMatchObject({ enabled: true, userTriggeredOnly: true, maxRequestsPerClick: 1, localInput: true, localResult: true, sendsWorldFacts: false, appliesOps: false });
+    expect(second.declaredOnly).toMatchObject({ events: false, prompts: false, providerText: false });
     expect(second.assets.agentMayCreateBinary).toBe(false);
     expect(WorkshopComponentSchema.options.map((schema) => schema.shape.kind.value)).toEqual(second.ui.components);
     expect(WorkshopActionSchema.options.map((schema) => schema.shape.type.value).sort()).toEqual([

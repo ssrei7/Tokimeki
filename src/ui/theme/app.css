@@ -120,6 +120,8 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .workshop-component-stack > label, .workshop-progress { display: grid; gap: 6px; color: var(--gray-600); font-size: 13px; }
 .workshop-component-stack input, .workshop-component-stack select { width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--gray-0); color: var(--gray-800); }
 .workshop-progress progress { width: 100%; accent-color: var(--theme-button-bg); }
+.workshop-provider-output { display: grid; gap: 8px; }
+.workshop-provider-output p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .workshop-editor { display: grid; gap: 14px; }
 .workshop-editor-source { display: grid; gap: 6px; color: var(--gray-600); font-size: 13px; }
 .workshop-editor-source textarea { min-height: 340px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; line-height: 1.45; }

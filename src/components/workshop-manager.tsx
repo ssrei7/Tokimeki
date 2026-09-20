@@ -98,7 +98,7 @@ export function WorkshopManager({ save, draftProviderConfigured, onGenerateDraft
       setPreview(null);
       await refresh();
       notifyWorkshopChanged();
-      setNotice({ tone: 'success', text: '工坊包已安装并为当前世界启用。受限 App 可从终端桌面打开；仅 manual / onEnterNode 确定性活动可运行，事件和 Provider 动作仍禁用。' });
+      setNotice({ tone: 'success', text: '工坊包已安装并为当前世界启用。受限 App 可从终端桌面打开；声明式活动、事件、Prompt 与用户显式 Provider 动作会按权限运行。' });
     } catch (error) { setNotice({ tone: 'error', text: errorText(error, '安装工坊包失败。') }); }
     finally { setBusy(false); }
   }
@@ -169,7 +169,7 @@ export function WorkshopManager({ save, draftProviderConfigured, onGenerateDraft
     <section className="workshop-content">
       <div className="section-heading"><div><span className="eyebrow">声明式本地包</span><h2>创意工坊</h2></div><span className="io-scope">用户显式 API · 不执行代码</span></div>
       <div className="list-card">
-        <div className="list-heading"><div><h3>导入、编辑与预览</h3><p className="io-scope">受限页面可读取已授权世界事实并保存本地 App 状态；已安装包可运行受限确定性活动，事件、Prompt 与 Provider 动作仍禁用。</p></div></div>
+        <div className="list-heading"><div><h3>导入、编辑与预览</h3><p className="io-scope">受限页面可读取已授权世界事实并保存本地 App 状态；已安装包可运行声明式活动、事件、Prompt，以及用户点击后才联网的 Provider 动作。</p></div></div>
         <div className="button-row"><label className="file-button">选择工坊包<input type="file" accept=".zip,application/zip" disabled={busy} onChange={(event) => { void readPackage(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label><button type="button" className="secondary" disabled={busy} onClick={() => setEditor((current) => ({ key: (current?.key ?? 0) + 1 }))}>新建本地草稿</button></div>
       </div>
       <div className="list-card workshop-ai-draft">

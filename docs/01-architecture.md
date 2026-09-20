@@ -164,6 +164,7 @@ subscribe<H extends Hook>(hook: H, fn: Handler<H>, priority?: number): Unsubscri
 - 工坊自动活动当前只订阅携带确定性 `world` 上下文的 `onEnterNode`、`onTimeAdvance`、`onDaySettle`，并统一派发内部 `run_workshop_activity` op；`onOpsApply` 只接收执行后的变更通知，不反向触发活动。
 - 已启用工坊包的 `events.json` 由运行时按包来源同步到当前世界；包事件固定 `weight: 0`，不进入导演随机选择，只能经已授权的 `trigger-event` 用户动作显式触发。事件本体与 choice 只允许不广播流程钩子的原子安全 ops，均在隔离世界副本上走正式 op registry，整组成功后才写回。
 - 已启用工坊包的 `prompts.json` 以 `workshop:<packageId>:<blockId>` 注册进现有 PromptAssembler；当前仅支持 `narrate_main` / `topic_tree`，静态文本先受单块与包级声明预算约束，`when` 只读取授权的安全世界条件作用域。注册本身纯本地，不发起 Provider 请求。
+- 工坊 `provider-text` 只由已安装 App 的用户按钮显式触发，每次点击最多一次请求。feature 层复核包、权限、Prompt、条件和本地输入，网络仍只由 `providers/` 发起；请求不携带完整 SaveFile，响应仅显示或写入包内本地字符串，不解析 ops、不写世界事实。
 
 ---
 

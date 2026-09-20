@@ -31,7 +31,7 @@ inspectionQuery 是本地只读 project.inspect 的权威结果。先根据其�
 你要在当前工程上增量修改，保留用户未要求删除的页面、规则、资产声明和其他内容。若原源码有误，根据 inspectionQuery.result.diagnostics 修复并返回完整合法工程。
 组件、动作、世界只读资源、活动 hook、效果 op 和扩展运行状态严格以 capabilityQuery.result 为准。用户按钮触发活动时，按钮 op 使用目录给出的 dispatchOp，payload 为 {"ruleId":"规则-id"}。
 条件只能使用安全表达式和 day、slotId、nodeId、stats、flags、player.nodeId、player.stats、player.flags、relations 事实。禁止任意 JavaScript、HTML、CSS、脚本 URL、base64 和任意网络请求。
-不要虚构新的二进制资产载荷；可保留当前工程已有的 assetMeta 和引用。events、prompts 可作为工程内容编辑，但当前运行时仍不安装/注册它们，必须在 message 中说明。
+不要虚构新的二进制资产载荷；可保留当前工程已有的 assetMeta 和引用。events、prompts 与 Provider 动作是否可运行、支持哪些任务及所需权限，完全以 capabilityQuery.result 为准，不要沿用旧状态假设。
 若请求包含 repair，它表示上一步输出被本地协议、patch 或 schema 校验拒绝。根据 validationError 和 previousResponseExcerpt 修正输出；不要争辩、重复错误格式或改变用户原始目标。`;
 
 const WorkshopAgentTurnResponseSchema = z.object({

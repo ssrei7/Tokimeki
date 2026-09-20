@@ -765,3 +765,9 @@
 **决定**：已启用包的 `prompts.json` 通过正式 PromptAssembler 注册，运行时 ID 固定命名空间为 `workshop:<packageId>:<blockId>`，不能覆盖内置块或其他包。当前只开放确实经过该组装器的 `narrate_main` 与 `topic_tree`；旧 v1 数据结构仍可读取，但声明其他任务会在完整包校验中得到明确错误，避免安装数据静默丢失。每次注册都会重新执行记录 schema、完整权限、引用、条件与包预算校验。
 
 **条件、预算与调用边界**：block 文本为静态字符串，不执行模板替换。`when` 只接收日期、时段、地点、世界/玩家 stats 与 flags，以及关系阶段/轴的安全副本；异常或缺失事实只跳过该块。单块文本在进入全局 PromptAssembler 预算前先限制到自身 `tokenBudget`，同包预算总和不得超过 4096 或 manifest 声明的 `prompt.register.maxTokens` 合计。注册、停用和本地查看均为零 API；块只随用户原本触发的叙事或话题树请求进入同一次 Provider 调用，不改变 Provider、端点、输出 token、请求次数或世界状态。停用包立即注销。Provider 用户按钮仍留给下一切片。包 schema/runtime 保持 v1，SaveFile 保持 v41，Content IndexedDB 保持 v12；能力目录升级到 v6。
+
+## D141 工坊 Provider 文本动作只由用户点击并返回本地展示文本
+
+**决定**：开放声明式 `provider-text` 按钮。动作必须引用同包 Prompt，并让 `taskId` 同时通过 Prompt task、`prompt.register` 与 `provider.explicit-text` 三重匹配；可选 `inputKey` / `resultKey` 只访问按世界和包隔离的本地标量状态。非 PromptAssembler 任务只有被同包显式动作引用时才允许保留，避免“可安装但既不自动注册也不能调用”的死配置。每次运行前重新执行完整包校验和权限复核。
+
+**数据、状态与调用边界**：每次用户点击最多调用一次现有任务路由选中的用户 Provider，不后台执行、不自动重试；联网前以完整消息和 Provider 上下文窗口预检。请求只包含固定的“展示文本不具备状态权威”契约、受单块预算限制的静态 Prompt，以及可选的单个本地输入值；不发送完整 SaveFile、聊天、其他包状态、二进制或密钥。返回内容不经过 ops 解析，即使含 `<ops>` 也只是普通文本；最多 10000 字符用于当前页面展示，写入 `resultKey` 时只保留本地状态允许的前 2000 字符。它不能修改世界事实、增加时间或行动点消耗。包 schema/runtime 保持 v1，SaveFile 保持 v41，Content IndexedDB 保持 v12；能力目录升级到 v7。

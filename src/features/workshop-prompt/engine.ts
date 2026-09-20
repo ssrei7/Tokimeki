@@ -31,7 +31,7 @@ export function createWorkshopPromptBlocks(records: readonly WorkshopPackageReco
         WORKSHOP_PROMPT_TASKS.includes(task as typeof WORKSHOP_PROMPT_TASKS[number])
         && permissions.some((permission) => permission.resources.includes(task))
       ));
-      if (tasks.length !== block.tasks.length) continue;
+      if (!tasks.length) continue;
       blocks.push({
         id: workshopPromptBlockId(record.id, block.id),
         role: block.role,
@@ -54,6 +54,16 @@ export function registerWorkshopPromptBlocks(assembler: PromptAssembler, records
   const blocks = createWorkshopPromptBlocks(records);
   for (const block of blocks) assembler.register(block);
   return () => { for (const block of blocks) assembler.unregister(block.id); };
+}
+
+export function resolveWorkshopPromptText(record: WorkshopPackageRecord, blockId: string, taskId: string, facts: PromptFacts): { role: 'system' | 'user'; text: string } | undefined {
+  const parsed = WorkshopPackageRecordSchema.safeParse(record);
+  if (!parsed.success || parsed.data.id !== parsed.data.package.manifest.id || !validateWorkshopPackage(parsed.data.package).canInstall) return undefined;
+  const block = parsed.data.package.prompts?.blocks.find((candidate) => candidate.id === blockId);
+  const permitted = parsed.data.package.manifest.permissions.some((permission) => permission.capability === 'prompt.register' && (permission.resources as readonly string[]).includes(taskId));
+  if (!block || !(block.tasks as readonly string[]).includes(taskId) || !permitted) return undefined;
+  if (block.when && !matchesWorkshopPromptCondition(block.when, facts)) return undefined;
+  return { role: block.role, text: truncateWorkshopPrompt(block.text, block.tokenBudget) };
 }
 
 export function truncateWorkshopPrompt(text: string, maxTokens: number): string {

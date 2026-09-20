@@ -72,7 +72,13 @@ const WorkshopNavigateActionSchema = z.object({ type: z.literal('navigate'), pag
 const WorkshopSetLocalActionSchema = z.object({ type: z.literal('set-local'), key: IdSchema, value: z.union([z.string(), z.number(), z.boolean(), z.null()]) }).strict();
 const WorkshopSubmitOpActionSchema = z.object({ type: z.literal('submit-op'), op: WorkshopOpNameSchema, payload: z.record(z.string(), z.unknown()).default({}) }).strict();
 const WorkshopTriggerEventActionSchema = z.object({ type: z.literal('trigger-event'), eventId: IdSchema }).strict();
-const WorkshopProviderTextActionSchema = z.object({ type: z.literal('provider-text'), taskId: WorkshopTextTaskSchema, promptBlockId: IdSchema }).strict();
+const WorkshopProviderTextActionSchema = z.object({
+  type: z.literal('provider-text'),
+  taskId: WorkshopTextTaskSchema,
+  promptBlockId: IdSchema,
+  inputKey: IdSchema.optional(),
+  resultKey: IdSchema.optional(),
+}).strict();
 
 export const WorkshopActionSchema = z.discriminatedUnion('type', [
   WorkshopNavigateActionSchema,
@@ -308,7 +314,8 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
   const pages = new Set<string>();
   const rules = new Map<string, WorkshopRule>();
   const events = new Set<string>();
-  const promptBlocks = new Set<string>();
+  const promptBlocks = new Map<string, NonNullable<WorkshopPackage['prompts']>['blocks'][number]>();
+  const providerPromptUses = new Set<string>();
   const assets = new Set(pack.assetMeta?.assets.map((asset) => asset.id) ?? []);
   const addIssue = (severity: WorkshopValidationIssue['severity'], code: string, message: string, path?: string) => issues.push({ severity, code, message, ...(path ? { path } : {}) });
   const addConditionPermissions = (condition: string) => {
@@ -329,7 +336,10 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
   });
   if (!pages.has(pack.app.entryPageId)) addIssue('error', 'missing-entry-page', `入口页面不存在：${pack.app.entryPageId}`, 'app.entryPageId');
   pack.events?.events.forEach((event, index) => unique(event.id, events, '事件', `events.events[${index}].id`));
-  pack.prompts?.blocks.forEach((block, index) => unique(block.id, promptBlocks, 'Prompt block', `prompts.blocks[${index}].id`));
+  pack.prompts?.blocks.forEach((block, index) => {
+    if (promptBlocks.has(block.id)) addIssue('error', 'duplicate-id', `Prompt block ID 重复：${block.id}`, `prompts.blocks[${index}].id`);
+    else promptBlocks.set(block.id, block);
+  });
   const assetPaths = new Set<string>();
   pack.assetMeta?.assets.forEach((asset, index) => {
     if (assetPaths.has(asset.path)) addIssue('error', 'duplicate-asset-path', `资产路径重复：${asset.path}`, `assetMeta.assets[${index}].path`);
@@ -373,7 +383,11 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
       if (!events.has(action.eventId)) addIssue('error', 'missing-event', `动作引用了不存在的包内事件：${action.eventId}`, `${path}.eventId`);
     } else if (action.type === 'provider-text') {
       required.add(permissionLabel('provider.explicit-text', action.taskId));
-      if (!promptBlocks.has(action.promptBlockId)) addIssue('error', 'missing-prompt-block', `Provider 动作引用了不存在的 prompt block：${action.promptBlockId}`, `${path}.promptBlockId`);
+      if (action.inputKey || action.resultKey) required.add('app.local-state');
+      const promptBlock = promptBlocks.get(action.promptBlockId);
+      if (!promptBlock) addIssue('error', 'missing-prompt-block', `Provider 动作引用了不存在的 prompt block：${action.promptBlockId}`, `${path}.promptBlockId`);
+      else if (!promptBlock.tasks.includes(action.taskId)) addIssue('error', 'provider-prompt-task-mismatch', `Prompt block ${action.promptBlockId} 未声明任务 ${action.taskId}。`, `${path}.taskId`);
+      else providerPromptUses.add(`${action.promptBlockId}:${action.taskId}`);
     }
   }
 
@@ -412,8 +426,12 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
     const tasks = new Set(pack.prompts.blocks.flatMap((block) => block.tasks));
     tasks.forEach((task) => {
       required.add(permissionLabel('prompt.register', task));
-      if (!WORKSHOP_PROMPT_TASKS.includes(task as typeof WORKSHOP_PROMPT_TASKS[number])) addIssue('error', 'unsupported-prompt-task', `当前运行时尚未开放 Prompt 任务：${task}`, 'prompts.blocks');
     });
+    pack.prompts.blocks.forEach((block, blockIndex) => block.tasks.forEach((task) => {
+      if (!WORKSHOP_PROMPT_TASKS.includes(task as typeof WORKSHOP_PROMPT_TASKS[number]) && !providerPromptUses.has(`${block.id}:${task}`)) {
+        addIssue('error', 'unsupported-prompt-task', `Prompt 任务 ${task} 既不能自动注册，也没有同包显式 Provider 动作使用。`, `prompts.blocks[${blockIndex}].tasks`);
+      }
+    }));
   }
 
   const declared = new Set<string>();
@@ -426,7 +444,7 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
   for (const permission of required) if (!declared.has(permission)) addIssue('error', 'permission-missing', `缺少权限声明：${permission}`, 'manifest.permissions');
   for (const permission of declared) if (!required.has(permission)) addIssue('warning', 'permission-unused', `声明了当前包未使用的权限：${permission}`, 'manifest.permissions');
   if (promptTokenTotal > declaredPromptBudget) addIssue('error', 'prompt-permission-budget', `Prompt 实际预算 ${promptTokenTotal} 超过权限声明预算 ${declaredPromptBudget}。`, 'manifest.permissions');
-  if (required.size) addIssue('info', 'runtime-boundary', '受限页面可运行包内导航、本地 App 状态、已授权的世界事实读取、白名单活动、用户显式触发的包内声明式事件，以及 narrate_main/topic_tree 的有预算 Prompt block；Provider 动作和其他直接 op 仍不运行。');
+  if (required.size) addIssue('info', 'runtime-boundary', '受限页面可运行包内导航、本地 App 状态、已授权的世界事实读取、白名单活动、用户显式触发的包内声明式事件、narrate_main/topic_tree 的自动 Prompt block，以及用户点击后单次调用的文本 Provider 动作；其他直接 op 仍不运行。');
 
   return { canInstall: !issues.some((issue) => issue.severity === 'error'), issues, requiredPermissions: [...required].sort() };
 }

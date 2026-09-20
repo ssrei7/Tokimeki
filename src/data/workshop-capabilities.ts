@@ -2,7 +2,6 @@ import { z } from 'zod';
 import {
   CURRENT_WORKSHOP_PACKAGE_VERSION,
   CURRENT_WORKSHOP_RUNTIME_VERSION,
-  WORKSHOP_ACTION_TYPES,
   WORKSHOP_ACTIVITY_EFFECT_OPS,
   WORKSHOP_ACTIVITY_HOOKS,
   WORKSHOP_ACTIVITY_COST_KINDS,
@@ -14,7 +13,7 @@ import {
   WORKSHOP_WORLD_READ_RESOURCES,
 } from './workshop';
 
-export const WORKSHOP_CAPABILITY_CATALOG_VERSION = 6;
+export const WORKSHOP_CAPABILITY_CATALOG_VERSION = 7;
 
 export const WorkshopCapabilityCatalogSchema = z.object({
   catalogVersion: z.literal(WORKSHOP_CAPABILITY_CATALOG_VERSION),
@@ -68,6 +67,17 @@ export const WorkshopCapabilityCatalogSchema = z.object({
     additionalApiCalls: z.boolean(),
     requirement: z.string(),
   }).strict(),
+  providerText: z.object({
+    enabled: z.boolean(),
+    tasks: z.array(z.string()),
+    userTriggeredOnly: z.boolean(),
+    maxRequestsPerClick: z.number().int().positive(),
+    localInput: z.boolean(),
+    localResult: z.boolean(),
+    sendsWorldFacts: z.boolean(),
+    appliesOps: z.boolean(),
+    requirement: z.string(),
+  }).strict(),
   declaredOnly: z.object({
     events: z.boolean(),
     prompts: z.boolean(),
@@ -102,8 +112,9 @@ const CATALOG: WorkshopCapabilityCatalog = WorkshopCapabilityCatalogSchema.parse
       conditional: [
         { name: 'submit-op', requirement: '仅允许按钮以 run_workshop_activity 调度同包 manual 规则；规则效果由确定性内核复核。' },
         { name: 'trigger-event', requirement: '仅允许用户按钮显式触发同包事件；事件安装、触发和每个结果 op 均须声明权限。' },
+        { name: 'provider-text', requirement: '仅在用户点击按钮后调用一次其自行配置的文本 Provider；必须引用同包 Prompt，可选读取 inputKey 并把结果写入 resultKey。' },
       ],
-      disabled: WORKSHOP_ACTION_TYPES.filter((action) => action === 'provider-text'),
+      disabled: [],
     },
   },
   worldRead: { resources: [...WORKSHOP_WORLD_READ_RESOURCES], requirement: '必须在 manifest.permissions 中逐项声明 world.read 资源。' },
@@ -141,7 +152,18 @@ const CATALOG: WorkshopCapabilityCatalog = WorkshopCapabilityCatalogSchema.parse
     additionalApiCalls: false,
     requirement: '每个 block 和每个任务都必须声明 prompt.register；静态文本先受单块预算限制，再参与现有全局上下文预算。when 只能读取已授权的安全条件作用域。',
   },
-  declaredOnly: { events: false, prompts: false, providerText: true, providerTextTasks: [...WORKSHOP_TEXT_TASKS] },
+  providerText: {
+    enabled: true,
+    tasks: [...WORKSHOP_TEXT_TASKS],
+    userTriggeredOnly: true,
+    maxRequestsPerClick: 1,
+    localInput: true,
+    localResult: true,
+    sendsWorldFacts: false,
+    appliesOps: false,
+    requirement: '动作必须声明 provider.explicit-text:<task>，引用声明同一 task 的包内 Prompt。inputKey/resultKey 只访问该包在当前世界的本地标量状态；响应只作为文本显示或保存。',
+  },
+  declaredOnly: { events: false, prompts: false, providerText: false, providerTextTasks: [...WORKSHOP_TEXT_TASKS] },
   assets: { acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'], agentMayCreateBinary: false, note: '可保留当前工程已有 assetMeta 和引用；Agent 不能虚构或生成二进制载荷。' },
   prohibited: ['javascript', 'typescript', 'react', 'html', 'css', 'eval', 'script-url', 'base64', 'arbitrary-network'],
 });

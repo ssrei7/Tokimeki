@@ -87,6 +87,23 @@ describe('workshop restricted runtime', () => {
     expect(preview).toMatch(/<button[^>]*disabled=""[^>]*>查看告示<\/button>/);
   });
 
+  it('only enables explicit Provider buttons with the matching prompt and runtime permissions', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'provider-runtime', title: 'Provider Runtime' }));
+    const record = runtimeRecord();
+    record.package.manifest.permissions = [
+      { capability: 'app.local-state' },
+      { capability: 'prompt.register', resources: ['summarize_day'], maxTokens: 64 },
+      { capability: 'provider.explicit-text', resources: ['summarize_day'] },
+    ];
+    record.package.prompts = { blocks: [{ id: 'organize', role: 'system', priority: 50, order: 50, tokenBudget: 64, tasks: ['summarize_day'], text: '整理输入。' }] };
+    record.package.app.pages[0]!.components = [{ kind: 'button', label: '调用我的 API', action: { type: 'provider-text', taskId: 'summarize_day', promptBlockId: 'organize', inputKey: 'draft', resultKey: 'answer' } }];
+    const enabled = renderToStaticMarkup(createElement(WorkshopPageRenderer, { record, save, pageId: 'home', values: { draft: '内容' }, onPageChange: vi.fn(), onValueChange: vi.fn(), onRunProviderText: vi.fn() }));
+    expect(enabled).toMatch(/<button[^>]*>调用我的 API<\/button>/);
+    expect(enabled).not.toMatch(/<button[^>]*disabled=""[^>]*>调用我的 API<\/button>/);
+    const preview = renderToStaticMarkup(createElement(WorkshopPageRenderer, { record, save, pageId: 'home', values: { draft: '内容' }, onPageChange: vi.fn(), onValueChange: vi.fn() }));
+    expect(preview).toMatch(/<button[^>]*disabled=""[^>]*>调用我的 API<\/button>/);
+  });
+
   it('rechecks declared permissions at render time', () => {
     const record = runtimeRecord();
     expect(hasWorkshopPermission(record, 'world.read', 'clock')).toBe(true);
