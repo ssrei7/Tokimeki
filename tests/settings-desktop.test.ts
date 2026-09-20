@@ -299,7 +299,8 @@ describe('library desktop', () => {
     expect(source).toContain('让TA提议');
     expect(source).toContain('TA已发来约定提议。');
     expect(source).not.toContain('模拟TA提议');
-    expect(source).toContain('模拟TA同意');
+    expect(source).toContain('TA已接受约定，现在可以加入日历。');
+    expect(source).not.toContain('模拟TA同意');
     expect(source).toContain('加入日历');
     expect(source).toContain('confirmTerminalAppointment');
   });

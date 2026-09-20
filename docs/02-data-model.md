@@ -888,7 +888,7 @@ TTS endpoint、API key、模型、voice、格式、调用统计和待重试请�
 
 v41 新增 `world.terminal.appointmentRequests`。提议保存联系人、发起方向、未来日期、时段、地点、可选备注以及 `pending` / `accepted` / `rejected` / `revoked` 状态；v40→v41 migration 只初始化空数组，保留既有终端消息、转账、通话和世界事实。
 
-创建提议时必须本地校验联系人已是好友、日期晚于当前日期、时段存在于当前日历、地点存在于当前地图。提议被接受仍不会修改 `world.appointments`；只有玩家显式点击“加入日历”后，才通过现有 `make_appointment` 白名单再次校验并写入确定性预约。重复确认复用稳定 appointment ID，不重复插入，也不推进关系、时间、事件或剧情。
+创建提议时必须本地校验联系人已是好友、日期晚于当前日期、时段存在于当前日历、地点存在于当前地图。玩家发起的提议在创建时直接记为 accepted；TA 发起的提议仍保持 pending，等待玩家接受或拒绝。提议被接受仍不会修改 `world.appointments`；只有玩家显式点击“加入日历”后，才通过现有 `make_appointment` 白名单再次校验并写入确定性预约。旧存档中的 pending outgoing 提议也可直接确认，确认成功后规范为 accepted。重复确认复用稳定 appointment ID，不重复插入，也不推进关系、时间、事件或剧情。
 
 ---
 

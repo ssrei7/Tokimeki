@@ -6,7 +6,7 @@ export type { TerminalTransferResult, TransferAction } from './transfers';
 export { listTerminalCalls, recordTerminalCall } from './calls';
 export type { TerminalCallResult, TerminalCallStatus } from './calls';
 export { deliverNightlyTerminalMessage, isNightTerminalSlot } from './nightly';
-export { confirmTerminalAppointment, createTerminalAppointmentRequest, listTerminalAppointmentRequests, resolveTerminalAppointmentRequest, simulateTerminalAppointmentAcceptance } from './appointments';
+export { confirmTerminalAppointment, createTerminalAppointmentRequest, listTerminalAppointmentRequests, resolveTerminalAppointmentRequest } from './appointments';
 export type { TerminalAppointmentAction, TerminalAppointmentDirection, TerminalAppointmentInput, TerminalAppointmentResult } from './appointments';
 export type { ContactCandidate, ContactDirection, ContactOperationResult, FriendRequestAction } from './contacts';
 export { createTerminalOpRegistry } from './ops';

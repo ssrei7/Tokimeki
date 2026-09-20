@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { confirmTerminalAppointment, createFriendRequest, createTerminalAppointmentRequest, listTerminalAppointmentRequests, resolveTerminalAppointmentRequest, simulateFriendAcceptance, simulateTerminalAppointmentAcceptance } from '../src/core/terminal';
+import { confirmTerminalAppointment, createFriendRequest, createTerminalAppointmentRequest, listTerminalAppointmentRequests, resolveTerminalAppointmentRequest, simulateFriendAcceptance } from '../src/core/terminal';
 import { migrateSave } from '../src/data/migrations';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 
@@ -30,23 +30,29 @@ describe('terminal appointments', () => {
     expect(migrated.world.terminal.messageThreads).toEqual(save.world.terminal.messageThreads);
   });
 
-  it('keeps outgoing proposals pending until simulated acceptance and explicit calendar confirmation', () => {
+  it('accepts outgoing proposals immediately but still requires explicit calendar confirmation', () => {
     const save = makeSave();
     acceptFriend(save);
     const before = JSON.stringify({ clock: save.world.clock, relations: save.world.relations, events: save.world.eventHistory });
     const created = createTerminalAppointmentRequest(save.world, save.config.calendar, 'formal', { day: 2, slotId: 'noon', nodeId: 'start', note: '一起喝茶' });
-    expect(created).toMatchObject({ ok: true, changed: true, request: { direction: 'outgoing', status: 'pending' } });
+    expect(created).toMatchObject({ ok: true, changed: true, request: { direction: 'outgoing', status: 'accepted' } });
     expect(save.world.appointments).toEqual([]);
     expect(createTerminalAppointmentRequest(save.world, save.config.calendar, 'formal', { day: 2, slotId: 'noon', nodeId: 'start' }).changed).toBe(false);
-    expect(simulateTerminalAppointmentAcceptance(save.world, created.request!.id)).toMatchObject({ ok: true, changed: true, request: { status: 'accepted' } });
-    expect(save.world.appointments).toEqual([]);
     expect(confirmTerminalAppointment(save.world, save.config.calendar, created.request!.id)).toMatchObject({ ok: true, changed: true, appointment: { charId: 'formal', day: 2, slotId: 'noon', nodeId: 'start', status: 'pending' } });
     expect(confirmTerminalAppointment(save.world, save.config.calendar, created.request!.id).changed).toBe(false);
     expect(save.world.appointments).toHaveLength(1);
     expect(JSON.stringify({ clock: save.world.clock, relations: save.world.relations, events: save.world.eventHistory })).toBe(before);
   });
 
-  it('supports incoming accept/reject and outgoing revoke idempotently', () => {
+  it('lets legacy pending outgoing proposals proceed directly to calendar confirmation', () => {
+    const save = makeSave();
+    acceptFriend(save);
+    const created = createTerminalAppointmentRequest(save.world, save.config.calendar, 'formal', { day: 2, slotId: 'noon', nodeId: 'start' });
+    created.request!.status = 'pending';
+    expect(confirmTerminalAppointment(save.world, save.config.calendar, created.request!.id)).toMatchObject({ ok: true, changed: true, request: { status: 'accepted' } });
+  });
+
+  it('supports incoming accept and reject idempotently', () => {
     const save = makeSave();
     acceptFriend(save);
     const incoming = createTerminalAppointmentRequest(save.world, save.config.calendar, 'formal', { day: 2, slotId: 'morning', nodeId: 'start' }, 'incoming');
@@ -54,9 +60,7 @@ describe('terminal appointments', () => {
     expect(resolveTerminalAppointmentRequest(save.world, incoming.request!.id, 'accept').changed).toBe(false);
     const rejected = createTerminalAppointmentRequest(save.world, save.config.calendar, 'formal', { day: 3, slotId: 'noon', nodeId: 'start' }, 'incoming');
     expect(resolveTerminalAppointmentRequest(save.world, rejected.request!.id, 'reject').request?.status).toBe('rejected');
-    const outgoing = createTerminalAppointmentRequest(save.world, save.config.calendar, 'formal', { day: 4, slotId: 'evening', nodeId: 'start' });
-    expect(resolveTerminalAppointmentRequest(save.world, outgoing.request!.id, 'revoke').request?.status).toBe('revoked');
-    expect(listTerminalAppointmentRequests(save.world, 'formal')).toHaveLength(3);
+    expect(listTerminalAppointmentRequests(save.world, 'formal')).toHaveLength(2);
   });
 
   it('rejects non-friends and invalid future coordinates', () => {

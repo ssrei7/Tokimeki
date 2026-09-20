@@ -55,7 +55,7 @@ export function createTerminalAppointmentRequest(
   if (!world.map.nodes[input.nodeId]) return { ok: false, changed: false, warning: '约定地点不存在。' };
   const note = input.note?.trim();
   if (note && note.length > 200) return { ok: false, changed: false, warning: '约定备注不能超过 200 字。' };
-  const duplicate = world.terminal.appointmentRequests.find((request) => request.characterId === characterId && request.direction === direction && request.status === 'pending' && request.day === day && request.slotId === input.slotId && request.nodeId === input.nodeId);
+  const duplicate = world.terminal.appointmentRequests.find((request) => request.characterId === characterId && request.direction === direction && (request.status === 'pending' || request.status === 'accepted') && request.day === day && request.slotId === input.slotId && request.nodeId === input.nodeId);
   if (duplicate) return { ok: true, changed: false, request: duplicate };
   const normalizedCreatedDay = Math.max(1, Math.floor(createdDay));
   const request: TerminalAppointmentRequest = {
@@ -65,7 +65,7 @@ export function createTerminalAppointmentRequest(
     day,
     slotId: input.slotId,
     nodeId: input.nodeId,
-    status: 'pending',
+    status: direction === 'outgoing' ? 'accepted' : 'pending',
     ...(note ? { note } : {}),
     createdDay: normalizedCreatedDay,
     updatedDay: normalizedCreatedDay,
@@ -88,22 +88,12 @@ export function resolveTerminalAppointmentRequest(world: WorldState, requestIdVa
   return { ok: true, changed: true, request };
 }
 
-export function simulateTerminalAppointmentAcceptance(world: WorldState, requestIdValue: string, day = world.clock.day): TerminalAppointmentResult {
-  const request = latestRequest(world, requestIdValue);
-  if (!request) return { ok: false, changed: false, warning: '远程约定提议不存在。' };
-  if (request.direction !== 'outgoing') return { ok: false, changed: false, warning: '只能模拟 TA 接受自己发出的提议。', request };
-  if (request.status === 'accepted') return { ok: true, changed: false, request };
-  if (request.status !== 'pending') return { ok: true, changed: false, request };
-  request.status = 'accepted';
-  request.updatedDay = Math.max(1, Math.floor(day));
-  return { ok: true, changed: true, request };
-}
-
 /** Apply an accepted terminal proposal to the existing local appointment fact. */
 export function confirmTerminalAppointment(world: WorldState, calendar: CalendarConfig, requestIdValue: string): TerminalAppointmentResult {
   const request = latestRequest(world, requestIdValue);
   if (!request) return { ok: false, changed: false, warning: '远程约定提议不存在。' };
-  if (request.status !== 'accepted') return { ok: false, changed: false, warning: '只有已接受的约定提议才能加入日历。', request };
+  const legacyPendingOutgoing = request.direction === 'outgoing' && request.status === 'pending';
+  if (request.status !== 'accepted' && !legacyPendingOutgoing) return { ok: false, changed: false, warning: '只有已接受的约定提议才能加入日历。', request };
   const appointmentId = `terminal-appointment-${request.id}`;
   const existing = world.appointments.find((appointment) => appointment.id === appointmentId);
   if (existing) return { ok: true, changed: false, request, appointment: existing };
@@ -116,5 +106,9 @@ export function confirmTerminalAppointment(world: WorldState, calendar: Calendar
     log: () => undefined,
   });
   if (!result.ok) return { ok: false, changed: false, warning: result.warning, request };
+  if (legacyPendingOutgoing) {
+    request.status = 'accepted';
+    request.updatedDay = Math.max(1, Math.floor(world.clock.day));
+  }
   return { ok: true, changed: true, request, appointment: world.appointments.find((appointment) => appointment.id === appointmentId) };
 }
