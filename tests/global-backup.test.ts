@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { collectThemeBackup, collectTokimekiPreferences, exportGlobalBackup, importGlobalBackup, restoreTokimekiPreferences, themeBackupPreferences, type GlobalBackupData } from '../src/data/io/global-backup';
 
-const base = { snapshots: [], content: { characters: [], personas: [], worldbooks: [], presets: [], presetBundles: [], storyScenePresets: [], chats: [], chatRecovery: [], memoryVectors: [], musicStates: [], terminalStickers: [] }, providers: [], ttsConfigs: [], bindings: [], characterBindings: [], imageConfigs: [], imageVisualConfigs: [], imageUserVisualConfigs: [], settings: [], localStorage: {}, theme: collectThemeBackup({ getItem: () => null }) } satisfies Omit<GlobalBackupData, 'currentSave'>;
+const base = { snapshots: [], content: { characters: [], personas: [], worldbooks: [], presets: [], presetBundles: [], storyScenePresets: [], chats: [], chatRecovery: [], memoryVectors: [], musicStates: [], terminalStickers: [], workshopPackages: [], workshopBindings: [], workshopStates: [] }, providers: [], ttsConfigs: [], bindings: [], characterBindings: [], imageConfigs: [], imageVisualConfigs: [], imageUserVisualConfigs: [], settings: [], localStorage: {}, theme: collectThemeBackup({ getItem: () => null }) } satisfies Omit<GlobalBackupData, 'currentSave'>;
 
 describe('global backup IO', () => {
   it('round trips assets and strips secrets by default', async () => {
@@ -21,10 +21,12 @@ describe('global backup IO', () => {
   it('imports version 1 backups with empty image configuration defaults', async () => {
     const zip = new JSZip();
     zip.file('manifest.json', JSON.stringify({ type: 'global-backup', schemaVersion: 1 }));
-    const { imageConfigs: _imageConfigs, imageVisualConfigs: _imageVisualConfigs, imageUserVisualConfigs: _imageUserVisualConfigs, ...legacy } = base;
+    const { imageConfigs: _imageConfigs, imageVisualConfigs: _imageVisualConfigs, imageUserVisualConfigs: _imageUserVisualConfigs, ...legacyBase } = base;
+    const { workshopPackages: _workshopPackages, workshopBindings: _workshopBindings, workshopStates: _workshopStates, ...legacyContent } = legacyBase.content;
+    const legacy = { ...legacyBase, content: legacyContent };
     zip.file('data.json', JSON.stringify(legacy));
     const imported = await importGlobalBackup(await zip.generateAsync({ type: 'uint8array' }));
-    expect(imported.data).toMatchObject({ imageConfigs: [], imageVisualConfigs: [], imageUserVisualConfigs: [] });
+    expect(imported.data).toMatchObject({ imageConfigs: [], imageVisualConfigs: [], imageUserVisualConfigs: [], content: { workshopPackages: [], workshopBindings: [], workshopStates: [] } });
   });
 
   it('round trips image settings and lock references with their assets', async () => {
@@ -55,6 +57,69 @@ describe('global backup IO', () => {
     expect(imported.data.content.musicStates[0].tracks[0].asset).toEqual({ kind: 'stored', assetId: 'music-1' });
     expect(imported.assetMeta['music-1'].category).toBe('music');
     expect(imported.assets.has('music-1')).toBe(true);
+  });
+
+  it('round trips workshop packages, world bindings, local state and referenced assets', async () => {
+    const updatedAt = '2026-09-20T00:00:00.000Z';
+    const workshopPackage = {
+      id: 'backup.workshop',
+      package: {
+        manifest: { type: 'workshop' as const, packageVersion: 1 as const, runtimeVersion: 1 as const, id: 'backup.workshop', name: '备份工坊', author: 'Tester', version: '1.0.0', permissions: [], iconAssetId: 'icon' },
+        app: { entryPageId: 'home', pages: [{ id: 'home', title: '首页', components: [{ kind: 'image' as const, assetId: 'icon', alt: '图标' }] }] },
+        rules: { rules: [] },
+        assetMeta: { assets: [{ id: 'icon', path: 'assets/icon.png', mimeType: 'image/png' as const, bytes: 4 }] },
+      },
+      assetBindings: { icon: { kind: 'stored' as const, assetId: 'workshop-icon' } },
+      installedAt: updatedAt,
+      updatedAt,
+    };
+    const workshopBinding = { id: 'world:backup.workshop', saveId: 'world', packageId: 'backup.workshop', enabled: true, createdAt: updatedAt, updatedAt };
+    const workshopState = { id: 'world:backup.workshop', saveId: 'world', packageId: 'backup.workshop', values: { note: '保留用户输入' }, updatedAt };
+    const data: GlobalBackupData = { ...base, content: { ...base.content, workshopPackages: [workshopPackage], workshopBindings: [workshopBinding], workshopStates: [workshopState] } };
+    const blob = await exportGlobalBackup(data, [{ id: 'workshop-icon', blob: new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/png' }), mimeType: 'image/png', category: 'image', createdAt: updatedAt }]);
+    const imported = await importGlobalBackup(blob);
+    expect(imported.data.content.workshopPackages[0]).toEqual(workshopPackage);
+    expect(imported.data.content.workshopBindings[0]).toEqual(workshopBinding);
+    expect(imported.data.content.workshopStates[0]?.values.note).toBe('保留用户输入');
+    expect(imported.assets.has('workshop-icon')).toBe(true);
+    expect(imported.workshopIntegrity).toMatchObject({ packageCount: 1, bindingCount: 1, localStateCount: 1, referencedAssetCount: 1, issues: [] });
+  });
+
+  it('previews broken workshop asset references instead of silently dropping package data', async () => {
+    const updatedAt = '2026-09-20T00:00:00.000Z';
+    const workshopPackage = {
+      id: 'broken.workshop',
+      package: {
+        manifest: { type: 'workshop' as const, packageVersion: 1 as const, runtimeVersion: 1 as const, id: 'broken.workshop', name: '损坏工坊', author: 'Tester', version: '1.0.0', permissions: [], iconAssetId: 'icon' },
+        app: { entryPageId: 'home', pages: [{ id: 'home', title: '首页', components: [{ kind: 'image' as const, assetId: 'icon', alt: '图标' }] }] },
+        rules: { rules: [] },
+        assetMeta: { assets: [{ id: 'icon', path: 'assets/icon.png', mimeType: 'image/png' as const, bytes: 4 }] },
+      },
+      assetBindings: { icon: { kind: 'stored' as const, assetId: 'missing-workshop-icon' } },
+      installedAt: updatedAt,
+      updatedAt,
+    };
+    const blob = await exportGlobalBackup({ ...base, content: { ...base.content, workshopPackages: [workshopPackage] } }, []);
+    const imported = await importGlobalBackup(blob);
+    expect(imported.data.content.workshopPackages).toHaveLength(1);
+    expect(imported.workshopIntegrity.issues).toContainEqual(expect.objectContaining({ code: 'missing-stored-asset', severity: 'error', packageId: 'broken.workshop' }));
+  });
+
+  it('rejects duplicate workshop primary keys before IndexedDB can overwrite records', async () => {
+    const updatedAt = '2026-09-20T00:00:00.000Z';
+    const workshopPackage = {
+      id: 'duplicate.workshop',
+      package: {
+        manifest: { type: 'workshop' as const, packageVersion: 1 as const, runtimeVersion: 1 as const, id: 'duplicate.workshop', name: '重复工坊', author: 'Tester', version: '1.0.0', permissions: [] },
+        app: { entryPageId: 'home', pages: [{ id: 'home', title: '首页', components: [] }] },
+        rules: { rules: [] },
+      },
+      assetBindings: {},
+      installedAt: updatedAt,
+      updatedAt,
+    };
+    const blob = await exportGlobalBackup({ ...base, content: { ...base.content, workshopPackages: [workshopPackage, workshopPackage] } }, []);
+    await expect(importGlobalBackup(blob)).rejects.toThrow('重复主键');
   });
 
   it('exports only Tokimeki preferences and removes stale keys on restore', () => {

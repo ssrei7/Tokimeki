@@ -7,8 +7,10 @@ import { SaveFileSchema, type SaveFile } from '../schema/save';
 import type { SaveSnapshot } from '../db/save';
 import type { StoredAsset } from '../db/assets';
 import { DEFAULT_THEME_APPEARANCE, parseDesktopIconOverrides, parseDesktopTitleOverrides, parseThemeAppearance, parseThemeMode, parseThemeTemplate, readCustomCss, type DesktopIconOverrides, type DesktopTitleOverrides, type ThemeAppearanceConfig, type ThemeMode, type ThemeTemplate } from '../../ui/theme/preferences';
+import { WorkshopBindingSchema, WorkshopLocalStateSchema, WorkshopPackageRecordSchema, type WorkshopBinding, type WorkshopLocalState, type WorkshopPackageRecord } from '../workshop';
+import { auditWorkshopIntegrity, type WorkshopIntegrityReport } from '../workshop-integrity';
 
-export const GLOBAL_BACKUP_VERSION = 4;
+export const GLOBAL_BACKUP_VERSION = 5;
 export interface ThemeBackupData {
   mode: ThemeMode;
   template: ThemeTemplate;
@@ -20,7 +22,7 @@ export interface ThemeBackupData {
 export interface GlobalBackupData {
   currentSave?: SaveFile;
   snapshots: SaveSnapshot[];
-  content: { characters: CharacterCard[]; personas: Persona[]; worldbooks: WorldbookEntry[]; presets: Preset[]; presetBundles: PresetBundle[]; storyScenePresets: StoryScenePresetRecord[]; chats: ChatRecord[]; chatRecovery: ChatRecoveryRecord[]; memoryVectors: MemoryVectorRecord[]; musicStates: MusicState[]; terminalStickers: TerminalStickerRecord[] };
+  content: { characters: CharacterCard[]; personas: Persona[]; worldbooks: WorldbookEntry[]; presets: Preset[]; presetBundles: PresetBundle[]; storyScenePresets: StoryScenePresetRecord[]; chats: ChatRecord[]; chatRecovery: ChatRecoveryRecord[]; memoryVectors: MemoryVectorRecord[]; musicStates: MusicState[]; terminalStickers: TerminalStickerRecord[]; workshopPackages: WorkshopPackageRecord[]; workshopBindings: WorkshopBinding[]; workshopStates: WorkshopLocalState[] };
   providers: ProviderConfig[];
   ttsConfigs: TtsConfig[];
   bindings: ProviderBinding[];
@@ -32,7 +34,7 @@ export interface GlobalBackupData {
   localStorage: Record<string, string>;
   theme: ThemeBackupData;
 }
-export interface ImportedGlobalBackup { data: GlobalBackupData; assets: Map<string, Uint8Array>; assetMeta: Record<string, Omit<StoredAsset, 'blob' | 'id'>>; hasSecrets: boolean }
+export interface ImportedGlobalBackup { data: GlobalBackupData; assets: Map<string, Uint8Array>; assetMeta: Record<string, Omit<StoredAsset, 'blob' | 'id'>>; hasSecrets: boolean; workshopIntegrity: WorkshopIntegrityReport }
 export interface GlobalBackupRestoreSelection { world: boolean; content: boolean; providers: boolean; assets: boolean; preferences: boolean }
 
 export function collectTokimekiPreferences(storage: Pick<Storage, 'length' | 'key' | 'getItem'>): Record<string, string> {
@@ -110,7 +112,11 @@ export async function importGlobalBackup(input: Blob | ArrayBuffer | Uint8Array)
   const assets = new Map<string, Uint8Array>(); for (const [name, entry] of Object.entries(zip.files)) if (name.startsWith('assets/') && !entry.dir) assets.set(name.slice(7), await entry.async('uint8array'));
   const metaFile = zip.file('asset-meta.json'); const assetMeta = AssetMetadataRecordSchema.parse(metaFile ? JSON.parse(await metaFile.async('text')) : {}) as ImportedGlobalBackup['assetMeta'];
   for (const assetId of assets.keys()) if (!assetMeta[assetId]) throw new Error(`全局备份中的资产 ${assetId} 缺少元数据。`);
-  return { data, assets, assetMeta, hasSecrets: Boolean(manifest.includeSecrets || data.providers.some((item) => item.apiKey) || data.ttsConfigs.some((item) => item.apiKey)) };
+  const availableAssetIds = new Set([...assets].filter(([, bytes]) => bytes.byteLength > 0).map(([id]) => id));
+  const workshopIntegrity = auditWorkshopIntegrity(data.content.workshopPackages, data.content.workshopBindings, data.content.workshopStates, availableAssetIds);
+  const lossyWorkshopIssues = workshopIntegrity.issues.filter((issue) => issue.code === 'duplicate-package-record' || issue.code === 'duplicate-binding-record' || issue.code === 'duplicate-state-record');
+  if (lossyWorkshopIssues.length) throw new Error(`全局备份中的工坊数据包含重复主键，继续恢复会覆盖记录：${lossyWorkshopIssues.map((issue) => issue.message).join('；')}`);
+  return { data, assets, assetMeta, hasSecrets: Boolean(manifest.includeSecrets || data.providers.some((item) => item.apiKey) || data.ttsConfigs.some((item) => item.apiKey)), workshopIntegrity };
 }
 
 function stripSecretHeaders(headers?: Record<string, string>): Record<string, string> | undefined { const kept = Object.entries(headers ?? {}).filter(([key]) => !/^(authorization|proxy-authorization|api-key|x-api-key|cookie|set-cookie)$/i.test(key)); return kept.length ? Object.fromEntries(kept) : undefined; }
@@ -120,7 +126,7 @@ const AssetMetadataRecordSchema = z.record(z.string().min(1), z.object({ mimeTyp
 function parseGlobalBackupData(value: unknown): GlobalBackupData {
   const raw = z.object({
     currentSave: z.unknown().optional(), snapshots: z.array(z.object({ id: z.string().min(1), day: z.number().int().positive(), createdAt: z.string().datetime(), save: z.unknown() })),
-    content: z.object({ characters: z.array(CharacterCardSchema), personas: z.array(PersonaSchema), worldbooks: z.array(WorldbookEntrySchema), presets: z.array(PresetSchema), presetBundles: z.array(PresetBundleSchema), storyScenePresets: z.array(StoryScenePresetSchema), chats: z.array(ChatRecordSchema), chatRecovery: z.array(ChatRecoveryRecordSchema), memoryVectors: z.array(MemoryVectorRecordSchema), musicStates: z.array(MusicStateSchema), terminalStickers: z.array(TerminalStickerRecordSchema) }),
+    content: z.object({ characters: z.array(CharacterCardSchema), personas: z.array(PersonaSchema), worldbooks: z.array(WorldbookEntrySchema), presets: z.array(PresetSchema), presetBundles: z.array(PresetBundleSchema), storyScenePresets: z.array(StoryScenePresetSchema), chats: z.array(ChatRecordSchema), chatRecovery: z.array(ChatRecoveryRecordSchema), memoryVectors: z.array(MemoryVectorRecordSchema), musicStates: z.array(MusicStateSchema), terminalStickers: z.array(TerminalStickerRecordSchema), workshopPackages: z.array(WorkshopPackageRecordSchema).default([]), workshopBindings: z.array(WorkshopBindingSchema).default([]), workshopStates: z.array(WorkshopLocalStateSchema).default([]) }),
     providers: z.array(ProviderConfigSchema), ttsConfigs: z.array(TtsConfigSchema), bindings: z.array(ProviderBindingSchema), characterBindings: z.array(CharacterProviderBindingSchema), imageConfigs: z.array(ImageConfigSchema).default([]), imageVisualConfigs: z.array(ImageVisualConfigSchema).default([]), imageUserVisualConfigs: z.array(ImageUserVisualConfigSchema).default([]), settings: z.array(ProviderSettingSchema), localStorage: z.record(z.string(), z.string()), theme: z.object({ mode: z.enum(['system', 'light', 'dark']), template: z.enum(['default', 'soft', 'compact']), appearance: z.record(z.string(), z.unknown()), customCss: z.string(), desktopTitles: z.record(z.string(), z.record(z.string(), z.string())), desktopIcons: z.record(z.string(), z.record(z.string(), z.unknown())) }).optional(),
   }).parse(value);
   const fallbackTheme = collectThemeBackup({ getItem: (key) => raw.localStorage[key] ?? null });
