@@ -59,6 +59,14 @@ describe('settings desktop', () => {
     expect(app).not.toMatch(/^\s*<PersonaAvatarSettings saveId=/m);
   });
 
+  it('offers explicit embedding model discovery and keeps custom headers in advanced settings', () => {
+    const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    expect(app).toContain('list="embedding-model-list"');
+    expect(app).toContain("embeddingModelsBusy ? '拉取中…' : '拉取模型'");
+    expect(app).toContain('自定义 headers 仅用于服务商要求的额外鉴权、租户或区域字段');
+    expect(app).toContain('<details className="fold-card"><summary>高级设置</summary>');
+  });
+
   it('offers local custom CSS import and export without auto-applying imports', () => {
     const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     expect(app).toContain('>导出 CSS</button>');

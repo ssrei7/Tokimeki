@@ -32,7 +32,7 @@ import { auditEventPackage } from './data/event-package-audit';
 import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_ECONOMY_STATE, DEFAULT_SLOT_DEFS, DEFAULT_TERMINAL_STATE, SaveFileSchema, type AssetRef, type CollectionEntry, type EncounterDeparture, type GiftHistoryEntry, type SaveFile, type Topic, type TopicTree } from './data/schema/save';
 import { testProviderConnection } from './providers/connection-test';
 import { providerDb } from './providers/db';
-import { listProviderModels } from './providers/models';
+import { listEmbeddingModels, listProviderModels } from './providers/models';
 import { resolveProviderForCharacter, resolveProviderForTask, resolveProviderForTaskGroup, resolveTtsProviderForCharacter } from './providers/router';
 import { streamChat, type StreamStatus } from './providers/stream';
 import { generateImage } from './providers/image';
@@ -5355,11 +5355,29 @@ function SettingsView(props: {
   };
   const resetDesktopTitles = () => { setDesktopTitles({}); writeDesktopTitleOverrides(window.localStorage, {}); window.dispatchEvent(new CustomEvent('tokimeki:theme-change')); };
   const [desktopIconUrls, setDesktopIconUrls] = useState<Record<string, string>>({});
+  const [embeddingModels, setEmbeddingModels] = useState<string[]>([]);
+  const [embeddingModelsBusy, setEmbeddingModelsBusy] = useState(false);
+  const [embeddingModelsFeedback, setEmbeddingModelsFeedback] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const isSaved = props.providers.some((item) => item.id === props.provider.id);
   const energy = getEnergyState(props.save.world);
   const entries: readonly DesktopEntry[] = SETTINGS_PAGE_DEFINITIONS;
   const pageTitle = SETTINGS_PAGE_DEFINITIONS.find((entry) => entry.id === props.activePage)?.pageTitle ?? '设置';
   const mobileCapabilities = readMobileCapabilities();
+  const discoverEmbeddingModels = async () => {
+    setEmbeddingModelsBusy(true);
+    setEmbeddingModelsFeedback(null);
+    try {
+      const found = await listEmbeddingModels({
+        endpoint: props.embeddingConfig.endpoint,
+        apiKey: props.embeddingConfig.apiKey,
+        headers: parseHeadersDraft(props.embeddingHeadersDraft),
+      });
+      setEmbeddingModels(found);
+      setEmbeddingModelsFeedback({ tone: 'success', text: found.length ? `已发现 ${found.length} 个模型，请选择或继续手动填写。` : '端点没有返回模型，请继续手动填写模型名。' });
+    } catch (error) {
+      setEmbeddingModelsFeedback({ tone: 'error', text: errorMessage(error, '模型列表获取失败，请手动填写模型名。') });
+    } finally { setEmbeddingModelsBusy(false); }
+  };
   if (!props.activePage) return <DesktopLauncher launcherId="settings" title="设置" appName={props.appName} entries={entries} onOpen={(id) => props.onOpenPage(id as SettingsPage)} />;
   if (props.activePage === 'migration') return <SubpageShell title={pageTitle} pageId="migration" onBack={props.onBack}><ProviderSettingsMigrationView providers={props.providers} ttsConfigs={props.ttsConfigs} imageConfig={props.imageConfig} onExport={props.onExportProviderSettings} onImport={props.onImportProviderSettings} onExportGlobalBackup={props.onExportGlobalBackup} onImportGlobalBackup={props.onImportGlobalBackup} globalBackupPreview={props.globalBackupPreview} onRestoreGlobalBackup={props.onRestoreGlobalBackup} /></SubpageShell>;
   if (props.activePage === 'image') return <SubpageShell title={pageTitle} pageId="image" onBack={props.onBack}><ImageSettingsView config={props.imageConfig} providers={props.providers} setProvider={props.setProvider} busy={props.imageBusy} onSave={props.onSaveImage} onTest={props.onTestImage} onNewProvider={props.onNewProvider} onOpenProvider={props.onOpenProvider} save={props.save} personas={props.personas} imageVisualConfigs={props.imageVisualConfigs} imageUserVisualConfigs={props.imageUserVisualConfigs} visualCharacterId={props.visualCharacterId} setVisualCharacterId={props.setVisualCharacterId} imagePrompt={props.imagePrompt} setImagePrompt={props.setImagePrompt} imageTarget={props.imageTarget} setImageTarget={props.setImageTarget} onSaveImageVisualConfig={props.onSaveImageVisualConfig} onSetCharacterFaceLock={props.onSetCharacterFaceLock} onImportCharacterFaceReference={props.onImportCharacterFaceReference} onRemoveCharacterFaceReference={props.onRemoveCharacterFaceReference} onSaveUserImageVisualConfig={props.onSaveUserImageVisualConfig} onSetUserFaceLock={props.onSetUserFaceLock} onImportUserFaceReference={props.onImportUserFaceReference} onRemoveUserFaceReference={props.onRemoveUserFaceReference} onGenerateCharacterImage={props.onGenerateCharacterImage} onDownloadGenerated={props.onDownloadGeneratedImage} onDeleteGenerated={props.onDeleteGeneratedImage} /></SubpageShell>;
@@ -5391,10 +5409,12 @@ function SettingsView(props: {
       <div className="list-heading"><div><span className="eyebrow">可选外部检索</span><h3>向量记忆 API</h3></div><span className={`request-status ${props.embeddingConfig.lastStatus === 'error' ? 'error' : ''}`}>{props.embeddingBusy ? '请求中…' : props.embeddingConfig.lastStatus === 'success' ? '最近成功' : props.embeddingConfig.lastStatus === 'error' ? '最近失败' : '尚未调用'}</span></div>
       <label className="checkbox-line"><input type="checkbox" checked={props.embeddingConfig.enabled} onChange={(event) => props.setEmbeddingConfig({ ...props.embeddingConfig, enabled: event.target.checked })} />启用外部 embedding 混合检索</label>
       <p className="io-scope">默认关闭。启用后，仅在生成面对面回复且存在可注入记忆时，把当前输入与缺失或已变更的记忆批量发送到此端点；查看和管理记忆不会调用 API。失败时自动回退本地关键词检索。</p>
-      <label>Embedding 请求端点<input placeholder="https://example.com/v1/embeddings" value={props.embeddingConfig.endpoint} onChange={(event) => props.setEmbeddingConfig({ ...props.embeddingConfig, endpoint: event.target.value })} /></label>
+      <label>Embedding 请求端点<input placeholder="https://example.com/v1/embeddings" value={props.embeddingConfig.endpoint} onChange={(event) => { props.setEmbeddingConfig({ ...props.embeddingConfig, endpoint: event.target.value }); setEmbeddingModels([]); setEmbeddingModelsFeedback(null); }} /></label>
       <label>API key（仅本地）<input type="password" value={props.embeddingConfig.apiKey ?? ''} onChange={(event) => props.setEmbeddingConfig({ ...props.embeddingConfig, apiKey: event.target.value || undefined })} /></label>
-      <label>Embedding 模型<input placeholder="text-embedding-model" value={props.embeddingConfig.model} onChange={(event) => props.setEmbeddingConfig({ ...props.embeddingConfig, model: event.target.value })} /></label>
-      <label>自定义 headers（JSON）<textarea spellCheck={false} value={props.embeddingHeadersDraft} onChange={(event) => props.setEmbeddingHeadersDraft(event.target.value)} /></label>
+      <div className="field-with-action"><label>Embedding 模型<input list="embedding-model-list" placeholder="可选择或手动填写" value={props.embeddingConfig.model} onChange={(event) => props.setEmbeddingConfig({ ...props.embeddingConfig, model: event.target.value })} /></label><button type="button" className="secondary" onClick={() => void discoverEmbeddingModels()} disabled={props.embeddingBusy || embeddingModelsBusy}>{embeddingModelsBusy ? '拉取中…' : '拉取模型'}</button></div>
+      <datalist id="embedding-model-list">{embeddingModels.map((model) => <option key={model} value={model} />)}</datalist>
+      {embeddingModelsFeedback && <p className={`io-scope ${embeddingModelsFeedback.tone === 'error' ? 'error' : ''}`} role="status">{embeddingModelsFeedback.text}</p>}
+      <details className="fold-card"><summary>高级设置</summary><div className="fold-body"><p className="io-scope">自定义 headers 仅用于服务商要求的额外鉴权、租户或区域字段；普通 OpenAI-compatible 配置通常无需修改。</p><label>自定义 headers（JSON）<textarea spellCheck={false} value={props.embeddingHeadersDraft} onChange={(event) => props.setEmbeddingHeadersDraft(event.target.value)} /></label></div></details>
       <div className="stat-list"><span>调用 {props.embeddingConfig.requestCount} 次</span><span>失败 {props.embeddingConfig.failureCount} 次</span>{props.embeddingConfig.lastCalledAt && <span>最近调用 {new Date(props.embeddingConfig.lastCalledAt).toLocaleString()}</span>}</div>
       {props.embeddingConfig.lastError && <p className="io-scope" role="alert">最近错误：{props.embeddingConfig.lastError}</p>}
       <div className="button-row"><button onClick={() => void props.onSaveEmbedding()} disabled={props.embeddingBusy}>保存设置</button><button className="secondary" onClick={() => void props.onTestEmbedding()} disabled={props.embeddingBusy}>连接测试</button><button className="secondary" onClick={() => void props.onRebuildEmbedding()} disabled={props.embeddingBusy || !props.embeddingConfig.enabled}>重建当前世界索引</button></div>

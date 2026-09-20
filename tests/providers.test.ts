@@ -4,7 +4,7 @@ import { geminiGenerateUrl, geminiModelsUrl } from '../src/providers/adapters/ge
 import { openAiChatUrl, openAiModelsUrl } from '../src/providers/adapters/openai';
 import { testProviderConnection } from '../src/providers/connection-test';
 import { ProviderManager } from '../src/providers/manager';
-import { listProviderModels } from '../src/providers/models';
+import { listEmbeddingModels, listProviderModels } from '../src/providers/models';
 import { resolveProviderForCharacter, resolveProviderForTask, resolveProviderForTaskGroup, resolveTtsProviderForCharacter } from '../src/providers/router';
 import { streamChat } from '../src/providers/stream';
 import { CharacterProviderBindingSchema } from '../src/providers/types';
@@ -78,10 +78,18 @@ describe('provider adapters and routing', () => {
     const models = await listProviderModels({ ...base, model: '', apiKey: 'secret' }, async (input, options) => { request = input; init = options; return new Response(JSON.stringify({ data: [{ id: 'one' }] }), { status: 200 }); });
     expect(models).toEqual(['one']); expect(String(request)).toBe('https://example.test/v1/models'); expect((init?.headers as Record<string, string>).authorization).toBe('Bearer secret');
   });
+  it('lists models from a full embedding endpoint with auth and custom headers', async () => {
+    let request: RequestInfo | URL | undefined; let init: RequestInit | undefined;
+    const models = await listEmbeddingModels({ endpoint: 'https://example.test/v1/embeddings', apiKey: 'secret', headers: { 'x-region': 'hk' } }, async (input, options) => { request = input; init = options; return new Response(JSON.stringify({ data: [{ id: 'embed-one' }] }), { status: 200 }); });
+    expect(models).toEqual(['embed-one']);
+    expect(String(request)).toBe('https://example.test/v1/models');
+    expect(init?.headers).toMatchObject({ authorization: 'Bearer secret', 'x-region': 'hk' });
+  });
   it('normalizes base and full endpoints without duplicating paths', () => {
     expect(openAiChatUrl('https://example.test/v1')).toBe('https://example.test/v1/chat/completions');
     expect(openAiChatUrl('https://example.test/v1/chat/completions')).toBe('https://example.test/v1/chat/completions');
     expect(openAiModelsUrl('https://example.test/v1/chat/completions')).toBe('https://example.test/v1/models');
+    expect(openAiModelsUrl('https://example.test/v1/embeddings')).toBe('https://example.test/v1/models');
     expect(geminiGenerateUrl('https://example.test/v1beta', 'gemini-pro', true)).toBe('https://example.test/v1beta/models/gemini-pro:streamGenerateContent?alt=sse');
     expect(geminiModelsUrl('https://example.test/v1beta/models/gemini-pro:generateContent')).toBe('https://example.test/v1beta/models');
   });

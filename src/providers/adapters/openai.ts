@@ -8,7 +8,7 @@ export function openAiChatUrl(endpoint: string): string {
 }
 export function openAiModelsUrl(endpoint: string): string {
   const value = trimEndpoint(endpoint);
-  return /\/chat\/completions$/i.test(value) ? value.replace(/\/chat\/completions$/i, '/models') : /\/models$/i.test(value) ? value : `${value}/models`;
+  return /\/(?:chat\/completions|embeddings)$/i.test(value) ? value.replace(/\/(?:chat\/completions|embeddings)$/i, '/models') : /\/models$/i.test(value) ? value : `${value}/models`;
 }
 
 function headers(config: ProviderConfig): Record<string, string> {
