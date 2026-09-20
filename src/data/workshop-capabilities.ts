@@ -8,11 +8,12 @@ import {
   WORKSHOP_ACTIVITY_COST_KINDS,
   WORKSHOP_BINDING_FORMATS,
   WORKSHOP_COMPONENT_KINDS,
+  WORKSHOP_EVENT_EFFECT_OPS,
   WORKSHOP_TEXT_TASKS,
   WORKSHOP_WORLD_READ_RESOURCES,
 } from './workshop';
 
-export const WORKSHOP_CAPABILITY_CATALOG_VERSION = 4;
+export const WORKSHOP_CAPABILITY_CATALOG_VERSION = 5;
 
 export const WorkshopCapabilityCatalogSchema = z.object({
   catalogVersion: z.literal(WORKSHOP_CAPABILITY_CATALOG_VERSION),
@@ -43,6 +44,16 @@ export const WorkshopCapabilityCatalogSchema = z.object({
     effectOps: z.array(z.string()),
     resultMessages: z.boolean(),
     resultSyntax: z.string(),
+    requirement: z.string(),
+  }).strict(),
+  events: z.object({
+    enabled: z.boolean(),
+    action: z.literal('trigger-event'),
+    installPermission: z.literal('event.install'),
+    triggerPermission: z.literal('event.trigger'),
+    automaticDirectorWeight: z.literal(false),
+    promptNarration: z.literal(false),
+    effectOps: z.array(z.string()),
     requirement: z.string(),
   }).strict(),
   declaredOnly: z.object({
@@ -76,8 +87,11 @@ const CATALOG: WorkshopCapabilityCatalog = WorkshopCapabilityCatalogSchema.parse
     },
     actions: {
       enabled: ['navigate', 'set-local'],
-      conditional: [{ name: 'submit-op', requirement: '仅允许按钮以 run_workshop_activity 调度同包 manual 规则；规则效果由确定性内核复核。' }],
-      disabled: WORKSHOP_ACTION_TYPES.filter((action) => action === 'trigger-event' || action === 'provider-text'),
+      conditional: [
+        { name: 'submit-op', requirement: '仅允许按钮以 run_workshop_activity 调度同包 manual 规则；规则效果由确定性内核复核。' },
+        { name: 'trigger-event', requirement: '仅允许用户按钮显式触发同包事件；事件安装、触发和每个结果 op 均须声明权限。' },
+      ],
+      disabled: WORKSHOP_ACTION_TYPES.filter((action) => action === 'provider-text'),
     },
   },
   worldRead: { resources: [...WORKSHOP_WORLD_READ_RESOURCES], requirement: '必须在 manifest.permissions 中逐项声明 world.read 资源。' },
@@ -94,7 +108,17 @@ const CATALOG: WorkshopCapabilityCatalog = WorkshopCapabilityCatalogSchema.parse
     resultSyntax: '{"success":"活动完成。","failure":"当前无法进行。"}',
     requirement: 'manual 规则由用户按钮触发；onEnterNode、onTimeAdvance、onDaySettle 规则由对应确定性钩子触发。stat/item 成本先聚合检查，再与效果整组原子提交；result 只提供成功/失败展示文案。AI 不能直接写世界事实。',
   },
-  declaredOnly: { events: true, prompts: true, providerText: true, providerTextTasks: [...WORKSHOP_TEXT_TASKS] },
+  events: {
+    enabled: true,
+    action: 'trigger-event',
+    installPermission: 'event.install',
+    triggerPermission: 'event.trigger',
+    automaticDirectorWeight: false,
+    promptNarration: false,
+    effectOps: [...WORKSHOP_EVENT_EFFECT_OPS],
+    requirement: '启用包时把通过引用检查的事件定义同步到当前世界；weight 固定为 0，不进入导演随机池。用户按钮只能显式触发同包事件，事件和 choice 的 ops 在副本上完整通过正式 op 校验后原子提交。纯 prompt 事件暂不运行。',
+  },
+  declaredOnly: { events: false, prompts: true, providerText: true, providerTextTasks: [...WORKSHOP_TEXT_TASKS] },
   assets: { acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'], agentMayCreateBinary: false, note: '可保留当前工程已有 assetMeta 和引用；Agent 不能虚构或生成二进制载荷。' },
   prohibited: ['javascript', 'typescript', 'react', 'html', 'css', 'eval', 'script-url', 'base64', 'arbitrary-network'],
 });

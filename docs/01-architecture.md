@@ -162,6 +162,7 @@ subscribe<H extends Hook>(hook: H, fn: Handler<H>, priority?: number): Unsubscri
 - 每个 feature 在自己的 `register.ts` 里挂钩子，`features/index.ts` 只做汇总注册。新功能 = 新目录，核心零改动。
 - 公共扩展钩子以 `AGENTS.md` 白名单为准。离开地点通过 `onEnterNode` payload 中的 `fromNodeId/toNodeId` 表达；对话开始通过 `onEncounter` 或 `beforePromptAssemble` 表达；物品与数值变化统一从 `onOpsApply` 的 `Change[]` 观察，不新增独立公共钩子。
 - 工坊自动活动当前只订阅携带确定性 `world` 上下文的 `onEnterNode`、`onTimeAdvance`、`onDaySettle`，并统一派发内部 `run_workshop_activity` op；`onOpsApply` 只接收执行后的变更通知，不反向触发活动。
+- 已启用工坊包的 `events.json` 由运行时按包来源同步到当前世界；包事件固定 `weight: 0`，不进入导演随机选择，只能经已授权的 `trigger-event` 用户动作显式触发。事件本体与 choice 只允许不广播流程钩子的原子安全 ops，均在隔离世界副本上走正式 op registry，整组成功后才写回。
 
 ---
 

@@ -753,3 +753,9 @@
 **决定**：在既有 `manual` / `onEnterNode` 基础上开放 `onTimeAdvance` 与 `onDaySettle`。三种自动规则都复用同一个内部 `run_workshop_activity` op、完整包校验、安全条件、成本、一次性、冷却和原子提交路径。`onTimeAdvance` 使用事件给出的结算前日期与目标时段，`onDaySettle` 使用正在结算的日期及当前时段/地点；成功变更继续统一通过 `onOpsApply` 通知。
 
 **边界**：本切片不修改核心事件 payload。`onDayStart`、`onEncounter`、`onDialogueEnd` 当前没有携带执行确定性活动所需的 `world`，因此不开放；`beforePromptAssemble` 只用于 prompt 组装；`onOpsApply` 不注册活动以避免变更通知递归。自动钩子纯本地、零 API，不新增时间或行动点成本，不升级包 schema/runtime、SaveFile v41 或 Content IndexedDB v12。能力目录升级到 v4。
+
+## D139 工坊事件先开放用户显式触发的原子本地闭环
+
+**决定**：当前世界启用工坊包后，把通过完整包校验和当前世界引用检查的 `events.json` 定义同步进 `world.eventDefs`，并用包 ID 标记来源。包内 `trigger-event` 按钮只有在事件属于同包且逐项声明 `event.install` / `event.trigger` 时可用。触发继续复用正式事件条件、地点、时段、在场角色、关系阶段、once、cooldown、历史与 choice 机制；事件本体和 choice 的每个结果 op 还必须具有 `op.submit` 权限，并在世界副本上完整成功后才原子写回。
+
+**生命周期与调用边界**：工坊事件安装副本固定 `weight: 0`，不进入导演随机池；本切片只允许用户显式按钮触发。停用包会移除其事件定义和待触发排程，但保留已经形成的事件历史与其他已提交世界事实。事件 ID 与世界原有事件或其他启用包冲突时不覆盖；断裂地点、时段、角色、关系阶段或证物引用不安装。事件效果只开放能力目录列出的原子安全 op；`advance_time`、`move_player`、`move_npc`、`queue_event` 和内部 `run_workshop_activity` 不开放，避免在候选事务完成前广播钩子或留下跨事件排程。纯 prompt 事件不调用 Provider，并明确拒绝到后续 Prompt 切片。整个流程纯本地、零 API；不修改事件核心循环，不升级包 schema/runtime、SaveFile v41 或 Content IndexedDB v12。能力目录升级到 v5。

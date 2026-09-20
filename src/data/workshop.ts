@@ -21,6 +21,12 @@ export const WORKSHOP_ALLOWED_OPS = [
   'make_appointment', 'queue_event', 'propose_departure', 'resolve_departure', 'run_workshop_activity',
 ] as const;
 
+export const WORKSHOP_EVENT_EFFECT_OPS = [
+  'add_stat', 'set_stat', 'set_flag', 'give_item', 'take_item', 'add_memory', 'add_node_memory',
+  'reveal_node', 'unlock_topic', 'mark_topic_used', 'set_mood', 'adjust_relation_axis', 'add_knot',
+  'resolve_knot', 'offer_gift', 'resolve_gift', 'make_appointment', 'propose_departure', 'resolve_departure',
+] as const;
+
 export const WORKSHOP_ACTIVITY_EFFECT_OPS = ['add_stat', 'set_flag', 'give_item', 'take_item'] as const;
 export const WORKSHOP_ACTIVITY_HOOKS = ['manual', 'onEnterNode', 'onTimeAdvance', 'onDaySettle'] as const;
 export const WorkshopActivityHookSchema = z.enum(WORKSHOP_ACTIVITY_HOOKS);
@@ -382,8 +388,7 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
 
   for (const event of pack.events?.events ?? []) required.add(permissionLabel('event.install', event.id));
   for (const { op, path } of eventOps(pack)) {
-    if (op === 'run_workshop_activity') addIssue('error', 'unsupported-op', '事件不能直接调用内部工坊活动 op。', path);
-    else if (!WORKSHOP_ALLOWED_OPS.includes(op as typeof WORKSHOP_ALLOWED_OPS[number])) addIssue('error', 'unsupported-op', op ? `事件包含未开放的 op：${op}` : '事件 op 缺少字符串 op 名。', path);
+    if (!WORKSHOP_EVENT_EFFECT_OPS.includes(op as typeof WORKSHOP_EVENT_EFFECT_OPS[number])) addIssue('error', 'unsupported-op', op ? `事件包含未开放或非原子安全的 op：${op}` : '事件 op 缺少字符串 op 名。', path);
     else required.add(permissionLabel('op.submit', op));
   }
 
@@ -417,7 +422,7 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
   for (const permission of required) if (!declared.has(permission)) addIssue('error', 'permission-missing', `缺少权限声明：${permission}`, 'manifest.permissions');
   for (const permission of declared) if (!required.has(permission)) addIssue('warning', 'permission-unused', `声明了当前包未使用的权限：${permission}`, 'manifest.permissions');
   if (promptTokenTotal > declaredPromptBudget) addIssue('error', 'prompt-permission-budget', `Prompt 实际预算 ${promptTokenTotal} 超过权限声明预算 ${declaredPromptBudget}。`, 'manifest.permissions');
-  if (required.size) addIssue('info', 'runtime-boundary', '受限页面可运行包内导航、本地 App 状态、已授权的世界事实读取，以及 manual / onEnterNode 确定性活动；事件、Prompt、Provider 和其他 op 仍不运行。');
+  if (required.size) addIssue('info', 'runtime-boundary', '受限页面可运行包内导航、本地 App 状态、已授权的世界事实读取、白名单活动，以及用户显式触发的包内声明式事件；Prompt、Provider 和其他直接 op 仍不运行。');
 
   return { canInstall: !issues.some((issue) => issue.severity === 'error'), issues, requiredPermissions: [...required].sort() };
 }

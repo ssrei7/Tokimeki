@@ -71,6 +71,22 @@ describe('workshop restricted runtime', () => {
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>开始钓鱼<\/button>/);
   });
 
+  it('only enables same-package events with install and trigger permissions', () => {
+    const save = seedScenario(createCurrentSaveScenario({ id: 'event-runtime', title: 'Event Runtime' }));
+    const record = runtimeRecord();
+    record.package.manifest.permissions = [
+      { capability: 'event.install', resources: ['notice'] },
+      { capability: 'event.trigger', resources: ['notice'] },
+    ];
+    record.package.events = { events: [{ id: 'notice', title: '告示', trigger: {}, content: '新告示。' }] };
+    record.package.app.pages[0]!.components = [{ kind: 'button', label: '查看告示', action: { type: 'trigger-event', eventId: 'notice' } }];
+    const enabled = renderToStaticMarkup(createElement(WorkshopPageRenderer, { record, save, pageId: 'home', values: {}, onPageChange: vi.fn(), onValueChange: vi.fn(), onTriggerEvent: vi.fn() }));
+    expect(enabled).toMatch(/<button[^>]*>查看告示<\/button>/);
+    expect(enabled).not.toMatch(/<button[^>]*disabled=""[^>]*>查看告示<\/button>/);
+    const preview = renderToStaticMarkup(createElement(WorkshopPageRenderer, { record, save, pageId: 'home', values: {}, onPageChange: vi.fn(), onValueChange: vi.fn() }));
+    expect(preview).toMatch(/<button[^>]*disabled=""[^>]*>查看告示<\/button>/);
+  });
+
   it('rechecks declared permissions at render time', () => {
     const record = runtimeRecord();
     expect(hasWorkshopPermission(record, 'world.read', 'clock')).toBe(true);
