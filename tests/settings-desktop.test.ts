@@ -76,14 +76,16 @@ describe('settings desktop', () => {
     expect(html).not.toContain(' title=');
   });
 
-  it('paginates launcher entries with short page bars and accepts a local app name', () => {
+  it('shows four rows per page on terminal and settings desktops', () => {
     const icon = SETTINGS_PAGE_DEFINITIONS[0].icon;
     const entries = Array.from({ length: 25 }, (_, index) => ({ id: `entry-${index}`, label: `项目${index}`, icon, tone: 'gray' as const }));
-    const html = renderToStaticMarkup(createElement(DesktopLauncher, { launcherId: 'terminal', title: '终端', appName: '我的世界', entries, onOpen: () => undefined }));
-    expect((html.match(/class="desktop-app-icon"/g) ?? [])).toHaveLength(24);
-    expect((html.match(/class="desktop-pagination/g) ?? [])).toHaveLength(1);
-    expect((html.match(/aria-label="第 [12] 页"/g) ?? [])).toHaveLength(2);
-    expect(html).toContain('我的世界');
+    for (const launcherId of ['terminal', 'settings']) {
+      const html = renderToStaticMarkup(createElement(DesktopLauncher, { launcherId, title: launcherId === 'terminal' ? '终端' : '设置', appName: '我的世界', entries, onOpen: () => undefined }));
+      expect((html.match(/class="desktop-app-icon"/g) ?? [])).toHaveLength(16);
+      expect((html.match(/class="desktop-pagination/g) ?? [])).toHaveLength(1);
+      expect((html.match(/aria-label="第 [12] 页"/g) ?? [])).toHaveLength(2);
+      expect(html).toContain('我的世界');
+    }
   });
 
   it('marks the active subpage while retaining its child content', () => {

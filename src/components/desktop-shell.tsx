@@ -20,7 +20,8 @@ export type DesktopEntry = {
   tone?: 'blue' | 'green' | 'amber' | 'rose' | 'violet' | 'gray';
 };
 
-const DESKTOP_PAGE_ROWS = 6;
+const DEFAULT_DESKTOP_PAGE_ROWS = 6;
+const SWIPE_DESKTOP_PAGE_ROWS = 4;
 
 export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperUrl, appName = DEFAULT_APP_NAME }: { launcherId: string; title: string; entries: readonly DesktopEntry[]; onOpen: (id: string) => void; wallpaperUrl?: string; appName?: string }) {
   const [contrast, setContrast] = useState<DesktopIconContrast | null>(null);
@@ -41,7 +42,7 @@ export function DesktopLauncher({ launcherId, title, entries, onOpen, wallpaperU
   const swipeRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const suppressClickRef = useRef(false);
   const swipeEnabled = launcherId === 'terminal' || launcherId === 'settings';
-  const pageSize = columns * DESKTOP_PAGE_ROWS;
+  const pageSize = columns * (swipeEnabled ? SWIPE_DESKTOP_PAGE_ROWS : DEFAULT_DESKTOP_PAGE_ROWS);
   const orderedEntries = useMemo(() => { const byId = new Map(entries.map((entry) => [entry.id, entry])); return orderedIds.map((id) => byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry)); }, [entries, orderedIds]);
   const assignedPage = (id: string, index: number) => pageAssignments[id] ?? Math.floor(index / pageSize);
   const pageCount = Math.max(1, ...orderedEntries.map((entry, index) => assignedPage(entry.id, index) + 1));
