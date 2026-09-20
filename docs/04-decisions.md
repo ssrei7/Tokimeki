@@ -715,3 +715,9 @@
 **决定**：Agent v1 新增 `project.patch`，与 `project.replace` 二选一且每轮仍只允许一个工具调用。patch 采用受限 JSON Pointer，只开放 `add`、`replace`、`remove`，单次最多 100 项；路径必须位于 `manifest`、`app`、`rules`、`events`、`prompts`、`assetMeta` 六个工程根下。禁止空路径段、无效转义、数组越界以及 `__proto__` / `prototype` / `constructor` 路径，`move`、`copy`、`test` 和任意脚本不属于协议。
 
 **原子性与降级**：本地先复制当前 JSON 工程，再按顺序应用全部操作；任一操作失败或最终结果未通过 `WorkshopPackageSchema`，整组结果都不进入编辑器。当前源码不是有效 JSON、需要整体重构或无法安全定位时，Agent 必须退回 `project.replace`。成功 patch 与完整替换共用编辑器撤销、校验和预览流程，不自动安装或写世界状态。patch 只减少单次响应体，不增加 API 次数；SaveFile 保持 v41，Content IndexedDB 保持 v12。
+
+## D133 工坊 Agent 请求前生成只读校验与预览摘要
+
+**决定**：新增版本化本地 `project.inspect`，复用编辑器同一份分析结果，不重复建立第二套校验器。结果区分 JSON 语法、包 schema、完整校验、预览可用性和导出状态；携带最多 100 条诊断、最多 200 项所需权限，并提供包 ID/名称/版本、入口页、页面标题、组件/动作计数、规则 hook 与 events/prompts/assets 数量。预览摘要不包含组件正文、表单值或渲染后的世界事实。
+
+**隐私与调用边界**：`package-id-conflict` 在构造 inspection 时过滤，避免向 Provider 暴露本机已安装包 ID；其他权限、引用和资产载荷诊断继续保留。每次用户发送前，本地同步生成一次 inspection，与当前源码、历史和能力目录合并进原有单次 API 请求；不额外调用 Provider，不渲染页面，不读取 SaveFile 世界事实值，不发送资产二进制，也不写入任何状态。自动读取修改后结果、再次调用模型和修复循环仍须等待步骤/费用预算切片；SaveFile 保持 v41，Content IndexedDB 保持 v12。

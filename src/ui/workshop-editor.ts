@@ -31,6 +31,8 @@ export interface WorkshopDraftAnalysis {
   package?: WorkshopPackage;
   report: WorkshopValidationReport;
   canExport: boolean;
+  syntaxValid: boolean;
+  schemaValid: boolean;
 }
 
 function parseIssue(message: string, path?: string): WorkshopValidationIssue {
@@ -40,18 +42,18 @@ function parseIssue(message: string, path?: string): WorkshopValidationIssue {
 export function analyzeWorkshopDraft(source: string, installedIds: ReadonlySet<string>, assets: ReadonlyMap<string, WorkshopAssetPayload>): WorkshopDraftAnalysis {
   if (source.length > WORKSHOP_EDITOR_SOURCE_LIMIT) {
     const issue = parseIssue(`编辑内容超过 ${WORKSHOP_EDITOR_SOURCE_LIMIT / 1024 / 1024} MiB 限制。`);
-    return { report: { canInstall: false, issues: [issue], requiredPermissions: [] }, canExport: false };
+    return { report: { canInstall: false, issues: [issue], requiredPermissions: [] }, canExport: false, syntaxValid: false, schemaValid: false };
   }
   let raw: unknown;
   try { raw = JSON.parse(source); }
   catch (error) {
     const issue = parseIssue(error instanceof Error ? `JSON 解析失败：${error.message}` : 'JSON 解析失败。');
-    return { report: { canInstall: false, issues: [issue], requiredPermissions: [] }, canExport: false };
+    return { report: { canInstall: false, issues: [issue], requiredPermissions: [] }, canExport: false, syntaxValid: false, schemaValid: false };
   }
   const parsed = WorkshopPackageSchema.safeParse(raw);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((issue) => parseIssue(issue.message, issue.path.map(String).join('.')));
-    return { report: { canInstall: false, issues, requiredPermissions: [] }, canExport: false };
+    return { report: { canInstall: false, issues, requiredPermissions: [] }, canExport: false, syntaxValid: true, schemaValid: false };
   }
 
   const validation = validateWorkshopPackage(parsed.data);
@@ -72,5 +74,7 @@ export function analyzeWorkshopDraft(source: string, installedIds: ReadonlySet<s
     package: parsed.data,
     report: { canInstall: !issues.some((issue) => issue.severity === 'error'), issues, requiredPermissions: validation.requiredPermissions },
     canExport: !exportErrors,
+    syntaxValid: true,
+    schemaValid: true,
   };
 }

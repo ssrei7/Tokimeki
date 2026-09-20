@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SaveFile } from '../data/schema/save';
 import type { WorkshopAssetPayload, WorkshopLocalValue, WorkshopPackageImport, WorkshopPackageRecord, WorkshopValidationIssue } from '../data/workshop';
+import { queryWorkshopProjectInspection } from '../data/workshop-inspection';
 import type { WorkshopAgentHistoryEntry, WorkshopAgentTurnInput, WorkshopAgentTurnResult } from '../providers/workshop-draft';
 import { analyzeWorkshopDraft, createWorkshopEditorTemplate, WORKSHOP_EDITOR_SOURCE_LIMIT, workshopEditorSource } from '../ui/workshop-editor';
 import { WorkshopPageRenderer } from './workshop-runtime';
@@ -64,8 +65,8 @@ export function WorkshopEditor({ save, installedIds, initial, busy, agentConfigu
     setAgentBusy(true);
     setAgentError(undefined);
     try {
-      const diagnostics = analysis.report.issues.filter((issue) => issue.code !== 'package-id-conflict');
-      const result = await onAgentTurn({ instruction, currentSource: source, diagnostics, history: agentHistory }, controller.signal);
+      const inspection = queryWorkshopProjectInspection(analysis);
+      const result = await onAgentTurn({ instruction, currentSource: source, inspection, history: agentHistory }, controller.signal);
       if (controller.signal.aborted) return;
       setAgentUndoSource(source);
       setSource(workshopEditorSource(result.package));
@@ -83,7 +84,7 @@ export function WorkshopEditor({ save, installedIds, initial, busy, agentConfigu
   return <div className="list-card workshop-editor">
     <div className="list-heading"><div><h3>声明式包编辑器</h3><p className="io-scope">草稿仅保留在当前页面；请显式导出或安装。不执行任意代码；只有用户发送 Agent 指令时才调用已配置 API。</p></div><button type="button" className="secondary" disabled={busy || agentBusy} onClick={onClose}>关闭编辑器</button></div>
     <section className="workshop-agent-panel" aria-label="工坊 Agent">
-      <div className="list-heading"><div><h4>工坊 Agent</h4><p className="io-scope">每次发送调用一次用户配置的 <code>workshop_draft</code> API；发送当前草稿、最近对话、校验诊断和本地能力目录，不发送 SaveFile 或已安装包。</p></div><span className="io-scope">本轮最多 1 次 API</span></div>
+      <div className="list-heading"><div><h4>工坊 Agent</h4><p className="io-scope">每次发送调用一次用户配置的 <code>workshop_draft</code> API；发送当前草稿、最近对话、本地能力目录及校验/预览摘要，不发送 SaveFile、世界事实值或已安装包。</p></div><span className="io-scope">本轮最多 1 次 API</span></div>
       {agentHistory.length > 0 && <div className="workshop-agent-history" aria-label="Agent 最近对话">{agentHistory.map((entry, index) => <div className={`workshop-agent-message ${entry.role}`} key={`${entry.role}-${index}`}><strong>{entry.role === 'user' ? '你' : 'Agent'}</strong><p>{entry.content}</p></div>)}</div>}
       <label>告诉 Agent 要创建或修改什么<textarea aria-label="工坊 Agent 指令" maxLength={4000} placeholder="例如：增加一个鱼类图鉴页，保留现有首页，并修复当前权限错误。" value={agentInstruction} onChange={(event) => setAgentInstruction(event.target.value)} /></label>
       {!agentConfigured && <p className="io-scope" role="alert">尚未配置可用文本 Provider。请先在“设置 → 路由”配置“工坊 Agent”，或设置默认 Provider。</p>}

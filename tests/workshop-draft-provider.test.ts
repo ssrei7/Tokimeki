@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createMockProviderConfig } from '../src/providers/adapters/mock';
 import { queryWorkshopCapabilityCatalog } from '../src/data/workshop-capabilities';
-import { WorkshopActionSchema, WorkshopComponentSchema } from '../src/data/workshop';
+import { queryWorkshopProjectInspection } from '../src/data/workshop-inspection';
+import { WorkshopActionSchema, WorkshopComponentSchema, WorkshopPackageSchema } from '../src/data/workshop';
 import { buildWorkshopAgentMessages, buildWorkshopDraftMessages, generateWorkshopDraft, parseWorkshopAgentResponse, parseWorkshopDraftResponse, runWorkshopAgentTurn } from '../src/providers/workshop-draft';
 import { applyWorkshopProjectPatch, WORKSHOP_AGENT_PATCH_OPERATION_LIMIT, WORKSHOP_AGENT_PROTOCOL_VERSION, WorkshopAgentProtocolResponseSchema } from '../src/providers/workshop-agent-protocol';
 import type { ProviderConfig } from '../src/providers/types';
@@ -12,6 +13,16 @@ const packageJson = JSON.stringify({
   app: { entryPageId: 'home', pages: [{ id: 'home', title: '首页', components: [{ kind: 'text', text: '仅供预览' }] }] },
   rules: { rules: [] },
 });
+
+function validInspection() {
+  return queryWorkshopProjectInspection({
+    package: WorkshopPackageSchema.parse(JSON.parse(packageJson)),
+    report: { canInstall: true, issues: [], requiredPermissions: [] },
+    syntaxValid: true,
+    schemaValid: true,
+    canExport: true,
+  });
+}
 
 describe('workshop draft provider', () => {
   it('sends only the fixed contract and explicit user requirement', () => {
@@ -50,21 +61,31 @@ describe('workshop draft provider', () => {
     await expect(generateWorkshopDraft(createMockProviderConfig('malformed'), '任意需求')).rejects.toThrow('不是有效 JSON');
   });
 
-  it('builds an agent turn from the current project, recent dialogue and local diagnostics', () => {
+  it('builds an agent turn from the current project, recent dialogue and local inspection', () => {
+    const inspection = queryWorkshopProjectInspection({
+      package: WorkshopPackageSchema.parse(JSON.parse(packageJson)),
+      report: { canInstall: false, issues: [{ severity: 'error', code: 'permission-missing', message: '缺少权限', path: 'manifest.permissions' }], requiredPermissions: ['world.read:clock'] },
+      syntaxValid: true,
+      schemaValid: true,
+      canExport: false,
+    });
     const messages = buildWorkshopAgentMessages({
       instruction: '增加图鉴页',
       currentSource: packageJson,
-      diagnostics: [{ severity: 'error', code: 'permission-missing', message: '缺少权限', path: 'manifest.permissions' }],
+      inspection,
       history: [{ role: 'user', content: '先做一个首页' }, { role: 'assistant', content: '首页已完成' }],
     });
     const payload = JSON.parse(messages[1]!.content);
     expect(payload).toMatchObject({ protocolVersion: WORKSHOP_AGENT_PROTOCOL_VERSION, instruction: '增加图鉴页', currentSource: packageJson });
     expect(messages[0]!.content).toContain('project.replace');
-    expect(payload.diagnostics[0].code).toBe('permission-missing');
     expect(payload.history).toHaveLength(2);
     expect(payload.capabilityQuery.name).toBe('capabilities.list');
     expect(payload.capabilityQuery.result.activities).toMatchObject({ hooks: ['manual', 'onEnterNode'], effectOps: ['add_stat', 'set_flag', 'give_item', 'take_item'] });
     expect(payload.capabilityQuery.result.ui.actions.disabled).toEqual(['trigger-event', 'provider-text']);
+    expect(payload.inspectionQuery.name).toBe('project.inspect');
+    expect(payload.inspectionQuery.result.diagnostics[0].code).toBe('permission-missing');
+    expect(payload.inspectionQuery.result.preview).toMatchObject({ entryPageId: 'home', totals: { pages: 1, components: 1, actions: 0, rules: 0, events: 0, promptBlocks: 0, assets: 0 } });
+    expect(payload.diagnostics).toBeUndefined();
     expect(payload.save).toBeUndefined();
   });
 
@@ -93,7 +114,7 @@ describe('workshop draft provider', () => {
       expect(JSON.parse(body.messages[1].content).instruction).toBe('增加图鉴页');
       return new Response(JSON.stringify({ choices: [{ message: { content: response } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
     });
-    const result = await runWorkshopAgentTurn(base, { instruction: '增加图鉴页', currentSource: packageJson, diagnostics: [] }, { fetchImpl });
+    const result = await runWorkshopAgentTurn(base, { instruction: '增加图鉴页', currentSource: packageJson, inspection: validInspection() }, { fetchImpl });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(result.message).toContain('图鉴');
     expect(result.package.manifest.id).toBe('ai.sample');

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { queryWorkshopCapabilityCatalog } from '../data/workshop-capabilities';
-import { WorkshopPackageSchema, type WorkshopPackage, type WorkshopValidationIssue } from '../data/workshop';
+import { WorkshopProjectInspectionSchema, type WorkshopProjectInspection } from '../data/workshop-inspection';
+import { WorkshopPackageSchema, type WorkshopPackage } from '../data/workshop';
 import { streamChat, type StreamStatus } from './stream';
 import type { ChatMessage, ProviderConfig } from './types';
 import { executeWorkshopAgentToolCalls, WORKSHOP_AGENT_PROTOCOL_VERSION, WorkshopAgentProtocolResponseSchema } from './workshop-agent-protocol';
@@ -19,12 +20,13 @@ manifest.permissions 必须准确声明实际用到的 world.read resources、ap
 所有数值只是界面展示常量或本地 App 状态，不能声称改变世界事实。若需求涉及尚未开放的确定性玩法，请制作记录/说明界面，并在正文中明确结果不会自动写入世界。
 最小结构示例：{"manifest":{"type":"workshop","packageVersion":1,"runtimeVersion":1,"id":"sample.app","name":"示例","author":"AI Draft","version":"1.0.0","permissions":[]},"app":{"entryPageId":"home","pages":[{"id":"home","title":"首页","components":[{"kind":"text","text":"示例"}]}]},"rules":{"rules":[]}}`;
 
-const AGENT_SYSTEM_PROMPT = `你是“小小地图”创意工坊内的 App 制作 Agent。用户会提供当前声明式工程源码、本地校验诊断、最近对话和本轮指令。
+const AGENT_SYSTEM_PROMPT = `你是“小小地图”创意工坊内的 App 制作 Agent。用户会提供当前声明式工程源码、本地 project.inspect 结果、最近对话和本轮指令。
 请求中的 capabilityQuery 是本地只读 capabilities.list 的权威结果。只使用其中标为已启用或满足条件后可用的运行能力；declaredOnly 内容可以编辑，但必须在 message 中说明当前不会运行。
+inspectionQuery 是本地只读 project.inspect 的权威结果。先根据其中的 status、diagnostics、requiredPermissions 和 preview 理解当前工程；preview 只概括声明式结构，不代表任何世界事实。
 你必须使用工坊 Agent v1 工具协议返回一个 JSON 对象，不要输出 Markdown、代码围栏或额外字段。每轮只能调用一次 project.patch 或 project.replace。
 小范围修改优先使用 project.patch：{"protocolVersion":1,"message":"简短说明","toolCalls":[{"id":"patch-project","name":"project.patch","arguments":{"operations":[{"op":"replace","path":"/app/pages/0/title","value":"新标题"}]}}]}。仅可使用 add、replace、remove 和绝对 JSON Pointer，最多 100 项；不能访问工程六个根字段之外的路径。
 当前工程不是有效 JSON、需要整体重构或无法安全定位路径时使用 project.replace，并在 arguments.package 返回完整 workshop v1 工程。这两个工具都只产生内存草稿，不安装包、不写世界状态、不调用网络。不要请求未列出的工具，也不要返回多个工具调用。
-你要在当前工程上增量修改，保留用户未要求删除的页面、规则、资产声明和其他内容。若原源码有误，根据 diagnostics 修复并返回完整合法工程。
+你要在当前工程上增量修改，保留用户未要求删除的页面、规则、资产声明和其他内容。若原源码有误，根据 inspectionQuery.result.diagnostics 修复并返回完整合法工程。
 组件、动作、世界只读资源、活动 hook、效果 op 和扩展运行状态严格以 capabilityQuery.result 为准。用户按钮触发活动时，按钮 op 使用目录给出的 dispatchOp，payload 为 {"ruleId":"规则-id"}。
 条件只能使用安全表达式和 day、slotId、nodeId、stats、flags、player.nodeId、player.stats、player.flags、relations 事实。禁止任意 JavaScript、HTML、CSS、脚本 URL、base64 和任意网络请求。
 不要虚构新的二进制资产载荷；可保留当前工程已有的 assetMeta 和引用。events、prompts 可作为工程内容编辑，但当前运行时仍不安装/注册它们，必须在 message 中说明。`;
@@ -42,7 +44,7 @@ export interface WorkshopAgentHistoryEntry {
 export interface WorkshopAgentTurnInput {
   instruction: string;
   currentSource: string;
-  diagnostics: Pick<WorkshopValidationIssue, 'severity' | 'code' | 'message' | 'path'>[];
+  inspection: WorkshopProjectInspection;
   history?: WorkshopAgentHistoryEntry[];
 }
 
@@ -100,11 +102,11 @@ export function buildWorkshopAgentMessages(input: WorkshopAgentTurnInput): ChatM
   if (instruction.length > WORKSHOP_DRAFT_REQUIREMENT_LIMIT) throw new Error(`Agent 指令不能超过 ${WORKSHOP_DRAFT_REQUIREMENT_LIMIT} 个字符。`);
   if (input.currentSource.length > WORKSHOP_AGENT_SOURCE_LIMIT) throw new Error(`当前工程超过 ${WORKSHOP_AGENT_SOURCE_LIMIT / 1024} KiB Agent 上下文限制，请先精简或拆分。`);
   const history = (input.history ?? []).slice(-WORKSHOP_AGENT_HISTORY_LIMIT).map((entry) => ({ role: entry.role, content: entry.content.slice(0, 4000) }));
-  const diagnostics = input.diagnostics.slice(0, 100).map((issue) => ({ severity: issue.severity, code: issue.code, message: issue.message, ...(issue.path ? { path: issue.path } : {}) }));
   const capabilityQuery = { name: 'capabilities.list' as const, result: queryWorkshopCapabilityCatalog() };
+  const inspectionQuery = { name: 'project.inspect' as const, result: WorkshopProjectInspectionSchema.parse(input.inspection) };
   return [
     { role: 'system', content: AGENT_SYSTEM_PROMPT },
-    { role: 'user', content: JSON.stringify({ protocolVersion: WORKSHOP_AGENT_PROTOCOL_VERSION, instruction, currentSource: input.currentSource, diagnostics, history, capabilityQuery }) },
+    { role: 'user', content: JSON.stringify({ protocolVersion: WORKSHOP_AGENT_PROTOCOL_VERSION, instruction, currentSource: input.currentSource, history, capabilityQuery, inspectionQuery }) },
   ];
 }
 

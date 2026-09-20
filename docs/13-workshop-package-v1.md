@@ -54,7 +54,7 @@ Agent v1 使用 Provider 无关的应用层 JSON 工具协议；不要求端点�
 }
 ```
 
-调用 ID 只能使用 1–64 个 ASCII 字母、数字、点、下划线或连字符。协议拒绝未知工具、多次调用、额外字段、错误版本和不符合 `WorkshopPackageSchema` 的工程。`project.replace` 只替换当前页面内的草稿，不安装、不持久化、不修改世界事实，也不会触发新的网络请求。为兼容已配置模型，旧 `{ "message", "package" }` 和裸包响应暂时仍可解析；新提示只要求 v1 工具协议。校验/预览工具和多步循环尚未开放。
+调用 ID 只能使用 1–64 个 ASCII 字母、数字、点、下划线或连字符。协议拒绝未知工具、多次调用、额外字段、错误版本和不符合 `WorkshopPackageSchema` 的工程。`project.replace` 只替换当前页面内的草稿，不安装、不持久化、不修改世界事实，也不会触发新的网络请求。为兼容已配置模型，旧 `{ "message", "package" }` 和裸包响应暂时仍可解析；新提示只要求 v1 工具协议。自动多步循环尚未开放。
 
 小范围修改应使用 `project.patch`，避免重复返回完整工程：
 
@@ -100,7 +100,43 @@ patch 只允许 `add`、`replace`、`remove`，单次最多 100 项；路径必�
 }
 ```
 
-实际数组和限制由当前 schema/runtime 常量生成，示例中的空值只是结构缩写。目录会区分已启用动作、带条件的活动调度、当前禁用动作和只声明不运行的扩展。查询纯本地、零写入，不读取 SaveFile、已安装包、IndexedDB、Provider 配置或密钥，并与当前用户指令合并成同一次 API 请求；因此不会为“查能力”增加第二次调用。校验/预览工具与自动工具循环仍未开放。
+实际数组和限制由当前 schema/runtime 常量生成，示例中的空值只是结构缩写。目录会区分已启用动作、带条件的活动调度、当前禁用动作和只声明不运行的扩展。查询纯本地、零写入，不读取 SaveFile、已安装包、IndexedDB、Provider 配置或密钥，并与当前用户指令合并成同一次 API 请求；因此不会为“查能力”增加第二次调用。自动工具循环仍未开放。
+
+同一请求还会携带本地 `project.inspect` 结果：
+
+```json
+{
+  "inspectionQuery": {
+    "name": "project.inspect",
+    "result": {
+      "inspectionVersion": 1,
+      "status": {
+        "syntaxValid": true,
+        "schemaValid": true,
+        "validationPassed": true,
+        "previewAvailable": true,
+        "canExport": true
+      },
+      "diagnostics": [],
+      "diagnosticCounts": { "total": 0, "error": 0, "warning": 0, "info": 0 },
+      "diagnosticsTruncated": false,
+      "requiredPermissions": [],
+      "requiredPermissionCount": 0,
+      "requiredPermissionsTruncated": false,
+      "preview": {
+        "package": { "id": "sample.app", "name": "示例", "version": "1.0.0" },
+        "entryPageId": "home",
+        "pages": [],
+        "totals": {},
+        "actionCounts": {},
+        "ruleHookCounts": {}
+      }
+    }
+  }
+}
+```
+
+inspection 复用编辑器的 JSON、schema、权限、引用和资产载荷分析，诊断最多 100 条、所需权限最多 200 项；原始总数、分级计数和是否截断会另行标明，截断不会把整体校验状态误报为通过。预览只概括包身份、入口页、页面 ID/标题、组件与动作计数、规则 hook 以及 events/prompts/assets 数量，不发送组件正文、表单值、世界事实值或资产载荷；本机已安装包 ID 冲突也会在发送前过滤。它纯本地生成并合并进同一次用户请求，不增加 API 调用，也不会在 Agent 修改后自动启动第二轮。
 
 除用户显式触发的初稿生成与 Agent 指令外，工坊导入、编辑、校验、预览、安装、启停、导出和运行均为纯本地操作。Agent 请求不包含 SaveFile、已安装包、世界游玩状态或其他库内容；API key 只按现有 Provider 规则作为鉴权信息发送到用户配置的端点。
 
