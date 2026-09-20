@@ -1,7 +1,8 @@
 import { deleteAsset, loadAsset, saveAsset } from './db/assets';
-import { deleteWorkshopPackage, installWorkshopPackageRecord, listWorkshopBindings, loadWorkshopPackage, replaceWorkshopPackageRecord, setWorkshopBinding } from './db/content';
+import { deleteWorkshopPackage, installWorkshopPackageRecord, listWorkshopBindings, listWorkshopPackages, loadWorkshopPackage, replaceWorkshopPackageRecord, setWorkshopBinding } from './db/content';
 import { exportWorkshopPackage } from './io/workshop-package';
 import { WorkshopBindingSchema, WorkshopPackageRecordSchema, workshopBindingId, type WorkshopBinding, type WorkshopPackageImport, type WorkshopPackageRecord } from './workshop';
+import { analyzeWorkshopPackageDependencies, assertWorkshopPackageDependencies, listEnabledWorkshopPackageDependents, listWorkshopPackageDependents } from './workshop-dependencies';
 import { analyzeWorkshopPackageUpdate, assertWorkshopPackageUpdate, type WorkshopPackageUpdateAnalysis } from './workshop-update';
 
 function uniquePart(): string {
@@ -13,7 +14,9 @@ function uniquePart(): string {
 export async function installWorkshopPackage(imported: WorkshopPackageImport, saveId: string, timestamp = new Date().toISOString()): Promise<WorkshopPackageRecord> {
   if (!imported.report.canInstall) throw new Error('工坊包未通过校验，不能安装。');
   const packageId = imported.package.manifest.id;
-  if (await loadWorkshopPackage(packageId)) throw new Error(`已安装同 ID 工坊包：${packageId}。首版不支持覆盖更新。`);
+  const [records, bindings] = await Promise.all([listWorkshopPackages(), listWorkshopBindings()]);
+  if (records.some((record) => record.id === packageId)) throw new Error(`已安装同 ID 工坊包：${packageId}。请提高版本号并使用更新流程。`);
+  assertWorkshopPackageDependencies(analyzeWorkshopPackageDependencies(imported.package, records, bindings, [saveId]));
   const createdAssetIds: string[] = [];
   try {
     const assetBindings: WorkshopPackageRecord['assetBindings'] = {};
@@ -53,9 +56,11 @@ export async function updateWorkshopPackage(imported: WorkshopPackageImport, tim
   const packageId = imported.package.manifest.id;
   const current = await loadWorkshopPackage(packageId);
   if (!current) throw new Error(`尚未安装工坊包：${packageId}。请改用安装。`);
-  const bindings = await listWorkshopBindings();
+  const [records, bindings] = await Promise.all([listWorkshopPackages(), listWorkshopBindings()]);
   const analysis = analyzeWorkshopPackageUpdate(current, imported.package, bindings);
   assertWorkshopPackageUpdate(analysis);
+  const enabledSaveIds = bindings.filter((binding) => binding.packageId === packageId && binding.enabled).map((binding) => binding.saveId);
+  assertWorkshopPackageDependencies(analyzeWorkshopPackageDependencies(imported.package, records, bindings, enabledSaveIds));
   const createdAssetIds: string[] = [];
   try {
     const assetBindings: WorkshopPackageRecord['assetBindings'] = {};
@@ -105,7 +110,14 @@ export async function exportInstalledWorkshopPackage(record: WorkshopPackageReco
 }
 
 export async function setWorkshopPackageEnabled(saveId: string, packageId: string, enabled: boolean, timestamp = new Date().toISOString()): Promise<WorkshopBinding> {
-  if (!await loadWorkshopPackage(packageId)) throw new Error(`工坊包不存在：${packageId}`);
+  const [records, bindings] = await Promise.all([listWorkshopPackages(), listWorkshopBindings()]);
+  const record = records.find((item) => item.id === packageId);
+  if (!record) throw new Error(`工坊包不存在：${packageId}`);
+  if (enabled) assertWorkshopPackageDependencies(analyzeWorkshopPackageDependencies(record.package, records, bindings, [saveId]));
+  else {
+    const dependents = listEnabledWorkshopPackageDependents(packageId, saveId, records, bindings);
+    if (dependents.length) throw new Error(`当前世界仍有已启用包依赖它：${dependents.map((item) => item.id).join('、')}。请先停用这些包。`);
+  }
   return setWorkshopBinding(saveId, packageId, enabled, timestamp);
 }
 
@@ -117,10 +129,16 @@ export interface WorkshopUninstallResult {
 export async function uninstallWorkshopPackage(packageId: string): Promise<WorkshopUninstallResult> {
   const record = await loadWorkshopPackage(packageId);
   if (!record) throw new Error(`工坊包不存在：${packageId}`);
+  const dependents = listWorkshopPackageDependents(packageId, await listWorkshopPackages());
+  if (dependents.length) throw new Error(`仍有已安装包依赖它：${dependents.map((item) => `${item.package.manifest.name}（${item.id}）`).join('、')}。请先卸载这些包。`);
   const removedBindings = await deleteWorkshopPackage(packageId);
   return { removedBindings, retainedAssetIds: Object.values(record.assetBindings).map((reference) => reference.assetId) };
 }
 
 export async function workshopPackageBindingSummary(packageId: string): Promise<WorkshopBinding[]> {
   return (await listWorkshopBindings()).filter((binding) => binding.packageId === packageId);
+}
+
+export async function workshopPackageDependentSummary(packageId: string): Promise<WorkshopPackageRecord[]> {
+  return listWorkshopPackageDependents(packageId, await listWorkshopPackages());
 }

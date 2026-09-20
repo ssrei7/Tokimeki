@@ -2,11 +2,13 @@ import { z } from 'zod';
 import { validateConditionSyntax } from '../core/expr';
 import { EventDefSchema } from './schema/save';
 import { TaskIdSchema } from '../providers/types';
+import { compareWorkshopVersions } from './workshop-version';
 
 export const CURRENT_WORKSHOP_PACKAGE_VERSION = 1;
 export const CURRENT_WORKSHOP_RUNTIME_VERSION = 1;
 
 const IdSchema = z.string().min(1).max(120).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'ID 只能使用 ASCII 字母、数字、点、下划线和连字符。');
+const VersionSchema = z.string().regex(/^\d+\.\d+\.\d+$/, '版本必须使用 x.y.z 格式。');
 const TextSchema = z.string().max(10_000);
 export const WORKSHOP_TEXT_TASKS = [
   'narrate_main', 'narrate_daily', 'topic_tree', 'world_morning', 'world_gen', 'map_gen', 'npc_batch',
@@ -55,6 +57,16 @@ export const WorkshopPermissionSchema = z.discriminatedUnion('capability', [
   z.object({ capability: z.literal('provider.explicit-text'), resources: z.array(WorkshopTextTaskSchema).min(1).max(20) }).strict(),
 ]);
 
+export const WorkshopDependencySchema = z.object({
+  id: IdSchema,
+  minVersion: VersionSchema.optional(),
+  maxVersionExclusive: VersionSchema.optional(),
+}).strict().superRefine((dependency, context) => {
+  if (dependency.minVersion && dependency.maxVersionExclusive && compareWorkshopVersions(dependency.minVersion, dependency.maxVersionExclusive) >= 0) {
+    context.addIssue({ code: 'custom', message: '依赖的 minVersion 必须低于 maxVersionExclusive。', path: ['maxVersionExclusive'] });
+  }
+});
+
 export const WorkshopManifestSchema = z.object({
   type: z.literal('workshop'),
   packageVersion: z.literal(CURRENT_WORKSHOP_PACKAGE_VERSION),
@@ -62,10 +74,11 @@ export const WorkshopManifestSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(120),
   author: z.string().min(1).max(120),
-  version: z.string().regex(/^\d+\.\d+\.\d+$/, '包版本必须使用 x.y.z 格式。'),
+  version: VersionSchema,
   description: z.string().max(1000).optional(),
   iconAssetId: IdSchema.optional(),
   permissions: z.array(WorkshopPermissionSchema).max(50).default([]),
+  dependencies: z.array(WorkshopDependencySchema).max(50).optional(),
 }).strict();
 
 const WorkshopNavigateActionSchema = z.object({ type: z.literal('navigate'), pageId: IdSchema }).strict();
@@ -213,6 +226,7 @@ export const WorkshopLocalStateSchema = z.object({
 
 export type WorkshopManifest = z.infer<typeof WorkshopManifestSchema>;
 export type WorkshopPermission = z.infer<typeof WorkshopPermissionSchema>;
+export type WorkshopDependency = z.infer<typeof WorkshopDependencySchema>;
 export type WorkshopAction = z.infer<typeof WorkshopActionSchema>;
 export type WorkshopActivityHook = z.infer<typeof WorkshopActivityHookSchema>;
 export type WorkshopRule = z.infer<typeof WorkshopRulesSchema>['rules'][number];
@@ -328,6 +342,14 @@ export function validateWorkshopPackage(pack: WorkshopPackage): WorkshopValidati
     if (/\b(relations|axes)\./.test(condition)) required.add(permissionLabel('world.read', 'relations'));
   };
   const unique = (id: string, set: Set<string>, label: string, path: string) => { if (set.has(id)) addIssue('error', 'duplicate-id', `${label} ID 重复：${id}`, path); else set.add(id); };
+
+  const dependencyIds = new Set<string>();
+  pack.manifest.dependencies?.forEach((dependency, index) => {
+    const path = `manifest.dependencies[${index}].id`;
+    if (dependency.id === pack.manifest.id) addIssue('error', 'self-dependency', '工坊包不能依赖自身。', path);
+    if (dependencyIds.has(dependency.id)) addIssue('error', 'duplicate-dependency', `依赖包 ID 重复：${dependency.id}`, path);
+    dependencyIds.add(dependency.id);
+  });
 
   pack.app.pages.forEach((page, index) => unique(page.id, pages, '页面', `app.pages[${index}].id`));
   pack.rules.rules.forEach((rule, index) => {

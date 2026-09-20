@@ -94,6 +94,8 @@ describe('workshop local editor', () => {
     const html = renderToStaticMarkup(createElement(WorkshopEditor, {
       save,
       installedVersions: new Map<string, string>(),
+      installedRecords: [],
+      workshopBindings: [],
       busy: false,
       agentConfigured: false,
       onAgentTurn: vi.fn(),

@@ -20,6 +20,16 @@ describe('workshop package protocol', () => {
     expect(imported.assets.size).toBe(0);
   });
 
+  it('round-trips bounded package dependencies as inert manifest metadata', async () => {
+    const pack = WorkshopPackageSchema.parse({
+      ...minimalPackage(),
+      manifest: { ...minimalPackage().manifest, dependencies: [{ id: 'shared.core', minVersion: '1.2.0', maxVersionExclusive: '2.0.0' }] },
+    });
+    const blob = await exportWorkshopPackage(pack, new Map());
+    const imported = await importWorkshopPackage(await blob.arrayBuffer());
+    expect(imported.package.manifest.dependencies).toEqual([{ id: 'shared.core', minVersion: '1.2.0', maxVersionExclusive: '2.0.0' }]);
+  });
+
   it('round-trips declared local assets without embedding base64 in JSON', async () => {
     const bytes = new Uint8Array([137, 80, 78, 71]);
     const pack = WorkshopPackageSchema.parse({

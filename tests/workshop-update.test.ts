@@ -10,6 +10,7 @@ const contentMocks = vi.hoisted(() => ({
   deleteWorkshopPackage: vi.fn(),
   installWorkshopPackageRecord: vi.fn(),
   listWorkshopBindings: vi.fn(),
+  listWorkshopPackages: vi.fn(),
   loadWorkshopPackage: vi.fn(),
   replaceWorkshopPackageRecord: vi.fn(),
   setWorkshopBinding: vi.fn(),
@@ -18,7 +19,7 @@ const contentMocks = vi.hoisted(() => ({
 vi.mock('../src/data/db/assets', () => assetMocks);
 vi.mock('../src/data/db/content', () => contentMocks);
 
-import { updateWorkshopPackage } from '../src/data/workshop-install';
+import { setWorkshopPackageEnabled, uninstallWorkshopPackage, updateWorkshopPackage } from '../src/data/workshop-install';
 import { WorkshopPackageSchema, validateWorkshopPackage, type WorkshopPackage, type WorkshopPackageImport, type WorkshopPackageRecord } from '../src/data/workshop';
 import { analyzeWorkshopPackageUpdate, compareWorkshopVersions } from '../src/data/workshop-update';
 
@@ -49,6 +50,7 @@ describe('workshop package updates', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     contentMocks.loadWorkshopPackage.mockResolvedValue(record());
+    contentMocks.listWorkshopPackages.mockResolvedValue([record()]);
     contentMocks.listWorkshopBindings.mockResolvedValue([
       { id: 'world-a:sample.update', saveId: 'world-a', packageId: 'sample.update', enabled: true, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' },
       { id: 'world-b:sample.update', saveId: 'world-b', packageId: 'sample.update', enabled: false, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' },
@@ -114,5 +116,29 @@ describe('workshop package updates', () => {
     expect(createdAssetId).toMatch(/^workshop-sample\.update-icon-/);
     expect(assetMocks.deleteAsset).toHaveBeenCalledWith(createdAssetId);
     expect(assetMocks.deleteAsset).not.toHaveBeenCalledWith('workshop-sample.update-old-kept');
+  });
+
+  it('blocks an update before asset writes when its new dependency is unavailable', async () => {
+    const next = pack('1.1.0', { manifest: { ...pack('1.1.0').manifest, dependencies: [{ id: 'shared.missing', minVersion: '1.0.0' }] } });
+    await expect(updateWorkshopPackage(imported(next))).rejects.toThrow('缺少依赖');
+    expect(assetMocks.saveAsset).not.toHaveBeenCalled();
+    expect(contentMocks.replaceWorkshopPackageRecord).not.toHaveBeenCalled();
+  });
+
+  it('blocks disabling or uninstalling a package while a dependent still uses it', async () => {
+    const dependentPackage = WorkshopPackageSchema.parse({
+      ...pack('1.0.0'),
+      manifest: { ...pack('1.0.0').manifest, id: 'sample.dependent', name: '依赖方', dependencies: [{ id: 'sample.update', minVersion: '1.0.0' }] },
+    });
+    const dependent: WorkshopPackageRecord = { ...record(), id: 'sample.dependent', package: dependentPackage };
+    contentMocks.listWorkshopPackages.mockResolvedValue([record(), dependent]);
+    contentMocks.listWorkshopBindings.mockResolvedValue([
+      { id: 'world-a:sample.update', saveId: 'world-a', packageId: 'sample.update', enabled: true, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' },
+      { id: 'world-a:sample.dependent', saveId: 'world-a', packageId: 'sample.dependent', enabled: true, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' },
+    ]);
+    await expect(setWorkshopPackageEnabled('world-a', 'sample.update', false)).rejects.toThrow('请先停用');
+    await expect(uninstallWorkshopPackage('sample.update')).rejects.toThrow('请先卸载');
+    expect(contentMocks.setWorkshopBinding).not.toHaveBeenCalled();
+    expect(contentMocks.deleteWorkshopPackage).not.toHaveBeenCalled();
   });
 });

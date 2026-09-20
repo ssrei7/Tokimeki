@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import { CharacterCardSchema, ChatRecordSchema, ChatRecoveryRecordSchema, MemoryVectorRecordSchema, MusicStateSchema, PersonaSchema, PresetBundleSchema, PresetSchema, StoryScenePresetSchema, TerminalStickerRecordSchema, WorldbookEntrySchema, normalizeChatMessages, type CharacterCard, type ChatRecord, type ChatRecoveryRecord, type MemoryVectorRecord, type MusicState, type Persona, type Preset, type PresetBundle, type StoryScenePresetRecord, type TerminalStickerRecord, type WorldbookEntry } from '../content';
 import { WorkshopBindingSchema, WorkshopLocalStateSchema, WorkshopPackageRecordSchema, workshopBindingId, type WorkshopBinding, type WorkshopLocalState, type WorkshopPackageRecord } from '../workshop';
+import { analyzeWorkshopPackageDependencies, assertWorkshopPackageDependencies, listEnabledWorkshopPackageDependents, listWorkshopPackageDependents } from '../workshop-dependencies';
 
 export class ContentDatabase extends Dexie {
   characters!: Table<CharacterCard, string>;
@@ -73,6 +74,9 @@ export async function installWorkshopPackageRecord(record: WorkshopPackageRecord
   const parsedRecord = WorkshopPackageRecordSchema.parse(record);
   const parsedBinding = WorkshopBindingSchema.parse(binding);
   await contentDb.transaction('rw', contentDb.workshopPackages, contentDb.workshopBindings, async () => {
+    const records = (await contentDb.workshopPackages.toArray()).map((item) => WorkshopPackageRecordSchema.parse(item));
+    const bindings = (await contentDb.workshopBindings.toArray()).map((item) => WorkshopBindingSchema.parse(item));
+    assertWorkshopPackageDependencies(analyzeWorkshopPackageDependencies(parsedRecord.package, records, bindings, parsedBinding.enabled ? [parsedBinding.saveId] : []));
     await contentDb.workshopPackages.add(parsedRecord);
     await contentDb.workshopBindings.put(parsedBinding);
   });
@@ -80,11 +84,15 @@ export async function installWorkshopPackageRecord(record: WorkshopPackageRecord
 }
 export async function replaceWorkshopPackageRecord(record: WorkshopPackageRecord, expectedVersion: string): Promise<WorkshopPackageRecord> {
   const parsedRecord = WorkshopPackageRecordSchema.parse(record);
-  await contentDb.transaction('rw', contentDb.workshopPackages, async () => {
+  await contentDb.transaction('rw', contentDb.workshopPackages, contentDb.workshopBindings, async () => {
     const current = await contentDb.workshopPackages.get(parsedRecord.id);
     if (!current) throw new Error(`工坊包不存在：${parsedRecord.id}`);
     const parsedCurrent = WorkshopPackageRecordSchema.parse(current);
     if (parsedCurrent.package.manifest.version !== expectedVersion) throw new Error(`工坊包已在其他页面更新为 ${parsedCurrent.package.manifest.version}，请刷新后重试。`);
+    const records = (await contentDb.workshopPackages.toArray()).map((item) => WorkshopPackageRecordSchema.parse(item));
+    const bindings = (await contentDb.workshopBindings.toArray()).map((item) => WorkshopBindingSchema.parse(item));
+    const enabledSaveIds = bindings.filter((binding) => binding.packageId === parsedRecord.id && binding.enabled).map((binding) => binding.saveId);
+    assertWorkshopPackageDependencies(analyzeWorkshopPackageDependencies(parsedRecord.package, records, bindings, enabledSaveIds));
     await contentDb.workshopPackages.put(parsedRecord);
   });
   return parsedRecord;
@@ -92,18 +100,35 @@ export async function replaceWorkshopPackageRecord(record: WorkshopPackageRecord
 export async function listWorkshopBindings(saveId?: string): Promise<WorkshopBinding[]> { const records = saveId ? await contentDb.workshopBindings.where('saveId').equals(saveId).toArray() : await contentDb.workshopBindings.toArray(); return records.map((record) => WorkshopBindingSchema.parse(record)); }
 export async function setWorkshopBinding(saveId: string, packageId: string, enabled: boolean, timestamp: string): Promise<WorkshopBinding> {
   const id = workshopBindingId(saveId, packageId);
-  const current = await contentDb.workshopBindings.get(id);
-  const parsed = WorkshopBindingSchema.parse({ id, saveId, packageId, enabled, createdAt: current?.createdAt ?? timestamp, updatedAt: timestamp });
-  await contentDb.workshopBindings.put(parsed);
+  let parsed: WorkshopBinding | undefined;
+  await contentDb.transaction('rw', contentDb.workshopPackages, contentDb.workshopBindings, async () => {
+    const record = await contentDb.workshopPackages.get(packageId);
+    if (!record) throw new Error(`工坊包不存在：${packageId}`);
+    const records = (await contentDb.workshopPackages.toArray()).map((item) => WorkshopPackageRecordSchema.parse(item));
+    const bindings = (await contentDb.workshopBindings.toArray()).map((item) => WorkshopBindingSchema.parse(item));
+    if (enabled) assertWorkshopPackageDependencies(analyzeWorkshopPackageDependencies(WorkshopPackageRecordSchema.parse(record).package, records, bindings, [saveId]));
+    else {
+      const dependents = listEnabledWorkshopPackageDependents(packageId, saveId, records, bindings);
+      if (dependents.length) throw new Error(`当前世界仍有已启用包依赖它：${dependents.map((item) => item.id).join('、')}。请先停用这些包。`);
+    }
+    const current = await contentDb.workshopBindings.get(id);
+    parsed = WorkshopBindingSchema.parse({ id, saveId, packageId, enabled, createdAt: current?.createdAt ?? timestamp, updatedAt: timestamp });
+    await contentDb.workshopBindings.put(parsed);
+  });
+  if (!parsed) throw new Error(`更新工坊包绑定失败：${packageId}`);
   return parsed;
 }
 export async function deleteWorkshopPackage(id: string): Promise<WorkshopBinding[]> {
-  const bindings = await contentDb.workshopBindings.where('packageId').equals(id).toArray();
+  let bindings: WorkshopBinding[] = [];
   await contentDb.transaction('rw', contentDb.workshopPackages, contentDb.workshopBindings, async () => {
+    const records = (await contentDb.workshopPackages.toArray()).map((item) => WorkshopPackageRecordSchema.parse(item));
+    const dependents = listWorkshopPackageDependents(id, records);
+    if (dependents.length) throw new Error(`仍有已安装包依赖它：${dependents.map((item) => `${item.package.manifest.name}（${item.id}）`).join('、')}。请先卸载这些包。`);
+    bindings = (await contentDb.workshopBindings.where('packageId').equals(id).toArray()).map((binding) => WorkshopBindingSchema.parse(binding));
     await contentDb.workshopPackages.delete(id);
     await contentDb.workshopBindings.where('packageId').equals(id).delete();
   });
-  return bindings.map((binding) => WorkshopBindingSchema.parse(binding));
+  return bindings;
 }
 export async function loadWorkshopLocalState(saveId: string, packageId: string): Promise<WorkshopLocalState | undefined> {
   const record = await contentDb.workshopStates.get(workshopBindingId(saveId, packageId));

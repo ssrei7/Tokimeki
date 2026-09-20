@@ -99,7 +99,7 @@ describe('workshop draft provider', () => {
     const first = queryWorkshopCapabilityCatalog();
     first.ui.components.pop();
     const second = queryWorkshopCapabilityCatalog();
-    expect(second.catalogVersion).toBe(7);
+    expect(second.catalogVersion).toBe(8);
     expect(second.ui.components).toContain('confirm');
     expect(second.ui.bindings).toMatchObject({ sources: ['local', 'world'], formats: ['auto', 'text', 'number', 'boolean', 'json'], maxPathDepth: 8 });
     expect(second.ui.bindings.targets).toContain('progress.value');
@@ -116,6 +116,7 @@ describe('workshop draft provider', () => {
       additionalApiCalls: false,
     });
     expect(second.providerText).toMatchObject({ enabled: true, userTriggeredOnly: true, maxRequestsPerClick: 1, localInput: true, localResult: true, sendsWorldFacts: false, appliesOps: false });
+    expect(second.dependencies).toMatchObject({ enabled: true, maxDependencies: 50, requiresInstalled: true, requiresEnabledInWorld: true, autoInstall: false, cyclesAllowed: false });
     expect(second.declaredOnly).toMatchObject({ events: false, prompts: false, providerText: false });
     expect(second.assets.agentMayCreateBinary).toBe(false);
     expect(WorkshopComponentSchema.options.map((schema) => schema.shape.kind.value)).toEqual(second.ui.components);

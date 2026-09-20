@@ -13,7 +13,7 @@ import {
   WORKSHOP_WORLD_READ_RESOURCES,
 } from './workshop';
 
-export const WORKSHOP_CAPABILITY_CATALOG_VERSION = 7;
+export const WORKSHOP_CAPABILITY_CATALOG_VERSION = 8;
 
 export const WorkshopCapabilityCatalogSchema = z.object({
   catalogVersion: z.literal(WORKSHOP_CAPABILITY_CATALOG_VERSION),
@@ -76,6 +76,16 @@ export const WorkshopCapabilityCatalogSchema = z.object({
     localResult: z.boolean(),
     sendsWorldFacts: z.boolean(),
     appliesOps: z.boolean(),
+    requirement: z.string(),
+  }).strict(),
+  dependencies: z.object({
+    enabled: z.boolean(),
+    maxDependencies: z.number().int().positive(),
+    rangeSyntax: z.string(),
+    requiresInstalled: z.literal(true),
+    requiresEnabledInWorld: z.literal(true),
+    autoInstall: z.literal(false),
+    cyclesAllowed: z.literal(false),
     requirement: z.string(),
   }).strict(),
   declaredOnly: z.object({
@@ -162,6 +172,16 @@ const CATALOG: WorkshopCapabilityCatalog = WorkshopCapabilityCatalogSchema.parse
     sendsWorldFacts: false,
     appliesOps: false,
     requirement: '动作必须声明 provider.explicit-text:<task>，引用声明同一 task 的包内 Prompt。inputKey/resultKey 只访问该包在当前世界的本地标量状态；响应只作为文本显示或保存。',
+  },
+  dependencies: {
+    enabled: true,
+    maxDependencies: 50,
+    rangeSyntax: '{"id":"shared.package","minVersion":"1.2.0","maxVersionExclusive":"2.0.0"}',
+    requiresInstalled: true,
+    requiresEnabledInWorld: true,
+    autoInstall: false,
+    cyclesAllowed: false,
+    requirement: 'manifest.dependencies 可声明包 ID 与可选的最低版本/排除式最高版本。依赖必须由用户先安装并在同一世界启用；不会自动下载、安装、更新或启用依赖。',
   },
   declaredOnly: { events: false, prompts: false, providerText: false, providerTextTasks: [...WORKSHOP_TEXT_TASKS] },
   assets: { acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'], agentMayCreateBinary: false, note: '可保留当前工程已有 assetMeta 和引用；Agent 不能虚构或生成二进制载荷。' },

@@ -4,6 +4,7 @@ import { loadAsset } from '../data/db/assets';
 import { listWorkshopBindings, listWorkshopPackages, loadWorkshopLocalState, saveWorkshopLocalState } from '../data/db/content';
 import type { AssetRef } from '../data/schema/save';
 import { WorkshopLocalValueSchema, type WorkshopAction, type WorkshopComponent, type WorkshopLocalValue, type WorkshopPackageRecord } from '../data/workshop';
+import { resolveEnabledWorkshopPackages } from '../data/workshop-dependencies';
 import { formatWorkshopBinding, hasWorkshopPermission, listWorkshopBinding, numberWorkshopBinding, resolveWorkshopBinding, resolveWorkshopFact, WORKSHOP_CHANGED_EVENT } from '../ui/workshop-runtime';
 
 export function useEnabledWorkshopPackages(saveId: string): WorkshopPackageRecord[] | undefined {
@@ -14,8 +15,7 @@ export function useEnabledWorkshopPackages(saveId: string): WorkshopPackageRecor
     const refresh = async () => {
       const [packages, bindings] = await Promise.all([listWorkshopPackages(), listWorkshopBindings(saveId)]);
       if (cancelled) return;
-      const enabled = new Set(bindings.filter((binding) => binding.enabled).map((binding) => binding.packageId));
-      setRecords(packages.filter((record) => enabled.has(record.id)).sort((left, right) => left.package.manifest.name.localeCompare(right.package.manifest.name, 'zh-CN')));
+      setRecords(resolveEnabledWorkshopPackages(saveId, packages, bindings).sort((left, right) => left.package.manifest.name.localeCompare(right.package.manifest.name, 'zh-CN')));
     };
     void refresh().catch(() => { if (!cancelled) setRecords([]); });
     const onChange = () => { void refresh(); };
