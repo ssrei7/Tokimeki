@@ -11,9 +11,9 @@ function issueLabel(issue: WorkshopValidationIssue): string {
   return issue.severity === 'error' ? '错误' : issue.severity === 'warning' ? '警告' : '说明';
 }
 
-export function WorkshopEditor({ save, installedIds, initial, busy, agentConfigured, onAgentTurn, onInstall, onExport, onClose }: {
+export function WorkshopEditor({ save, installedVersions, initial, busy, agentConfigured, onAgentTurn, onInstall, onExport, onClose }: {
   save: SaveFile;
-  installedIds: ReadonlySet<string>;
+  installedVersions: ReadonlyMap<string, string>;
   initial?: WorkshopPackageImport;
   busy: boolean;
   agentConfigured: boolean;
@@ -37,7 +37,7 @@ export function WorkshopEditor({ save, installedIds, initial, busy, agentConfigu
   const [lastRepairAttempts, setLastRepairAttempts] = useState(0);
   const [lastContextReport, setLastContextReport] = useState<WorkshopAgentContextReport>();
   const agentControllerRef = useRef<AbortController | null>(null);
-  const analysis = useMemo(() => analyzeWorkshopDraft(source, installedIds, assets), [assets, installedIds, source]);
+  const analysis = useMemo(() => analyzeWorkshopDraft(source, installedVersions, assets), [assets, installedVersions, source]);
   const draftAssets = useMemo(() => {
     const declared = new Set(analysis.package?.assetMeta?.assets.map((asset) => asset.id) ?? []);
     return new Map([...assets].filter(([id]) => declared.has(id)));
@@ -89,6 +89,7 @@ export function WorkshopEditor({ save, installedIds, initial, busy, agentConfigu
   }
 
   const draft = analysis.package ? { package: analysis.package, assets: draftAssets, report: analysis.report } : undefined;
+  const updatesInstalledPackage = analysis.package ? installedVersions.has(analysis.package.manifest.id) : false;
   return <div className="list-card workshop-editor">
     <div className="list-heading"><div><h3>声明式包编辑器</h3><p className="io-scope">草稿仅保留在当前页面；请显式导出或安装。不执行任意代码；只有用户发送 Agent 指令时才调用已配置 API。</p></div><button type="button" className="secondary" disabled={busy || agentBusy} onClick={onClose}>关闭编辑器</button></div>
     <section className="workshop-agent-panel" aria-label="工坊 Agent">
@@ -118,7 +119,7 @@ export function WorkshopEditor({ save, installedIds, initial, busy, agentConfigu
         <div className="visual-asset-summary"><span>{analysis.report.requiredPermissions.length} 项所需权限</span><span>{analysis.report.issues.filter((issue) => issue.severity === 'error').length} 个错误</span><span>{assets.size} 个载入资产</span></div>
         <details open><summary>所需权限</summary>{analysis.report.requiredPermissions.length ? <ul>{analysis.report.requiredPermissions.map((permission) => <li key={permission}><code>{permission}</code></li>)}</ul> : <p className="empty">当前草稿不需要额外权限。</p>}</details>
         <details open><summary>校验与冲突</summary>{analysis.report.issues.length ? <ul>{analysis.report.issues.map((issue, index) => <li key={`${issue.code}-${index}`}><strong>{issueLabel(issue)}</strong> · {issue.message}{issue.path ? <small> · {issue.path}</small> : null}</li>)}</ul> : <p className="empty">未发现问题。</p>}</details>
-        <div className="button-row"><button type="button" disabled={busy || agentBusy || !draft || !analysis.report.canInstall} onClick={() => draft && void onInstall(draft)}>确认安装并启用</button><button type="button" className="secondary" disabled={busy || agentBusy || !draft || !analysis.canExport} onClick={() => draft && void onExport(draft)}>导出草稿 ZIP</button></div>
+        <div className="button-row"><button type="button" disabled={busy || agentBusy || !draft || !analysis.report.canInstall} onClick={() => draft && void onInstall(draft)}>{updatesInstalledPackage ? '确认更新已安装包' : '确认安装并启用'}</button><button type="button" className="secondary" disabled={busy || agentBusy || !draft || !analysis.canExport} onClick={() => draft && void onExport(draft)}>导出草稿 ZIP</button></div>
       </section>
       <section className="workshop-editor-preview" aria-label="工坊 App 实时预览">
         <div className="list-heading"><div><h4>实时预览</h4><p className="io-scope">只读世界事实来自当前存档；输入与按钮状态仅用于本次预览。</p></div></div>

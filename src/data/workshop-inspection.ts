@@ -55,7 +55,7 @@ export function queryWorkshopProjectInspection(input: {
   schemaValid: boolean;
   canExport: boolean;
 }): WorkshopProjectInspection {
-  const relevantIssues = input.report.issues.filter((issue) => issue.code !== 'package-id-conflict');
+  const relevantIssues = input.report.issues.filter((issue) => !['package-id-conflict', 'package-update', 'package-version-not-newer'].includes(issue.code));
   const diagnostics = relevantIssues
     .slice(0, WORKSHOP_INSPECTION_DIAGNOSTIC_LIMIT)
     .map((issue) => ({ severity: issue.severity, code: issue.code, message: issue.message, ...(issue.path ? { path: issue.path } : {}) }));

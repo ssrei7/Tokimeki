@@ -11,7 +11,7 @@ import { analyzeWorkshopDraft, createWorkshopEditorTemplate, workshopEditorSourc
 describe('workshop local editor', () => {
   it('starts from a valid, installable local template', () => {
     const pack = createWorkshopEditorTemplate();
-    const analysis = analyzeWorkshopDraft(workshopEditorSource(pack), new Set(), new Map());
+    const analysis = analyzeWorkshopDraft(workshopEditorSource(pack), new Map(), new Map());
     expect(analysis.package?.manifest.id).toBe('my.local-app');
     expect(analysis.report.canInstall).toBe(true);
     expect(analysis.canExport).toBe(true);
@@ -24,7 +24,7 @@ describe('workshop local editor', () => {
       manifest: { ...createWorkshopEditorTemplate().manifest, permissions: [{ capability: 'app.local-state' }] },
       app: { entryPageId: 'home', pages: [{ id: 'home', title: '首页', components: [{ kind: 'text', text: '不应进入摘要的正文' }, { kind: 'button', label: '记录', action: { type: 'set-local', key: 'done', value: true } }] }] },
     });
-    const analysis = analyzeWorkshopDraft(workshopEditorSource(pack), new Set(['my.local-app']), new Map());
+    const analysis = analyzeWorkshopDraft(workshopEditorSource(pack), new Map([['my.local-app', '0.9.0']]), new Map());
     const inspection = queryWorkshopProjectInspection(analysis);
     expect(inspection.status).toMatchObject({ syntaxValid: true, schemaValid: true, validationPassed: true, previewAvailable: true, canExport: true });
     expect(inspection.diagnostics).not.toContainEqual(expect.objectContaining({ code: 'package-id-conflict' }));
@@ -36,9 +36,9 @@ describe('workshop local editor', () => {
     expect(JSON.stringify(inspection)).not.toContain('不应进入摘要的正文');
     expect(JSON.stringify(inspection)).not.toContain('my.local-app。当前不支持覆盖更新');
 
-    const invalid = analyzeWorkshopDraft('{bad', new Set(), new Map());
+    const invalid = analyzeWorkshopDraft('{bad', new Map(), new Map());
     expect(queryWorkshopProjectInspection(invalid)).toMatchObject({ status: { syntaxValid: false, schemaValid: false, validationPassed: false, previewAvailable: false, canExport: false } });
-    const schemaInvalid = analyzeWorkshopDraft('{}', new Set(), new Map());
+    const schemaInvalid = analyzeWorkshopDraft('{}', new Map(), new Map());
     expect(queryWorkshopProjectInspection(schemaInvalid)).toMatchObject({ status: { syntaxValid: true, schemaValid: false, validationPassed: false, previewAvailable: false, canExport: false } });
 
     const capped = queryWorkshopProjectInspection({
@@ -57,19 +57,22 @@ describe('workshop local editor', () => {
   });
 
   it('reports JSON, schema, permission and installed-id conflicts locally', () => {
-    expect(analyzeWorkshopDraft('{bad', new Set(), new Map()).report.issues[0]?.code).toBe('draft-parse');
-    expect(analyzeWorkshopDraft('{}', new Set(), new Map()).report.canInstall).toBe(false);
+    expect(analyzeWorkshopDraft('{bad', new Map(), new Map()).report.issues[0]?.code).toBe('draft-parse');
+    expect(analyzeWorkshopDraft('{}', new Map(), new Map()).report.canInstall).toBe(false);
     const pack = WorkshopPackageSchema.parse({
       ...createWorkshopEditorTemplate(),
       app: { entryPageId: 'home', pages: [{ id: 'home', title: '首页', components: [{ kind: 'fact', resource: 'clock' }] }] },
     });
-    const missingPermission = analyzeWorkshopDraft(workshopEditorSource(pack), new Set(), new Map());
+    const missingPermission = analyzeWorkshopDraft(workshopEditorSource(pack), new Map(), new Map());
     expect(missingPermission.report.requiredPermissions).toContain('world.read:clock');
     expect(missingPermission.report.issues).toContainEqual(expect.objectContaining({ code: 'permission-missing' }));
-    const conflict = analyzeWorkshopDraft(workshopEditorSource(createWorkshopEditorTemplate()), new Set(['my.local-app']), new Map());
+    const conflict = analyzeWorkshopDraft(workshopEditorSource(createWorkshopEditorTemplate()), new Map([['my.local-app', '1.0.0']]), new Map());
     expect(conflict.report.canInstall).toBe(false);
     expect(conflict.canExport).toBe(true);
-    expect(conflict.report.issues).toContainEqual(expect.objectContaining({ code: 'package-id-conflict' }));
+    expect(conflict.report.issues).toContainEqual(expect.objectContaining({ code: 'package-version-not-newer' }));
+    const upgrade = analyzeWorkshopDraft(workshopEditorSource({ ...createWorkshopEditorTemplate(), manifest: { ...createWorkshopEditorTemplate().manifest, version: '1.0.1' } }), new Map([['my.local-app', '1.0.0']]), new Map());
+    expect(upgrade.report.canInstall).toBe(true);
+    expect(upgrade.report.issues).toContainEqual(expect.objectContaining({ code: 'package-update', severity: 'info' }));
   });
 
   it('requires imported asset payloads to match editable metadata', () => {
@@ -78,10 +81,10 @@ describe('workshop local editor', () => {
       app: { entryPageId: 'home', pages: [{ id: 'home', title: '首页', components: [{ kind: 'image', assetId: 'cover', alt: '封面' }] }] },
       assetMeta: { assets: [{ id: 'cover', path: 'assets/cover.png', mimeType: 'image/png', bytes: 4 }] },
     });
-    const missing = analyzeWorkshopDraft(workshopEditorSource(pack), new Set(), new Map());
+    const missing = analyzeWorkshopDraft(workshopEditorSource(pack), new Map(), new Map());
     expect(missing.report.issues).toContainEqual(expect.objectContaining({ code: 'asset-payload-missing' }));
     const asset: WorkshopAssetPayload = { id: 'cover', path: 'assets/cover.png', mimeType: 'image/png', bytes: new Uint8Array([1, 2, 3, 4]) };
-    const complete = analyzeWorkshopDraft(workshopEditorSource(pack), new Set(), new Map([['cover', asset]]));
+    const complete = analyzeWorkshopDraft(workshopEditorSource(pack), new Map(), new Map([['cover', asset]]));
     expect(complete.report.canInstall).toBe(true);
     expect(complete.canExport).toBe(true);
   });
@@ -90,7 +93,7 @@ describe('workshop local editor', () => {
     const save = seedScenario(createCurrentSaveScenario({ id: 'editor-world', title: 'Editor' }));
     const html = renderToStaticMarkup(createElement(WorkshopEditor, {
       save,
-      installedIds: new Set<string>(),
+      installedVersions: new Map<string, string>(),
       busy: false,
       agentConfigured: false,
       onAgentTurn: vi.fn(),

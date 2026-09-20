@@ -78,6 +78,17 @@ export async function installWorkshopPackageRecord(record: WorkshopPackageRecord
   });
   return parsedRecord;
 }
+export async function replaceWorkshopPackageRecord(record: WorkshopPackageRecord, expectedVersion: string): Promise<WorkshopPackageRecord> {
+  const parsedRecord = WorkshopPackageRecordSchema.parse(record);
+  await contentDb.transaction('rw', contentDb.workshopPackages, async () => {
+    const current = await contentDb.workshopPackages.get(parsedRecord.id);
+    if (!current) throw new Error(`工坊包不存在：${parsedRecord.id}`);
+    const parsedCurrent = WorkshopPackageRecordSchema.parse(current);
+    if (parsedCurrent.package.manifest.version !== expectedVersion) throw new Error(`工坊包已在其他页面更新为 ${parsedCurrent.package.manifest.version}，请刷新后重试。`);
+    await contentDb.workshopPackages.put(parsedRecord);
+  });
+  return parsedRecord;
+}
 export async function listWorkshopBindings(saveId?: string): Promise<WorkshopBinding[]> { const records = saveId ? await contentDb.workshopBindings.where('saveId').equals(saveId).toArray() : await contentDb.workshopBindings.toArray(); return records.map((record) => WorkshopBindingSchema.parse(record)); }
 export async function setWorkshopBinding(saveId: string, packageId: string, enabled: boolean, timestamp: string): Promise<WorkshopBinding> {
   const id = workshopBindingId(saveId, packageId);

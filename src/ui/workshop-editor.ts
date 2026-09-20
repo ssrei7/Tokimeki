@@ -1,4 +1,5 @@
 import { WorkshopPackageSchema, validateWorkshopPackage, type WorkshopAssetPayload, type WorkshopPackage, type WorkshopValidationIssue, type WorkshopValidationReport } from '../data/workshop';
+import { compareWorkshopVersions } from '../data/workshop-update';
 
 export const WORKSHOP_EDITOR_SOURCE_LIMIT = 8 * 1024 * 1024;
 
@@ -39,7 +40,7 @@ function parseIssue(message: string, path?: string): WorkshopValidationIssue {
   return { severity: 'error', code: 'draft-parse', message, ...(path ? { path } : {}) };
 }
 
-export function analyzeWorkshopDraft(source: string, installedIds: ReadonlySet<string>, assets: ReadonlyMap<string, WorkshopAssetPayload>): WorkshopDraftAnalysis {
+export function analyzeWorkshopDraft(source: string, installedVersions: ReadonlyMap<string, string>, assets: ReadonlyMap<string, WorkshopAssetPayload>): WorkshopDraftAnalysis {
   if (source.length > WORKSHOP_EDITOR_SOURCE_LIMIT) {
     const issue = parseIssue(`编辑内容超过 ${WORKSHOP_EDITOR_SOURCE_LIMIT / 1024 / 1024} MiB 限制。`);
     return { report: { canInstall: false, issues: [issue], requiredPermissions: [] }, canExport: false, syntaxValid: false, schemaValid: false };
@@ -69,7 +70,12 @@ export function analyzeWorkshopDraft(source: string, installedIds: ReadonlySet<s
   }
   for (const id of assets.keys()) if (!declaredAssets.has(id)) issues.push({ severity: 'warning', code: 'asset-payload-unused', message: `载入的资产 ${id} 未在 asset-meta 中声明，导出和安装时会忽略。` });
   const exportErrors = issues.some((issue) => issue.severity === 'error');
-  if (installedIds.has(parsed.data.manifest.id)) issues.push({ severity: 'error', code: 'package-id-conflict', message: `本机已安装同 ID 包：${parsed.data.manifest.id}。当前不支持覆盖更新，请改用新 ID。`, path: 'manifest.id' });
+  const installedVersion = installedVersions.get(parsed.data.manifest.id);
+  if (installedVersion) {
+    const comparison = compareWorkshopVersions(parsed.data.manifest.version, installedVersion);
+    if (comparison > 0) issues.push({ severity: 'info', code: 'package-update', message: `将更新已安装包：${installedVersion} → ${parsed.data.manifest.version}。安装前仍需显式确认。`, path: 'manifest.version' });
+    else issues.push({ severity: 'error', code: 'package-version-not-newer', message: comparison === 0 ? `本机已安装相同版本 ${installedVersion}；更新必须提高 x.y.z 版本号。` : `本机已安装 ${installedVersion}；不能降级到 ${parsed.data.manifest.version}。`, path: 'manifest.version' });
+  }
   return {
     package: parsed.data,
     report: { canInstall: !issues.some((issue) => issue.severity === 'error'), issues, requiredPermissions: validation.requiredPermissions },

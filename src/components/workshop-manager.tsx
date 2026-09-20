@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SaveFile } from '../data/schema/save';
 import { listWorkshopBindings, listWorkshopPackages } from '../data/db/content';
 import { exportWorkshopPackage, importWorkshopPackage } from '../data/io/workshop-package';
-import { exportInstalledWorkshopPackage, installWorkshopPackage, setWorkshopPackageEnabled, uninstallWorkshopPackage, workshopPackageBindingSummary } from '../data/workshop-install';
+import { exportInstalledWorkshopPackage, installWorkshopPackage, setWorkshopPackageEnabled, uninstallWorkshopPackage, updateWorkshopPackage, workshopPackageBindingSummary } from '../data/workshop-install';
 import { validateWorkshopPackage, type WorkshopBinding, type WorkshopPackage, type WorkshopPackageImport, type WorkshopPackageRecord, type WorkshopValidationIssue } from '../data/workshop';
+import { analyzeWorkshopPackageUpdate, type WorkshopPackageUpdateAnalysis } from '../data/workshop-update';
 import type { WorkshopAgentTurnInput, WorkshopAgentTurnResult } from '../providers/workshop-draft';
 import { notifyWorkshopChanged } from '../ui/workshop-runtime';
 import { WorkshopEditor } from './workshop-editor';
@@ -31,6 +32,21 @@ function issueLabel(issue: WorkshopValidationIssue): string {
   return issue.severity === 'error' ? '错误' : issue.severity === 'warning' ? '警告' : '说明';
 }
 
+function updateConfirmation(analysis: WorkshopPackageUpdateAnalysis, packageName: string): string {
+  const lines = [
+    `确认更新“${packageName}”吗？`,
+    `版本：${analysis.fromVersion} → ${analysis.toVersion}`,
+    `将保留 ${analysis.affectedWorlds} 个世界绑定（其中 ${analysis.enabledWorlds} 个已启用）和全部按世界隔离的本地 App 状态。`,
+    '旧版二进制资产会保守保留，不会自动删除。',
+  ];
+  if (analysis.addedPermissions.length) lines.push(`新增权限：${analysis.addedPermissions.join('、')}`);
+  else lines.push('没有新增权限。');
+  if (analysis.removedPermissions.length) lines.push(`不再需要：${analysis.removedPermissions.join('、')}`);
+  if (analysis.authorChanged) lines.push('警告：包作者名称发生变化。');
+  if (analysis.nameChanged) lines.push('提示：包显示名称发生变化。');
+  return lines.join('\n');
+}
+
 export function WorkshopManager({ save, draftProviderConfigured, onGenerateDraft, onAgentTurn }: { save: SaveFile; draftProviderConfigured: boolean; onGenerateDraft: (requirement: string, signal?: AbortSignal) => Promise<WorkshopPackage>; onAgentTurn: (input: WorkshopAgentTurnInput, signal?: AbortSignal) => Promise<WorkshopAgentTurnResult> }) {
   const saveId = save.meta.id;
   const [records, setRecords] = useState<WorkshopPackageRecord[]>([]);
@@ -42,7 +58,8 @@ export function WorkshopManager({ save, draftProviderConfigured, onGenerateDraft
   const [draftRequirement, setDraftRequirement] = useState('');
   const [generatingDraft, setGeneratingDraft] = useState(false);
   const generationControllerRef = useRef<AbortController | null>(null);
-  const installedIds = useMemo(() => new Set(records.map((record) => record.id)), [records]);
+  const installedVersions = useMemo(() => new Map(records.map((record) => [record.id, record.package.manifest.version])), [records]);
+  const recordById = useMemo(() => new Map(records.map((record) => [record.id, record])), [records]);
   const bindingByPackage = useMemo(() => new Map(bindings.filter((binding) => binding.saveId === saveId).map((binding) => [binding.packageId, binding])), [bindings, saveId]);
 
   async function refresh(): Promise<void> {
@@ -92,26 +109,44 @@ export function WorkshopManager({ save, draftProviderConfigured, onGenerateDraft
 
   async function installPreview(): Promise<void> {
     if (!preview) return;
+    const current = recordById.get(preview.package.manifest.id);
+    if (current) {
+      const analysis = analyzeWorkshopPackageUpdate(current, preview.package, bindings);
+      if (!analysis.canUpdate) { setNotice({ tone: 'error', text: analysis.reason ?? '工坊包不能更新。' }); return; }
+      if (!window.confirm(updateConfirmation(analysis, preview.package.manifest.name))) return;
+    }
     setBusy(true);
     try {
-      await installWorkshopPackage(preview, saveId);
+      const result = current ? await updateWorkshopPackage(preview) : undefined;
+      if (!current) await installWorkshopPackage(preview, saveId);
       setPreview(null);
       await refresh();
       notifyWorkshopChanged();
-      setNotice({ tone: 'success', text: '工坊包已安装并为当前世界启用。受限 App 可从终端桌面打开；声明式活动、事件、Prompt 与用户显式 Provider 动作会按权限运行。' });
+      setNotice({ tone: 'success', text: current && result
+        ? `工坊包已更新到 v${result.record.package.manifest.version}；${result.analysis.affectedWorlds} 个世界绑定、启用状态和本地 App 状态均已保留，${result.retainedAssetIds.length} 个旧资产保守保留。`
+        : '工坊包已安装并为当前世界启用。受限 App 可从终端桌面打开；声明式活动、事件、Prompt 与用户显式 Provider 动作会按权限运行。' });
     } catch (error) { setNotice({ tone: 'error', text: errorText(error, '安装工坊包失败。') }); }
     finally { setBusy(false); }
   }
 
   async function installDraft(draft: WorkshopPackageImport): Promise<void> {
+    const current = recordById.get(draft.package.manifest.id);
+    if (current) {
+      const analysis = analyzeWorkshopPackageUpdate(current, draft.package, bindings);
+      if (!analysis.canUpdate) { setNotice({ tone: 'error', text: analysis.reason ?? '编辑草稿不能更新已安装包。' }); return; }
+      if (!window.confirm(updateConfirmation(analysis, draft.package.manifest.name))) return;
+    }
     setBusy(true);
     try {
-      await installWorkshopPackage(draft, saveId);
+      const result = current ? await updateWorkshopPackage(draft) : undefined;
+      if (!current) await installWorkshopPackage(draft, saveId);
       setEditor(null);
       setPreview(null);
       await refresh();
       notifyWorkshopChanged();
-      setNotice({ tone: 'success', text: '编辑草稿已安装并为当前世界启用。受限 App 已出现在终端桌面。' });
+      setNotice({ tone: 'success', text: current && result
+        ? `编辑草稿已更新到 v${result.record.package.manifest.version}；世界绑定、启用状态、本地 App 状态和旧资产均已保留。`
+        : '编辑草稿已安装并为当前世界启用。受限 App 已出现在终端桌面。' });
     } catch (error) { setNotice({ tone: 'error', text: errorText(error, '安装编辑草稿失败。') }); }
     finally { setBusy(false); }
   }
@@ -163,7 +198,8 @@ export function WorkshopManager({ save, draftProviderConfigured, onGenerateDraft
     finally { setBusy(false); }
   }
 
-  const previewInstalled = preview ? installedIds.has(preview.package.manifest.id) : false;
+  const previewInstalledRecord = preview ? recordById.get(preview.package.manifest.id) : undefined;
+  const previewUpdate = preview && previewInstalledRecord ? analyzeWorkshopPackageUpdate(previewInstalledRecord, preview.package, bindings) : undefined;
   return <div className="library-subpage-content workshop-manager">
     {notice && <div className={`feedback ${notice.tone}`} role="status">{notice.text}<button type="button" aria-label="关闭提示" onClick={() => setNotice(null)}>×</button></div>}
     <section className="workshop-content">
@@ -184,10 +220,10 @@ export function WorkshopManager({ save, draftProviderConfigured, onGenerateDraft
         <div className="visual-asset-summary"><span>{preview.package.app.pages.length} 个页面</span><span>{preview.package.rules.rules.length} 条规则</span><span>{preview.package.events?.events.length ?? 0} 个事件</span><span>{preview.assets.size} 个资产</span></div>
         <details open><summary>权限清单（{preview.report.requiredPermissions.length}）</summary>{preview.report.requiredPermissions.length ? <ul>{preview.report.requiredPermissions.map((permission) => <li key={permission}><code>{permission}</code></li>)}</ul> : <p className="empty">不需要额外权限。</p>}</details>
         <details open={!preview.report.canInstall}><summary>校验报告（{preview.report.issues.length}）</summary>{preview.report.issues.length ? <ul>{preview.report.issues.map((issue, index) => <li key={`${issue.code}-${index}`}><strong>{issueLabel(issue)}</strong> · {issue.message}{issue.path ? <small> · {issue.path}</small> : null}</li>)}</ul> : <p className="empty">未发现问题。</p>}</details>
-        {previewInstalled && <p role="alert" className="io-scope">本机已安装相同包 ID。首版不支持覆盖更新，请保留现有包或先卸载。</p>}
-        <div className="button-row"><button type="button" disabled={busy || !preview.report.canInstall || previewInstalled} onClick={() => void installPreview()}>确认安装并启用</button><button type="button" className="secondary" disabled={busy} onClick={() => setEditor((current) => ({ key: (current?.key ?? 0) + 1, initial: preview }))}>在编辑器中打开</button><button type="button" className="secondary" disabled={busy} onClick={() => setPreview(null)}>取消</button></div>
+        {previewUpdate && <p role={previewUpdate.canUpdate ? 'status' : 'alert'} className="io-scope">{previewUpdate.canUpdate ? `可从 v${previewUpdate.fromVersion} 更新到 v${previewUpdate.toVersion}；确认前会显示世界绑定、权限变化与资源保留范围。` : previewUpdate.reason}</p>}
+        <div className="button-row"><button type="button" disabled={busy || !preview.report.canInstall || (previewUpdate !== undefined && !previewUpdate.canUpdate)} onClick={() => void installPreview()}>{previewInstalledRecord ? '确认更新已安装包' : '确认安装并启用'}</button><button type="button" className="secondary" disabled={busy} onClick={() => setEditor((current) => ({ key: (current?.key ?? 0) + 1, initial: preview }))}>在编辑器中打开</button><button type="button" className="secondary" disabled={busy} onClick={() => setPreview(null)}>取消</button></div>
       </div>}
-      {editor && <WorkshopEditor key={editor.key} save={save} installedIds={installedIds} initial={editor.initial} busy={busy} agentConfigured={draftProviderConfigured} onAgentTurn={onAgentTurn} onInstall={installDraft} onExport={exportDraft} onClose={() => setEditor(null)} />}
+      {editor && <WorkshopEditor key={editor.key} save={save} installedVersions={installedVersions} initial={editor.initial} busy={busy} agentConfigured={draftProviderConfigured} onAgentTurn={onAgentTurn} onInstall={installDraft} onExport={exportDraft} onClose={() => setEditor(null)} />}
       <div className="list-card">
         <div className="list-heading"><div><h3>已安装包</h3><p className="io-scope">启用状态和 App 本地状态按世界隔离。停用不会删除包；全局卸载会保留本地状态和二进制资产。</p></div><span className="io-scope">{records.length} 个</span></div>
         {records.length ? <div className="event-package-list">{records.map((record) => {

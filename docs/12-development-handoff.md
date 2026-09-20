@@ -32,7 +32,7 @@
 - Content IndexedDB：v12。
 - Assets IndexedDB：v3。
 - 角色包 schema：v1；世界包 schema：v1；预设包 schema：v2。
-- 最近一次完整验证：83 个测试文件、551 项测试通过；`npm run build` 与 `git diff --check` 通过。
+- 最近一次完整验证：84 个测试文件、556 项测试通过；`npm run build` 与 `git diff --check` 通过。
 - 当前已知构建提示：主 JavaScript 包约 1.28 MB，Vite 会提示超过 500 kB。它是非阻塞性能项，后续可通过页面级动态导入处理。
 - 阶段 10 最后的功能修复为：身份头像设置只在“设置 → 身份”挂载，不再出现在“设置 → 向量”。
 
@@ -79,7 +79,7 @@
 
 ### 创意工坊
 
-- 声明式工坊包 v1 已完成本地 ZIP 安装闭环、受限 UI 运行时、本地 JSON 编辑器、用户 API 驱动的初稿生成、首个多轮 Agent 闭环、v1 工具协议、能力目录、原子局部 patch、本地工程 inspection、执行层步骤/请求/token 预算、有界自动修复、通用只读 UI 数据绑定，带通用 stats/物品成本和结果文案的 `manual` / `onEnterNode` / `onTimeAdvance` / `onDaySettle` 确定性活动规则，以及用户显式触发的包内声明式事件。
+- 声明式工坊包 v1 已完成本地 ZIP 安装/严格升级闭环、受限 UI 运行时、本地 JSON 编辑器、用户 API 驱动的初稿生成、首个多轮 Agent 闭环、v1 工具协议、能力目录、原子局部 patch、本地工程 inspection、执行层步骤/请求/token 预算、有界自动修复、通用只读 UI 数据绑定，带通用 stats/物品成本和结果文案的 `manual` / `onEnterNode` / `onTimeAdvance` / `onDaySettle` 确定性活动规则，以及用户显式触发的包内声明式事件。
 - 包定义、世界绑定和本地 App 状态位于 Content IndexedDB v12；绑定与状态均按 `saveId + packageId` 隔离，图片仍位于 Assets IndexedDB；SaveFile 保持 v41。
 - `workshop_draft` 现作为“工坊 Agent”路由：初稿生成仍只发送固定协议与需求；进入编辑器后，每次用户发送先调用一次用户 API，并发送当前工程、最近对话、本地 `capabilities.list` 和 `project.inspect` 结果以便增量修改。inspection 复用编辑器校验，只含状态、诊断、权限和声明式结构摘要，不含正文、世界事实值、已安装包 ID 或二进制。Agent v1 每步只允许一次 `project.replace` 或 `project.patch`；patch 最多 100 项，只支持受限 `add` / `replace` / `remove`，在副本上原子应用。返回结果通过 schema 与正式包完整校验后才替换内存草稿；被拒绝时可在页面预算内自动反馈错误并修复，网络错误不重试，所有失败候选都不进入编辑器。上下文预检前会无损压缩有效工程并按需裁剪旧对话、失败摘录与诊断正文。旧完整工程响应暂时兼容，可撤销上次成功修改，不自动安装。当前活动规则效果仅开放 `add_stat` / `set_flag` / `give_item` / `take_item`；事件本体与 choice 的 ops 由确定性内核原子复核。包内 Prompt 已按预算开放，Provider 文本动作只能由用户按钮显式触发一次，只读取/写回包内本地标量，响应不解析 ops；缺少确定性世界上下文的其他钩子仍禁用。协议说明见 `docs/13-workshop-package-v1.md`。
 
@@ -159,9 +159,10 @@ AI 制作流程应为：
 16. **已完成事件子切片**：启用包的事件定义按来源同步到当前世界；同包 `trigger-event` 按钮可显式触发，事件本体和 choice 只组合能力目录公开的原子安全 ops，不进入导演随机池、不调用 API。
 17. **已完成**：开放有预算的包内 prompt block 注册；仅接入现有 PromptAssembler 的 `narrate_main` / `topic_tree`，不增加 API 次数，也未开放 Provider 动作。
 18. **已完成**：开放用户显式 Provider 文本动作；每次点击最多一次用户 API，输入/结果只走包内本地状态，响应不解析 ops，也不发送完整世界事实。
-19. **下一步**：完成包更新、版本依赖和卸载保护。
-20. 再把工坊包纳入全局备份和完整性审计。
-21. 用官方示例验证 Agent 制作、安装、更新与分享全流程。
+19. **已完成包更新子切片**：同 ID 包只允许显式升级到严格更高版本；确认前显示权限与身份变化，更新保留全部世界绑定、enabled、本地 App 状态和旧资产，失败时补偿本轮新资产。
+20. **下一步**：完成版本依赖与卸载保护。
+21. 再把工坊包纳入全局备份和完整性审计。
+22. 用官方示例验证 Agent 制作、安装、更新与分享全流程。
 
 创意工坊原始想法见 `docs/ideas.md` 的“用户创意工坊 / 玩法包”。正式编码前应先形成独立计划并确认包状态放置、权限模型、跨世界绑定和卸载语义。
 
