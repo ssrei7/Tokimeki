@@ -296,7 +296,9 @@ describe('library desktop', () => {
     const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     expect(source).toContain('aria-label="远程约定"');
     expect(source).toContain('发起约定');
-    expect(source).toContain('模拟TA提议');
+    expect(source).toContain('让TA提议');
+    expect(source).toContain('TA已发来约定提议。');
+    expect(source).not.toContain('模拟TA提议');
     expect(source).toContain('模拟TA同意');
     expect(source).toContain('加入日历');
     expect(source).toContain('confirmTerminalAppointment');
