@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { queryWorkshopCapabilityCatalog } from '../data/workshop-capabilities';
 import { WorkshopPackageSchema, type WorkshopPackage, type WorkshopValidationIssue } from '../data/workshop';
 import { streamChat, type StreamStatus } from './stream';
 import type { ChatMessage, ProviderConfig } from './types';
@@ -19,11 +20,11 @@ manifest.permissions 必须准确声明实际用到的 world.read resources、ap
 最小结构示例：{"manifest":{"type":"workshop","packageVersion":1,"runtimeVersion":1,"id":"sample.app","name":"示例","author":"AI Draft","version":"1.0.0","permissions":[]},"app":{"entryPageId":"home","pages":[{"id":"home","title":"首页","components":[{"kind":"text","text":"示例"}]}]},"rules":{"rules":[]}}`;
 
 const AGENT_SYSTEM_PROMPT = `你是“小小地图”创意工坊内的 App 制作 Agent。用户会提供当前声明式工程源码、本地校验诊断、最近对话和本轮指令。
+请求中的 capabilityQuery 是本地只读 capabilities.list 的权威结果。只使用其中标为已启用或满足条件后可用的运行能力；declaredOnly 内容可以编辑，但必须在 message 中说明当前不会运行。
 你必须使用工坊 Agent v1 工具协议返回一个 JSON 对象：{"protocolVersion":1,"message":"给用户的简短说明","toolCalls":[{"id":"replace-project","name":"project.replace","arguments":{"package":{...完整 workshop 包 v1...}}}]}。不要输出 Markdown、代码围栏或额外字段。
 当前只开放一次 project.replace 工具调用。它只替换内存中的编辑器草稿，不安装包、不写世界状态、不调用网络。不要请求未列出的工具，也不要返回多个工具调用。
 你要在当前工程上增量修改，保留用户未要求删除的页面、规则、资产声明和其他内容。若原源码有误，根据 diagnostics 修复并返回完整合法工程。
-可用页面组件：title、text、fact、image、card、list、tabs、button、input、select、progress、confirm。可声明动作：navigate、set-local、submit-op、trigger-event、provider-text，但必须如实声明权限且不得承诺尚未开放的运行能力。
-当前可执行的活动规则 hook 仅有 manual 和 onEnterNode；规则效果仅能是 submit-op 封装的 add_stat、set_flag、give_item、take_item。用户按钮触发活动时，按钮 op 为 run_workshop_activity，payload 为 {"ruleId":"规则-id"}。
+组件、动作、世界只读资源、活动 hook、效果 op 和扩展运行状态严格以 capabilityQuery.result 为准。用户按钮触发活动时，按钮 op 使用目录给出的 dispatchOp，payload 为 {"ruleId":"规则-id"}。
 条件只能使用安全表达式和 day、slotId、nodeId、stats、flags、player.nodeId、player.stats、player.flags、relations 事实。禁止任意 JavaScript、HTML、CSS、脚本 URL、base64 和任意网络请求。
 不要虚构新的二进制资产载荷；可保留当前工程已有的 assetMeta 和引用。events、prompts 可作为工程内容编辑，但当前运行时仍不安装/注册它们，必须在 message 中说明。`;
 
@@ -98,9 +99,10 @@ export function buildWorkshopAgentMessages(input: WorkshopAgentTurnInput): ChatM
   if (input.currentSource.length > WORKSHOP_AGENT_SOURCE_LIMIT) throw new Error(`当前工程超过 ${WORKSHOP_AGENT_SOURCE_LIMIT / 1024} KiB Agent 上下文限制，请先精简或拆分。`);
   const history = (input.history ?? []).slice(-WORKSHOP_AGENT_HISTORY_LIMIT).map((entry) => ({ role: entry.role, content: entry.content.slice(0, 4000) }));
   const diagnostics = input.diagnostics.slice(0, 100).map((issue) => ({ severity: issue.severity, code: issue.code, message: issue.message, ...(issue.path ? { path: issue.path } : {}) }));
+  const capabilityQuery = { name: 'capabilities.list' as const, result: queryWorkshopCapabilityCatalog() };
   return [
     { role: 'system', content: AGENT_SYSTEM_PROMPT },
-    { role: 'user', content: JSON.stringify({ protocolVersion: WORKSHOP_AGENT_PROTOCOL_VERSION, instruction, currentSource: input.currentSource, diagnostics, history }) },
+    { role: 'user', content: JSON.stringify({ protocolVersion: WORKSHOP_AGENT_PROTOCOL_VERSION, instruction, currentSource: input.currentSource, diagnostics, history, capabilityQuery }) },
   ];
 }
 

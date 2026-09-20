@@ -8,10 +8,11 @@ export const CURRENT_WORKSHOP_RUNTIME_VERSION = 1;
 
 const IdSchema = z.string().min(1).max(120).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, 'ID 只能使用 ASCII 字母、数字、点、下划线和连字符。');
 const TextSchema = z.string().max(10_000);
-const WorkshopTextTaskSchema = z.enum([
+export const WORKSHOP_TEXT_TASKS = [
   'narrate_main', 'narrate_daily', 'topic_tree', 'world_morning', 'world_gen', 'map_gen', 'npc_batch',
   'extract_ops', 'summarize_memory', 'summarize_day', 'summarize_chapter',
-]);
+] as const;
+const WorkshopTextTaskSchema = z.enum(WORKSHOP_TEXT_TASKS);
 
 export const WORKSHOP_ALLOWED_OPS = [
   'add_stat', 'set_stat', 'set_flag', 'give_item', 'take_item', 'add_memory', 'add_node_memory',
@@ -21,13 +22,18 @@ export const WORKSHOP_ALLOWED_OPS = [
 ] as const;
 
 export const WORKSHOP_ACTIVITY_EFFECT_OPS = ['add_stat', 'set_flag', 'give_item', 'take_item'] as const;
-export const WorkshopActivityHookSchema = z.enum(['manual', 'onEnterNode']);
+export const WORKSHOP_ACTIVITY_HOOKS = ['manual', 'onEnterNode'] as const;
+export const WorkshopActivityHookSchema = z.enum(WORKSHOP_ACTIVITY_HOOKS);
 
 export const WorkshopOpNameSchema = z.enum(WORKSHOP_ALLOWED_OPS);
-export const WorkshopWorldReadResourceSchema = z.enum([
+export const WORKSHOP_WORLD_READ_RESOURCES = [
   'clock', 'world.stats', 'world.flags', 'player.identity', 'player.location', 'player.stats', 'player.flags', 'player.inventory',
   'map', 'characters', 'relations', 'events', 'economy',
-]);
+] as const;
+export const WorkshopWorldReadResourceSchema = z.enum(WORKSHOP_WORLD_READ_RESOURCES);
+
+export const WORKSHOP_COMPONENT_KINDS = ['title', 'text', 'fact', 'image', 'card', 'list', 'tabs', 'button', 'input', 'select', 'progress', 'confirm'] as const;
+export const WORKSHOP_ACTION_TYPES = ['navigate', 'set-local', 'submit-op', 'trigger-event', 'provider-text'] as const;
 
 export const WorkshopPermissionSchema = z.discriminatedUnion('capability', [
   z.object({ capability: z.literal('world.read'), resources: z.array(WorkshopWorldReadResourceSchema).min(1).max(20) }).strict(),

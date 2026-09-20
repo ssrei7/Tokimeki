@@ -62,6 +62,7 @@ describe('workshop local editor', () => {
     expect(html).toContain('权限与冲突');
     expect(html).toContain('实时预览');
     expect(html).toContain('工坊 Agent');
+    expect(html).toContain('本地能力目录');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>发送给 Agent<\/button>/);
     expect(html).toContain('这是一个纯本地声明式 App。');
   });

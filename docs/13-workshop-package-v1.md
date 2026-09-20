@@ -54,7 +54,30 @@ Agent v1 使用 Provider 无关的应用层 JSON 工具协议；不要求端点�
 }
 ```
 
-调用 ID 只能使用 1–64 个 ASCII 字母、数字、点、下划线或连字符。协议拒绝未知工具、多次调用、额外字段、错误版本和不符合 `WorkshopPackageSchema` 的工程。`project.replace` 只替换当前页面内的草稿，不安装、不持久化、不修改世界事实，也不会触发新的网络请求。为兼容已配置模型，旧 `{ "message", "package" }` 和裸包响应暂时仍可解析；新提示只要求 v1 工具协议。能力目录、局部 patch、校验/预览工具和多步循环尚未开放。
+调用 ID 只能使用 1–64 个 ASCII 字母、数字、点、下划线或连字符。协议拒绝未知工具、多次调用、额外字段、错误版本和不符合 `WorkshopPackageSchema` 的工程。`project.replace` 只替换当前页面内的草稿，不安装、不持久化、不修改世界事实，也不会触发新的网络请求。为兼容已配置模型，旧 `{ "message", "package" }` 和裸包响应暂时仍可解析；新提示只要求 v1 工具协议。局部 patch、校验/预览工具和多步循环尚未开放。
+
+每次 Agent 请求组装时，本地会先执行一次只读 `capabilities.list`，并把结果放入用户消息的 `capabilityQuery`：
+
+```json
+{
+  "capabilityQuery": {
+    "name": "capabilities.list",
+    "result": {
+      "catalogVersion": 1,
+      "packageVersion": 1,
+      "runtimeVersion": 1,
+      "ui": { "components": [], "actions": {} },
+      "worldRead": {},
+      "activities": {},
+      "declaredOnly": {},
+      "assets": {},
+      "prohibited": []
+    }
+  }
+}
+```
+
+实际数组和限制由当前 schema/runtime 常量生成，示例中的空值只是结构缩写。目录会区分已启用动作、带条件的活动调度、当前禁用动作和只声明不运行的扩展。查询纯本地、零写入，不读取 SaveFile、已安装包、IndexedDB、Provider 配置或密钥，并与当前用户指令合并成同一次 API 请求；因此不会为“查能力”增加第二次调用。局部 patch、校验/预览工具与自动工具循环仍未开放。
 
 除用户显式触发的初稿生成与 Agent 指令外，工坊导入、编辑、校验、预览、安装、启停、导出和运行均为纯本地操作。Agent 请求不包含 SaveFile、已安装包、世界游玩状态或其他库内容；API key 只按现有 Provider 规则作为鉴权信息发送到用户配置的端点。
 

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createMockProviderConfig } from '../src/providers/adapters/mock';
+import { queryWorkshopCapabilityCatalog } from '../src/data/workshop-capabilities';
+import { WorkshopActionSchema, WorkshopComponentSchema } from '../src/data/workshop';
 import { buildWorkshopAgentMessages, buildWorkshopDraftMessages, generateWorkshopDraft, parseWorkshopAgentResponse, parseWorkshopDraftResponse, runWorkshopAgentTurn } from '../src/providers/workshop-draft';
 import { WORKSHOP_AGENT_PROTOCOL_VERSION, WorkshopAgentProtocolResponseSchema } from '../src/providers/workshop-agent-protocol';
 import type { ProviderConfig } from '../src/providers/types';
@@ -60,7 +62,28 @@ describe('workshop draft provider', () => {
     expect(messages[0]!.content).toContain('project.replace');
     expect(payload.diagnostics[0].code).toBe('permission-missing');
     expect(payload.history).toHaveLength(2);
+    expect(payload.capabilityQuery.name).toBe('capabilities.list');
+    expect(payload.capabilityQuery.result.activities).toMatchObject({ hooks: ['manual', 'onEnterNode'], effectOps: ['add_stat', 'set_flag', 'give_item', 'take_item'] });
+    expect(payload.capabilityQuery.result.ui.actions.disabled).toEqual(['trigger-event', 'provider-text']);
     expect(payload.save).toBeUndefined();
+  });
+
+  it('queries a deterministic read-only capability catalog without world or provider data', () => {
+    const first = queryWorkshopCapabilityCatalog();
+    first.ui.components.pop();
+    const second = queryWorkshopCapabilityCatalog();
+    expect(second.catalogVersion).toBe(1);
+    expect(second.ui.components).toContain('confirm');
+    expect(second.worldRead.resources).toContain('player.inventory');
+    expect(second.declaredOnly).toMatchObject({ events: true, prompts: true, providerText: true });
+    expect(second.assets.agentMayCreateBinary).toBe(false);
+    expect(WorkshopComponentSchema.options.map((schema) => schema.shape.kind.value)).toEqual(second.ui.components);
+    expect(WorkshopActionSchema.options.map((schema) => schema.shape.type.value).sort()).toEqual([
+      ...second.ui.actions.enabled,
+      ...second.ui.actions.conditional.map((action) => action.name),
+      ...second.ui.actions.disabled,
+    ].sort());
+    expect(JSON.stringify(second)).not.toMatch(/apiKey|SaveFile|endpoint|model/);
   });
 
   it('runs one user-configured API turn and accepts a complete declarative project update', async () => {
