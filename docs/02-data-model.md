@@ -19,7 +19,7 @@ type Condition = string;   // expr-eval 表达式,禁止 eval
 - 时间坐标统一为 `(day, slotId)`，地点坐标统一为 `nodeId`。
 - 派生值（阶段标签、可达节点、当前在场者）可缓存但必须能重算，且不作为事实来源。
 
-`CURRENT_SCHEMA_VERSION = 42`
+`CURRENT_SCHEMA_VERSION = 43`
 
 ---
 
@@ -896,7 +896,29 @@ v41 新增 `world.terminal.appointmentRequests`。提议保存联系人、发起
 
 每次相遇的开场和后续面对面消息继续写入主要互动对象稳定 ID 对应的 Content IndexedDB `ChatRecord`。正式角色的 Prompt 投影读取完整角色卡；半正式 NPC 只读取 `facts / tags / lightMemory`，不创建正式角色卡、不建立关系轴，也不修改轻记忆。NPC 轻互动即使返回 `<ops>`，也只保留可读正文并拒绝全部状态操作；编辑或删除这些聊天文字同样不会回滚或生成世界事实。未来 NPC 转正时，既有 `ChatRecord` 可作为有界口吻参考。
 
-开场专用 Prompt context 预留 `playerPresentation`，只接受未来由内核确认的玩家外观/穿搭文字；当前版本不新增衣柜字段。开场缺少 Provider 或请求失败时，客户端只根据确定性日期、时段、地点、玩家名和参与者名生成本地到场描述，不写状态。SaveFile 因此保持 v42，Content IndexedDB 保持 v12。
+开场专用 Prompt context 预留 `playerPresentation`，只接受未来由内核确认的玩家外观/穿搭文字；当前版本不新增衣柜字段。开场缺少 Provider 或请求失败时，客户端只根据确定性日期、时段、地点、玩家名和参与者名生成本地到场描述，不写状态。该切片当时保持 SaveFile v42，Content IndexedDB 保持 v12。
+
+### 16.7 地点动态（v43）
+
+`world.placeHighlights` 只保存当前世界的热点与活动，不属于地图节点本身，也不进入世界包 v1：
+
+```ts
+interface PlaceHighlight {
+  id: Id;
+  nodeId: NodeId;
+  kind: 'hotspot' | 'activity';
+  title: string;             // 1–80
+  body: string;              // 1–1000
+  allowsNewNpc: boolean;
+  source: 'manual' | 'ai';
+  createdDay: number;
+  updatedDay: number;
+}
+```
+
+手工创建、编辑、删除、查看和导航均为本地操作。普通地图只投影已发现地点的动态数量；管理抽屉仍可查看未发现地点的条目。地图节点存在动态引用时禁止删除，避免孤立 `nodeId`。v42→v43 migration 只初始化空数组并保留其他事实。
+
+`map_activity_gen` 每次用户点击最多调用一次：批量生成 1–8 条或单地点生成 1 条。允许地点由本地先行选定，Prompt 只发送这些地点的 ID 与展示资料；AI 结果必须完整通过地点白名单、类型、数量和文本长度校验，先成为可编辑草稿，用户确认后才由内核分配 ID、日期和 `source: 'ai'` 并写入存档。活动参与不属于本切片。
 
 ---
 

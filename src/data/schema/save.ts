@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 42;
+export const CURRENT_SCHEMA_VERSION = 43;
 
 const IdSchema = z.string().min(1);
 
@@ -839,6 +839,18 @@ export const MapSchema = z.object({
   view: MapViewSchema,
 });
 
+export const PlaceHighlightSchema = z.object({
+  id: IdSchema,
+  nodeId: IdSchema,
+  kind: z.enum(['hotspot', 'activity']),
+  title: z.string().trim().min(1).max(80),
+  body: z.string().trim().min(1).max(1000),
+  allowsNewNpc: z.boolean(),
+  source: z.enum(['manual', 'ai']),
+  createdDay: z.number().int().positive(),
+  updatedDay: z.number().int().positive(),
+});
+
 export function createDefaultMap(): z.infer<typeof MapSchema> {
   return {
     regions: { 'start-region': { id: 'start-region', name: '起点街区' } },
@@ -937,6 +949,9 @@ export const WorldV38Schema = WorldV37Schema.extend({
 export const WorldV39Schema = WorldV38Schema.extend({
   terminal: TerminalStateSchema.default(() => structuredClone(DEFAULT_TERMINAL_STATE)),
 });
+export const WorldV43Schema = WorldV39Schema.extend({
+  placeHighlights: z.array(PlaceHighlightSchema).max(500).default([]),
+});
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -973,12 +988,13 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV39Schema,
+  world: WorldV43Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV39Schema>;
+export type WorldState = z.infer<typeof WorldV43Schema>;
+export type PlaceHighlight = z.infer<typeof PlaceHighlightSchema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
 export type Weather = z.infer<typeof WeatherSchema>;

@@ -12,6 +12,17 @@ const fixtureV0 = {
 };
 
 describe('save migrations', () => {
+  it('migrates v42 saves with an empty place highlight collection', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v42-place-highlights', title: 'v42 place highlights' }));
+    const legacy = structuredClone(source) as Record<string, unknown>;
+    legacy.schemaVersion = 42;
+    delete (legacy.world as Record<string, unknown>).placeHighlights;
+    const migrated = migrateSave(legacy);
+    expect(migrated.schemaVersion).toBe(43);
+    expect(migrated.world.placeHighlights).toEqual([]);
+    expect(migrated.world.player.name).toBe(source.world.player.name);
+  });
+
   it('migrates the v0 fixture through every version to a valid current save', () => {
     const migrated = migrateSave(fixtureV0);
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
@@ -366,7 +377,7 @@ describe('save migrations', () => {
       status: 'draft', source: 'manual', createdDay: 1, updatedDay: 1,
     }];
     const migrated = migrateSave({ ...source, schemaVersion: 41 });
-    expect(migrated.schemaVersion).toBe(42);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.storyScenes[0]).toMatchObject({ nodeId: 'start', startDay: 1, startSlotId: 'morning' });
   });
 

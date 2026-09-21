@@ -41,6 +41,7 @@ import { migrateV38ToV39 } from './v38-to-v39';
 import { migrateV39ToV40 } from './v39-to-v40';
 import { migrateV40ToV41 } from './v40-to-v41';
 import { migrateV41ToV42 } from './v41-to-v42';
+import { migrateV42ToV43 } from './v42-to-v43';
 import { MigrationError, UnsupportedSchemaVersionError, type Migration } from './types';
 
 export const migrations: Record<number, Migration> = {
@@ -86,6 +87,7 @@ export const migrations: Record<number, Migration> = {
   40: migrateV39ToV40,
   41: migrateV40ToV41,
   42: migrateV41ToV42,
+  43: migrateV42ToV43,
 };
 
 export function migrateSave(input: unknown): SaveFile {

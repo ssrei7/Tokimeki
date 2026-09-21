@@ -15,6 +15,7 @@ describe('world package IO', () => {
     expect(imported.manifest).toMatchObject({ type: 'world', schemaVersion: CURRENT_WORLD_PACKAGE_SCHEMA_VERSION });
     expect(imported.pack.map.nodes.harbor.name).toBe('港口');
     expect(imported.pack.items.flower.name).toBe('花');
+    expect('placeHighlights' in imported.pack).toBe(false);
   });
 
   it('merges package static content while preserving unrelated dynamic state', () => {
@@ -34,6 +35,6 @@ describe('world package IO', () => {
     zip.file('manifest.json', JSON.stringify({ type: 'world', appVersion: '9.9.9', schemaVersion: 999 }));
     zip.file('world.json', JSON.stringify({ id: 'future', name: '未来', map: createDefaultMap(), characters: {}, npcs: {}, npcTemplates: {}, items: {}, eventDefs: {}, worldbooks: [], characterCards: [] }));
     await expect(importWorldPackage(await zip.generateAsync({ type: 'uint8array' }))).rejects.toThrow('请升级小小地图');
-    expect(CURRENT_SCHEMA_VERSION).toBe(42);
+    expect(CURRENT_SCHEMA_VERSION).toBe(43);
   });
 });

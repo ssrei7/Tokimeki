@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { confirmTerminalAppointment, createFriendRequest, createTerminalAppointmentRequest, listTerminalAppointmentRequests, resolveTerminalAppointmentRequest, simulateFriendAcceptance } from '../src/core/terminal';
 import { migrateSave } from '../src/data/migrations';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
+import { CURRENT_SCHEMA_VERSION } from '../src/data/schema/save';
 
 function makeSave() {
   const save = seedScenario(createCurrentSaveScenario({ id: 'terminal-appointments', title: 'Terminal appointments' }));
@@ -25,7 +26,7 @@ describe('terminal appointments', () => {
     legacy.schemaVersion = 40;
     delete ((legacy.world as Record<string, unknown>).terminal as Record<string, unknown>).appointmentRequests;
     const migrated = migrateSave(legacy);
-    expect(migrated.schemaVersion).toBe(42);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.terminal.appointmentRequests).toEqual([]);
     expect(migrated.world.terminal.messageThreads).toEqual(save.world.terminal.messageThreads);
   });

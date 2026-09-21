@@ -80,7 +80,7 @@ export function createCurrentSaveScenario(options: CurrentSaveScenarioOptions): 
           appointments: [],
           eventDefs: {},
           director: { scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: options.day ?? 1 },
-          eventHistory: [], chapters: [], milestones: [], storyScenes: [], economy: structuredClone(DEFAULT_ECONOMY_STATE),
+          eventHistory: [], chapters: [], milestones: [], storyScenes: [], economy: structuredClone(DEFAULT_ECONOMY_STATE), placeHighlights: [],
       },
     }),
   };

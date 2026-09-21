@@ -5,6 +5,7 @@ import { migrateSave } from '../src/data/migrations';
 import { TtsConfigSchema, type TtsConfig } from '../src/providers/types';
 import { buildSpeechRequest, speechCacheFingerprint, synthesizeSpeech } from '../src/providers/speech';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
+import { CURRENT_SCHEMA_VERSION } from '../src/data/schema/save';
 
 function makeSave() {
   const save = seedScenario(createCurrentSaveScenario({ id: 'terminal-voice', title: 'Terminal voice' }));
@@ -26,7 +27,7 @@ describe('terminal voice', () => {
     const legacy = structuredClone(save) as Record<string, unknown>;
     legacy.schemaVersion = 39;
     const migrated = migrateSave(legacy);
-    expect(migrated.schemaVersion).toBe(42);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.terminal.messageThreads).toEqual({});
     expect(migrated.world.player.stats.money).toBe(save.world.player.stats.money);
   });

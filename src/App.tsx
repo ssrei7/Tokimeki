@@ -7,6 +7,7 @@ import { EventBus } from './core/events/bus';
 import { evaluateEvidenceReaction, installEventDefs, listPendingEvents, resolveEventChoice, scheduleDirectorEvent, setScheduledEventRevealed, triggerScheduledEvent } from './core/events';
 import { advanceStorySceneStage, confirmStoryScene, copyStoryScenePreset, createBuiltinStoryScenePresets, createStorySceneDraft, deleteStorySceneDraft, formatChatArchive, formatEventHistoryArchive, generateStorySceneDraftInput, readStorySceneStage, selectStorySceneReadingStage, updateStorySceneDraft, updateStorySceneStatus, type StorySceneDraftInput, type StoryScenePreset } from './core/story';
 import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGeneratedMapExpansion, parseGeneratedNodeSuggestion, updateMapNode, type CreateMapNodeInput, type UpdateMapNodeInput } from './core/map';
+import { PlaceHighlightDraftSchema, buildPlaceHighlightGenerationMessages, confirmGeneratedPlaceHighlights, createPlaceHighlight, deletePlaceHighlight, parseGeneratedPlaceHighlights, placeHighlightReferences, selectPlaceHighlightNodes, updatePlaceHighlight, visiblePlaceHighlights, type PlaceHighlightDraft, type PlaceHighlightInput } from './core/place-highlights';
 import { parseGeneratedTopicTree } from './core/topics/parser';
 import { isTopicTreeFresh, mergeDailyTopicTree, topicResponse, topicTreeKey, topicVisibility, visibleTopics } from './core/topics';
 import { addCharacterToWorld, deriveNodeScope, nodeScopeLabel, proposeDeparture, recentEncounterTraces, resolveDeparture, triggerEncounter, updateEncounterOutcome, whoIsHere, whoIsWhere, type EncounterCandidate, type EncounterTrace } from './core/encounter';
@@ -90,6 +91,7 @@ import { MusicApp } from './components/music-app';
 import { WorkshopManager } from './components/workshop-manager';
 import { WorkshopRuntimeView, useEnabledWorkshopPackages } from './components/workshop-runtime';
 import { PackageHelpButton } from './components/package-help-dialog';
+import { PlaceHighlightsDrawer } from './components/place-highlights-drawer';
 import { useMusicPlayer, type MusicPlayerController } from './features/music/player';
 import './ui/theme/app.css';
 import { applyCustomCss, applyTheme, applyThemeAppearance, applyThemeTemplate, DEFAULT_THEME_APPEARANCE, parseDesktopIconOverrides, parseDesktopTitleOverrides, parseThemeAppearance, readCustomCss, readDesktopIconOverrides, readDesktopTitleOverrides, readThemeAppearance, readThemeMode, readThemeTemplate, resolveTheme, THEME_APPEARANCE_STORAGE_KEY, THEME_STORAGE_KEY, THEME_TEMPLATE_STORAGE_KEY, themeAppearanceCssVariables, themeAppearanceForTemplate, type DesktopIconOverrides, type DesktopTitleOverrides, type ThemeAppearanceConfig, type ThemeMode, type ThemeTemplate, validateCustomCss, writeCustomCss, writeDesktopIconOverrides, writeDesktopTitleOverrides, writeThemeAppearance } from './ui/theme/preferences';
@@ -252,6 +254,7 @@ const newEmbeddingConfig = (): EmbeddingConfig => ({ id: 'embedding', enabled: f
 const newTtsConfig = (): TtsConfig => ({ id: `tts-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: '新语音配置', enabled: false, endpoint: '', model: '', voice: 'alloy', format: 'mp3', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
 const newImageConfig = (): ImageConfig => ({ id: 'image', size: '1024x1024', stylePrompt: '', responseFormat: 'b64_json', referenceMode: 'none', multiReferenceEnabled: false, requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
 const newChatMessageId = (characterId: string) => `${characterId}-chat-${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`;
+const newPlaceHighlightId = () => `place-highlight-${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`;
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 function imageBase64ToBlob(base64: string, mimeType = 'image/png'): Blob {
   const binary = atob(base64);
@@ -293,7 +296,7 @@ function formatByteSize(bytes: number): string {
 }
 const TASK_LABELS: Record<TaskId, string> = {
   narrate_main: '主线叙述', narrate_daily: '日常对话', topic_tree: '话题树', world_morning: '晨间世界更新',
-  world_gen: '世界生成', map_gen: '地图生成', npc_batch: 'NPC 批处理', extract_ops: '状态变化整理', summarize_memory: '记忆整理',
+  world_gen: '世界生成', map_gen: '地图生成', map_activity_gen: '地点动态生成', npc_batch: 'NPC 批处理', extract_ops: '状态变化整理', summarize_memory: '记忆整理',
   summarize_day: '日记总结', summarize_chapter: '章节总结', workshop_draft: '工坊 Agent', image: '图像生成', tts: '语音生成',
 };
 const MOCK_FIXTURE_DESCRIPTIONS: Record<MockFixtureId, string> = {
@@ -445,6 +448,7 @@ export function App() {
   const [includeChatsOnExport, setIncludeChatsOnExport] = useState(true);
   const [summarizingDay, setSummarizingDay] = useState<number | null>(null);
   const [mapGenerating, setMapGenerating] = useState(false);
+  const [placeHighlightGenerating, setPlaceHighlightGenerating] = useState(false);
   const [activeEncounter, setActiveEncounter] = useState<ActiveEncounter | null>(null);
   const [encounterParticipantIds, setEncounterParticipantIds] = useState<string[]>([]);
   const [encounterPrimaryId, setEncounterPrimaryId] = useState('');
@@ -1869,6 +1873,11 @@ export function App() {
   function removeMapNode(nodeId: string): boolean {
     const node = saveRef.current.world.map.nodes[nodeId];
     if (!node) return false;
+    const highlightReferences = placeHighlightReferences(saveRef.current.world.placeHighlights, nodeId);
+    if (highlightReferences.length) {
+      setFeedback({ tone: 'error', text: `“${node.name}”仍被 ${highlightReferences.length} 条地点动态引用，请先删除或迁移这些动态。` });
+      return false;
+    }
     if (saveRef.current.world.player.homeNodeId === nodeId || saveRef.current.world.player.housing?.nodeId === nodeId) {
       setFeedback({ tone: 'error', text: '当前住所不能删除；退租或迁居流程将在后续住所切片提供。' });
       return false;
@@ -1904,6 +1913,8 @@ export function App() {
       if (housingNodeId && !map.nodes[housingNodeId]) throw new Error('新地图没有保留当前住所，已拒绝覆盖。');
       const jobNodeId = saveRef.current.world.player.job?.nodeId;
       if (jobNodeId && !map.nodes[jobNodeId]) throw new Error('新地图没有保留当前工作地点，已拒绝覆盖。');
+      const missingHighlightNode = saveRef.current.world.placeHighlights.find((item) => !map.nodes[item.nodeId]);
+      if (missingHighlightNode) throw new Error(`新地图没有保留地点动态引用的地点 ${missingHighlightNode.nodeId}，已拒绝覆盖。`);
       const next = structuredClone(saveRef.current); next.world.map = map; commitSave(next);
       setFeedback({ tone: 'success', text: `地图生成成功：${Object.keys(map.nodes).length} 个地点。` });
     } catch (error) {
@@ -1948,6 +1959,87 @@ export function App() {
       setFeedback({ tone: 'error', text: errorMessage(error, '地点名称与描述生成失败。') });
       return null;
     } finally { setMapGenerating(false); }
+  }
+
+  function createPlaceHighlightForWorld(input: PlaceHighlightInput): boolean {
+    try {
+      const current = saveRef.current;
+      const next = structuredClone(current);
+      next.world.placeHighlights = createPlaceHighlight(current.world.placeHighlights, current.world.map, input, { id: newPlaceHighlightId(), day: current.world.clock.day, source: 'manual' });
+      commitSave(next);
+      setFeedback({ tone: 'success', text: '地点动态已创建。' });
+      return true;
+    } catch (error) {
+      setFeedback({ tone: 'error', text: errorMessage(error, '无法创建地点动态。') });
+      return false;
+    }
+  }
+
+  function updatePlaceHighlightForWorld(highlightId: string, input: PlaceHighlightInput): boolean {
+    try {
+      const current = saveRef.current;
+      const next = structuredClone(current);
+      next.world.placeHighlights = updatePlaceHighlight(current.world.placeHighlights, current.world.map, highlightId, input, current.world.clock.day);
+      commitSave(next);
+      setFeedback({ tone: 'success', text: '地点动态已更新。' });
+      return true;
+    } catch (error) {
+      setFeedback({ tone: 'error', text: errorMessage(error, '无法更新地点动态。') });
+      return false;
+    }
+  }
+
+  function deletePlaceHighlightForWorld(highlightId: string): void {
+    const item = saveRef.current.world.placeHighlights.find((highlight) => highlight.id === highlightId);
+    if (!item || !window.confirm(`确定删除地点动态“${item.title}”吗？`)) return;
+    try {
+      const next = structuredClone(saveRef.current);
+      next.world.placeHighlights = deletePlaceHighlight(next.world.placeHighlights, highlightId);
+      commitSave(next);
+      setFeedback({ tone: 'success', text: '地点动态已删除。' });
+    } catch (error) {
+      setFeedback({ tone: 'error', text: errorMessage(error, '无法删除地点动态。') });
+    }
+  }
+
+  async function generatePlaceHighlightDrafts(input: { nodeId?: string; count: number; requirements: string }): Promise<PlaceHighlightDraft[]> {
+    const routedProvider = resolveProviderForTask(providers, bindings, 'map_activity_gen', defaultProviderId);
+    if (!routedProvider) {
+      setFeedback({ tone: 'error', text: '请先在设置中配置 map_activity_gen Provider。' });
+      return [];
+    }
+    setPlaceHighlightGenerating(true);
+    let generated = '';
+    try {
+      const current = saveRef.current;
+      const nodes = selectPlaceHighlightNodes(current.world.map, input.nodeId ? 1 : input.count, Math.random, input.nodeId);
+      const messages = buildPlaceHighlightGenerationMessages(nodes, input.requirements);
+      await streamChat(ProviderConfigSchema.parse(routedProvider), messages, (delta) => { generated += delta; }, { taskId: 'map_activity_gen', outputMode: 'json_object' });
+      const drafts = parseGeneratedPlaceHighlights(generated, nodes.map((node) => node.id));
+      setFeedback({ tone: 'success', text: `已生成 ${drafts.length} 条可编辑草稿；确认前不会写入存档。` });
+      return drafts;
+    } catch (error) {
+      setFeedback({ tone: 'error', text: errorMessage(error, '地点动态生成失败。') });
+      return [];
+    } finally {
+      setPlaceHighlightGenerating(false);
+    }
+  }
+
+  function confirmPlaceHighlightDrafts(drafts: PlaceHighlightDraft[]): boolean {
+    try {
+      const validated = drafts.map((draft) => PlaceHighlightDraftSchema.parse(draft));
+      if (!validated.length) throw new Error('没有可保存的地点动态草稿。');
+      const current = saveRef.current;
+      const next = structuredClone(current);
+      next.world.placeHighlights = confirmGeneratedPlaceHighlights(current.world.placeHighlights, current.world.map, validated, current.world.clock.day, () => newPlaceHighlightId());
+      commitSave(next);
+      setFeedback({ tone: 'success', text: `已保存 ${validated.length} 条地点动态。` });
+      return true;
+    } catch (error) {
+      setFeedback({ tone: 'error', text: errorMessage(error, '地点动态草稿无效。') });
+      return false;
+    }
   }
 
   async function restoreSnapshot(id: string): Promise<void> {
@@ -4302,7 +4394,7 @@ export function App() {
     {tab !== 'map' && <header className={`topbar ${tab === 'chat' ? 'chat-topbar' : ''}`}><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small>{editingAppName ? <form className="app-name-editor" onSubmit={(event) => { event.preventDefault(); saveAppName(); }}><input aria-label="应用名称" value={appNameDraft} maxLength={32} autoFocus onChange={(event) => setAppNameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setAppNameDraft(appName); setEditingAppName(false); } }} /><button type="submit" className="app-name-save">保存</button><button type="button" className="app-name-cancel" onClick={() => { setAppNameDraft(appName); setEditingAppName(false); }}>取消</button></form> : <button type="button" className="app-name-trigger" aria-label="编辑应用名称" title="编辑应用名称" onClick={() => { setAppNameDraft(appName); setEditingAppName(true); }}><h1>{appName}{tab === 'chat' && <span className="topbar-context"> · 面对面</span>}</h1></button>}</div></header>}
     <main className={`screen ${desktopScreen ? 'desktop-screen-host' : ''} ${tab === 'chat' ? 'chat-screen-host' : ''} ${tab === 'map' ? 'map-screen-host' : ''} ${tab === 'library' && libraryPage === 'messages' ? 'terminal-message-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
-      {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} encounterPrimaryId={encounterPrimaryId} onEncounterParticipantIdsChange={(ids) => { setEncounterParticipantIds(ids); if (!ids.includes(encounterPrimaryId)) setEncounterPrimaryId(ids.length === 1 ? ids[0] : ''); }} onEncounterPrimaryIdChange={setEncounterPrimaryId} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onSetBackgroundUrl={setMapBackgroundUrl} onImportSceneBackground={importSceneBackground} onSetSceneBackgroundUrl={setSceneBackgroundUrl} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
+      {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} encounterPrimaryId={encounterPrimaryId} onEncounterParticipantIdsChange={(ids) => { setEncounterParticipantIds(ids); if (!ids.includes(encounterPrimaryId)) setEncounterPrimaryId(ids.length === 1 ? ids[0] : ''); }} onEncounterPrimaryIdChange={setEncounterPrimaryId} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onSetBackgroundUrl={setMapBackgroundUrl} onImportSceneBackground={importSceneBackground} onSetSceneBackgroundUrl={setSceneBackgroundUrl} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} onCreatePlaceHighlight={createPlaceHighlightForWorld} onUpdatePlaceHighlight={updatePlaceHighlightForWorld} onDeletePlaceHighlight={deletePlaceHighlightForWorld} onGeneratePlaceHighlights={generatePlaceHighlightDrafts} onConfirmPlaceHighlights={confirmPlaceHighlightDrafts} placeHighlightGenerating={placeHighlightGenerating} />}
       {tab === 'day' && <DayView {...dayViewProps} activePage={dayPage} onOpenPage={setDayPage} onBack={() => setDayPage(null)} />}
       {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} onGenerateVoice={generateChatVoice} onDownloadVoice={(index) => downloadVoiceAsset(messages[index]?.voice?.asset, `chat-${messages[index]?.id ?? index}`)} onGenerateCg={generateChatCg} onDownloadCg={(index) => downloadImageAsset(messages[index]?.cg?.asset, `chat-cg-${messages[index]?.id ?? index}`)} onDeleteCg={deleteChatCg} imageBusy={imageBusy} imageConfigured={Boolean(imageConfig.providerId && providers.some((item) => item.id === imageConfig.providerId && item.kind === 'openai-compatible'))} voiceAvailableCharacterIds={Object.keys(save.world.characters).filter((characterId) => Boolean(resolveTtsProviderForCharacter(ttsConfigs, characterBindings, save.meta.id, characterId, defaultTtsConfigId)?.enabled))} ttsBusy={ttsBusy} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} interrupted={Boolean(chatRecovery && (chatRecovery.status === 'interrupted' || chatRecovery.status === 'error'))} onRetryInterrupted={retryInterruptedReply} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} openingRetryAvailable={openingRetryAvailable} onRetryOpening={retryEncounterOpening} onChooseSceneMode={chooseSceneMode} hasFormalPrimary={Boolean(save.world.characters[selectedCharacterId])} formalToolsAvailable={chatParticipantIds.some((id) => Boolean(save.world.characters[id]))} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
       {tab === 'library' && libraryDayPage && <DayView {...dayViewProps} activePage={libraryDayPage} onOpenPage={() => undefined} onBack={() => setLibraryPage(null)} shellEyebrow="终端" />}
@@ -4317,7 +4409,39 @@ export function App() {
   </div>;
 }
 
-function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, encounterPrimaryId, onEncounterParticipantIdsChange, onEncounterPrimaryIdChange, onEncounterOutcome, onContinueEncounter, onMove, onImportBackground, onSetBackgroundUrl, onImportSceneBackground, onSetSceneBackgroundUrl, onRemoveSceneBackground, onToggleMode, onCreateNode, onEditNode, onDeleteNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating }: { save: SaveFile; worldbooks: WorldbookEntry[]; activeEncounter: ActiveEncounter | null; encounterParticipantIds: string[]; encounterPrimaryId: string; onEncounterParticipantIdsChange: (ids: string[]) => void; onEncounterPrimaryIdChange: (id: string) => void; onEncounterOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinueEncounter: () => void; onMove: (nodeId: string) => void; onImportBackground: (file?: File) => Promise<void>; onSetBackgroundUrl: (url: string) => Promise<void>; onImportSceneBackground: (nodeId: string, file?: File) => Promise<void>; onSetSceneBackgroundUrl: (nodeId: string, url: string) => Promise<void>; onRemoveSceneBackground: (nodeId: string) => Promise<void>; onToggleMode: () => void; onCreateNode: (input: CreateMapNodeInput) => boolean; onEditNode: (nodeId: string, input: UpdateMapNodeInput) => boolean; onDeleteNode: (nodeId: string) => boolean; onSuggestNode: (input: { requirements: string; regionName: string; anchorName: string }) => Promise<{ name: string; description: string } | null>; onGenerateMap: (requirements?: string) => Promise<void>; onExpandMap: (anchorNodeId: string, count: number, requirements?: string) => Promise<void>; mapGenerating: boolean }) {
+interface MapViewProps {
+  save: SaveFile;
+  worldbooks: WorldbookEntry[];
+  activeEncounter: ActiveEncounter | null;
+  encounterParticipantIds: string[];
+  encounterPrimaryId: string;
+  onEncounterParticipantIdsChange: (ids: string[]) => void;
+  onEncounterPrimaryIdChange: (id: string) => void;
+  onEncounterOutcome: (outcome: 'continued' | 'urgent_leave') => void;
+  onContinueEncounter: () => void;
+  onMove: (nodeId: string) => boolean;
+  onImportBackground: (file?: File) => Promise<void>;
+  onSetBackgroundUrl: (url: string) => Promise<void>;
+  onImportSceneBackground: (nodeId: string, file?: File) => Promise<void>;
+  onSetSceneBackgroundUrl: (nodeId: string, url: string) => Promise<void>;
+  onRemoveSceneBackground: (nodeId: string) => Promise<void>;
+  onToggleMode: () => void;
+  onCreateNode: (input: CreateMapNodeInput) => boolean;
+  onEditNode: (nodeId: string, input: UpdateMapNodeInput) => boolean;
+  onDeleteNode: (nodeId: string) => boolean;
+  onSuggestNode: (input: { requirements: string; regionName: string; anchorName: string }) => Promise<{ name: string; description: string } | null>;
+  onGenerateMap: (requirements?: string) => Promise<void>;
+  onExpandMap: (anchorNodeId: string, count: number, requirements?: string) => Promise<void>;
+  mapGenerating: boolean;
+  onCreatePlaceHighlight: (input: PlaceHighlightInput) => boolean;
+  onUpdatePlaceHighlight: (id: string, input: PlaceHighlightInput) => boolean;
+  onDeletePlaceHighlight: (id: string) => void;
+  onGeneratePlaceHighlights: (input: { nodeId?: string; count: number; requirements: string }) => Promise<PlaceHighlightDraft[]>;
+  onConfirmPlaceHighlights: (drafts: PlaceHighlightDraft[]) => boolean;
+  placeHighlightGenerating: boolean;
+}
+
+function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, encounterPrimaryId, onEncounterParticipantIdsChange, onEncounterPrimaryIdChange, onEncounterOutcome, onContinueEncounter, onMove, onImportBackground, onSetBackgroundUrl, onImportSceneBackground, onSetSceneBackgroundUrl, onRemoveSceneBackground, onToggleMode, onCreateNode, onEditNode, onDeleteNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating, onCreatePlaceHighlight, onUpdatePlaceHighlight, onDeletePlaceHighlight, onGeneratePlaceHighlights, onConfirmPlaceHighlights, placeHighlightGenerating }: MapViewProps) {
   type MapSheetState = 'collapsed' | 'half' | 'expanded';
   const map = save.world.map;
   const currentNode = map.nodes[save.world.player.nodeId];
@@ -4343,6 +4467,7 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, e
   const [offset, setOffset] = useState(initialViewport.offset);
   const [viewportHydratedKey, setViewportHydratedKey] = useState(viewportStorageKey);
   const [selectedMapNodeId, setSelectedMapNodeId] = useState<string | null>(null);
+  const [placeHighlightsOpen, setPlaceHighlightsOpen] = useState(false);
   const [toolSheetState, setToolSheetState] = useState<MapSheetState>('collapsed');
   const [detailSheetState, setDetailSheetState] = useState<MapSheetState>('expanded');
   const [toolSheetProgress, setToolSheetProgress] = useState(0);
@@ -4391,6 +4516,11 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, e
     return { byNode, visuals };
   }, [map.nodes, save.config.calendar.daysPerWeek, save.world]);
   const encounterTraces = useMemo(() => Object.fromEntries(Object.values(map.nodes).filter((node) => node.discovered).map((node) => [node.id, recentEncounterTraces(save.world, node.id)])) as Record<string, EncounterTrace[]>, [map.nodes, save.world]);
+  const visibleHighlightsByNode = useMemo(() => {
+    const grouped: Record<string, SaveFile['world']['placeHighlights']> = {};
+    for (const item of visiblePlaceHighlights(save.world.placeHighlights, map)) (grouped[item.nodeId] ??= []).push(item);
+    return grouped;
+  }, [map, save.world.placeHighlights]);
   const [mapAvatarUrls, setMapAvatarUrls] = useState<Record<string, string>>({});
   useEffect(() => {
     let cancelled = false;
@@ -4561,13 +4691,13 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, e
   return <section className="map-screen">
     <div className="map-top-panel">
       <div className="map-toolbar"><div className="map-title"><strong>{currentNode?.name ?? save.world.player.nodeId}</strong></div><div className="map-toolbar-meta"><span>第 {save.world.clock.day} 天 · {currentSlotName}</span>{energy?.enabled && <span>体力 {energy.current}/{energy.max}</span>}<span>{map.view.mode === 'graph' ? 'Graph' : 'Hotspot'} · {Math.round(zoom * 100)}%</span></div></div>
-      <div className="map-quick-actions" aria-label="地图快捷操作"><button type="button" className={`map-icon-button ${editorMode ? 'active' : ''}`} aria-label={editorMode ? '退出编辑地图' : '编辑地图'} title={editorMode ? '退出编辑地图' : '编辑地图'} onClick={() => { setEditorMode((value) => !value); closeEditor(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16.5V20h3.5L18.8 8.7l-3.5-3.5L4 16.5Z" /><path d="m14.3 6.7 3.5 3.5M4 20h16" /></svg></button><button type="button" className="map-icon-button" aria-label={`切换到 ${map.view.mode === 'graph' ? 'Hotspot' : 'Graph'}`} title={`切换到 ${map.view.mode === 'graph' ? 'Hotspot' : 'Graph'}`} onClick={onToggleMode}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5 12 3l8 2.5L12 8 4 5.5Z" /><path d="m4 12 8 3.5 8-3.5M4 16.5 12 20l8-3.5" /></svg></button></div>
+      <div className="map-quick-actions" aria-label="地图快捷操作"><button type="button" className={`map-icon-button ${placeHighlightsOpen ? 'active' : ''}`} aria-label="地点动态" title="地点动态" onClick={() => setPlaceHighlightsOpen(true)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v11H8l-3 3V5Z" /><path d="M8 9h8M8 12h5" /></svg></button><button type="button" className={`map-icon-button ${editorMode ? 'active' : ''}`} aria-label={editorMode ? '退出编辑地图' : '编辑地图'} title={editorMode ? '退出编辑地图' : '编辑地图'} onClick={() => { setEditorMode((value) => !value); closeEditor(); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16.5V20h3.5L18.8 8.7l-3.5-3.5L4 16.5Z" /><path d="m14.3 6.7 3.5 3.5M4 20h16" /></svg></button><button type="button" className="map-icon-button" aria-label={`切换到 ${map.view.mode === 'graph' ? 'Hotspot' : 'Graph'}`} title={`切换到 ${map.view.mode === 'graph' ? 'Hotspot' : 'Graph'}`} onClick={onToggleMode}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5 12 3l8 2.5L12 8 4 5.5Z" /><path d="m4 12 8 3.5 8-3.5M4 16.5 12 20l8-3.5" /></svg></button></div>
     </div>
     <div ref={mapCanvasRef} className="map-canvas" onClick={handleMapCanvasClick} onWheel={mapWheel} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
       {map.view.mode === 'graph' ? <svg ref={graphSurfaceRef} className={`map-svg ${editorMode ? 'editing' : ''}`} style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: '0 0' }} viewBox={`0 0 ${map.view.size.w} ${map.view.size.h}`} role="img" aria-label="世界地图">
         <g className="map-edges">{map.edges.map((edge) => { const from = map.nodes[edge.from]; const to = map.nodes[edge.to]; if (!from || !to) return null; const visible = from.discovered || to.discovered; return <line key={edgeKey(edge)} className={visible ? '' : 'fog'} x1={from.pos.x} y1={from.pos.y} x2={to.pos.x} y2={to.pos.y} />; })}</g>
-        <g className="map-nodes">{nodes.map((node) => { const isCurrent = node.id === save.world.player.nodeId; const canSelect = node.discovered; return <g key={node.id} className={`map-node ${node.discovered ? 'discovered' : 'undiscovered'} ${isCurrent ? 'current' : ''} ${selectedMapNodeId === node.id ? 'selected' : ''}`} role={editorMode || canSelect ? 'button' : undefined} tabIndex={editorMode || canSelect ? 0 : undefined} onClick={(event) => { event.stopPropagation(); if (editorMode) beginEditNode(node.id); else if (canSelect && !dragRef.current.moved) selectMapNode(node.id); }} onKeyDown={(event) => { if ((editorMode || canSelect) && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); if (editorMode) beginEditNode(node.id); else if (canSelect) selectMapNode(node.id); } }}><circle cx={node.pos.x} cy={node.pos.y} r={isCurrent ? 28 : 23} /><text x={node.pos.x} y={node.pos.y + 50} textAnchor="middle">{node.discovered ? node.name : '未发现地点'}</text>{isCurrent && <text className="map-node-marker" x={node.pos.x} y={node.pos.y + 6} textAnchor="middle">你</text>}<GraphMapPresence people={mapPresence.byNode[node.id] ?? []} visuals={mapPresence.visuals} avatarUrls={mapAvatarUrls} x={node.pos.x} y={node.pos.y} />{encounterTraces[node.id]?.[0] && <text className="map-node-trace" x={node.pos.x} y={node.pos.y + 66} textAnchor="middle">{encounterTraceLabel(encounterTraces[node.id][0])}</text>}</g>; })}</g>
-      </svg> : <div className="hotspot-editor"><div ref={hotspotSurfaceRef} className={`hotspot-canvas ${editorMode ? 'editing' : ''}`} style={{ aspectRatio: `${map.view.size.w} / ${map.view.size.h}`, backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined, transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: '0 0' }} role="application" aria-label="Hotspot 地图">{nodes.map((node) => { const isCurrent = node.id === save.world.player.nodeId; const canSelect = node.discovered; return <button key={node.id} className={`hotspot-pin ${isCurrent ? 'current' : ''} ${selectedMapNodeId === node.id ? 'selected' : ''}`} style={{ left: `${(node.pos.x / map.view.size.w) * 100}%`, top: `${(node.pos.y / map.view.size.h) * 100}%` }} onClick={(event) => { event.stopPropagation(); if (editorMode) beginEditNode(node.id); else if (canSelect) selectMapNode(node.id); }} title={node.name}><span className="hotspot-pin-label">{node.discovered ? node.name : '未发现'}</span><HotspotMapPresence people={mapPresence.byNode[node.id] ?? []} visuals={mapPresence.visuals} avatarUrls={mapAvatarUrls} />{encounterTraces[node.id]?.[0] && <span className="hotspot-trace">{encounterTraceLabel(encounterTraces[node.id][0])}</span>}</button>; })}{!backgroundUrl && <span className="hotspot-empty">上传底图后可使用热点地图；编辑模式下点击空白处创建地点。</span>}</div><p className="io-scope">普通模式点击已发现图钉查看详情，展开地点抽屉后可前往；编辑模式点击图钉可修改地点，点击空白处可新建。</p></div>}
+        <g className="map-nodes">{nodes.map((node) => { const isCurrent = node.id === save.world.player.nodeId; const canSelect = node.discovered; const highlightCount = visibleHighlightsByNode[node.id]?.length ?? 0; return <g key={node.id} className={`map-node ${node.discovered ? 'discovered' : 'undiscovered'} ${isCurrent ? 'current' : ''} ${selectedMapNodeId === node.id ? 'selected' : ''}`} role={editorMode || canSelect ? 'button' : undefined} tabIndex={editorMode || canSelect ? 0 : undefined} onClick={(event) => { event.stopPropagation(); if (editorMode) beginEditNode(node.id); else if (canSelect && !dragRef.current.moved) selectMapNode(node.id); }} onKeyDown={(event) => { if ((editorMode || canSelect) && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); if (editorMode) beginEditNode(node.id); else if (canSelect) selectMapNode(node.id); } }}><circle cx={node.pos.x} cy={node.pos.y} r={isCurrent ? 28 : 23} /><text x={node.pos.x} y={node.pos.y + 50} textAnchor="middle">{node.discovered ? node.name : '未发现地点'}</text>{isCurrent && <text className="map-node-marker" x={node.pos.x} y={node.pos.y + 6} textAnchor="middle">你</text>}{highlightCount > 0 && <text className="map-place-highlight-marker" x={node.pos.x + 29} y={node.pos.y - 22} textAnchor="middle">{highlightCount}</text>}<GraphMapPresence people={mapPresence.byNode[node.id] ?? []} visuals={mapPresence.visuals} avatarUrls={mapAvatarUrls} x={node.pos.x} y={node.pos.y} />{encounterTraces[node.id]?.[0] && <text className="map-node-trace" x={node.pos.x} y={node.pos.y + 66} textAnchor="middle">{encounterTraceLabel(encounterTraces[node.id][0])}</text>}</g>; })}</g>
+      </svg> : <div className="hotspot-editor"><div ref={hotspotSurfaceRef} className={`hotspot-canvas ${editorMode ? 'editing' : ''}`} style={{ aspectRatio: `${map.view.size.w} / ${map.view.size.h}`, backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined, transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: '0 0' }} role="application" aria-label="Hotspot 地图">{nodes.map((node) => { const isCurrent = node.id === save.world.player.nodeId; const canSelect = node.discovered; const highlightCount = visibleHighlightsByNode[node.id]?.length ?? 0; return <button key={node.id} className={`hotspot-pin ${isCurrent ? 'current' : ''} ${selectedMapNodeId === node.id ? 'selected' : ''}`} style={{ left: `${(node.pos.x / map.view.size.w) * 100}%`, top: `${(node.pos.y / map.view.size.h) * 100}%` }} onClick={(event) => { event.stopPropagation(); if (editorMode) beginEditNode(node.id); else if (canSelect) selectMapNode(node.id); }} title={node.name}><span className="hotspot-pin-label">{node.discovered ? node.name : '未发现'}</span>{highlightCount > 0 && <span className="hotspot-place-highlight-marker">{highlightCount}</span>}<HotspotMapPresence people={mapPresence.byNode[node.id] ?? []} visuals={mapPresence.visuals} avatarUrls={mapAvatarUrls} />{encounterTraces[node.id]?.[0] && <span className="hotspot-trace">{encounterTraceLabel(encounterTraces[node.id][0])}</span>}</button>; })}{!backgroundUrl && <span className="hotspot-empty">上传底图后可使用热点地图；编辑模式下点击空白处创建地点。</span>}</div><p className="io-scope">普通模式点击已发现图钉查看详情，展开地点抽屉后可前往；编辑模式点击图钉可修改地点，点击空白处可新建。</p></div>}
       {editorMode && !editorPos && <div className="map-editor-hint">点击空白处新建地点，或点击已有节点进行编辑；仍可拖动和缩放地图。</div>}
       {editorPos && <div className="map-editor-card" role="dialog" aria-label="新建地点" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
         <div className="list-heading"><strong>{editorNodeId ? '编辑地点' : '新建地点'}</strong><small>坐标 X {Math.round(editorPos.x)} / Y {Math.round(editorPos.y)}</small></div>
@@ -4596,6 +4726,7 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, e
       <summary onPointerDown={beginSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={handleSheetClick('detail')}><span>{selectedMapNode?.name ?? '地点详情'}</span><span>{detailSheetState === 'expanded' ? '向下收起' : '继续展开'}</span></summary>
       <div className="map-menu-content"><div className="place-card"><span className="eyebrow">{selectedMapNode?.id === currentNode?.id ? '当前位置' : '地点详情'}</span><h2>{selectedMapNode?.name ?? save.world.player.nodeId}</h2><p>{selectedMapNode?.description ?? '从地图出发，去遇见今天的世界。'}</p>{selectedMapNode && <div className="place-details"><span>区域<strong>{map.regions[selectedMapNode.regionId]?.name ?? selectedMapNode.regionId}</strong></span><span>类型<strong>{selectedMapNode.kind.length ? selectedMapNode.kind.join('、') : '未分类'}</strong></span><span>开放<strong>{selectedMapNode.openSlots?.length ? selectedMapNode.openSlots.map((id) => save.config.calendar.slots.find((slot) => slot.id === id)?.name ?? id).join('、') : '始终开放'}</strong></span><span>范围<strong>{selectedScope}</strong></span></div>}<div className="button-row">{selectedMapNode && selectedMapNode.id !== currentNode?.id && <button onClick={() => onMove(selectedMapNode.id)} disabled={!selectedMoveAffordable}>前往此地{energy?.enabled && <small>{selectedMoveAffordable ? `体力 -${selectedMoveEnergyCost}` : `体力不足 · 需要 ${selectedMoveEnergyCost}`}</small>}</button>}{selectedMapNode && <span className="map-meta">访问 {selectedMapNode.visitCount} 次</span>}</div>{selectedMapNode && <PresenceList people={whoIsHere(save.world, selectedMapNode.id, save.world.clock.day, save.world.clock.slotId, save.config.calendar.daysPerWeek)} scope={selectedScope} />}<EncounterTraceList traces={selectedMapNode ? encounterTraces[selectedMapNode.id] ?? [] : []} /></div></div>
     </details>}
+    <PlaceHighlightsDrawer save={save} open={placeHighlightsOpen} busy={placeHighlightGenerating} onClose={() => setPlaceHighlightsOpen(false)} onCreate={onCreatePlaceHighlight} onUpdate={onUpdatePlaceHighlight} onDelete={onDeletePlaceHighlight} onGenerate={onGeneratePlaceHighlights} onConfirmDrafts={onConfirmPlaceHighlights} onNavigate={(nodeId) => { if (onMove(nodeId)) setPlaceHighlightsOpen(false); }} />
   </section>;
 }
 

@@ -28,8 +28,8 @@ describe('terminal contacts', () => {
     const world = legacy.world as Record<string, unknown>;
     delete world.terminal;
     const migrated = migrateSave(legacy);
-    expect(CURRENT_SCHEMA_VERSION).toBe(42);
-    expect(migrated.schemaVersion).toBe(42);
+    expect(CURRENT_SCHEMA_VERSION).toBe(43);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.terminal).toEqual({ friendRequests: [], messageThreads: {}, transferRequests: [], callRecords: [], appointmentRequests: [] });
     expect(migrated.world.characters.formal.name).toBe('正式角色');
   });
