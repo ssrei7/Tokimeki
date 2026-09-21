@@ -1,6 +1,12 @@
 import type { EncounterConfig, EncounterLogEntry, WorldState } from '../../data/schema/save';
 import { whoIsHere, type PresentCharacter } from './schedule';
 
+export const NPC_PREFERENCE_MAX_MATCHES = 4;
+export const NPC_PREFERENCE_BOOST_PER_MATCH = 0.35;
+export const NPC_PREFERENCE_AVOID_PENALTY_PER_MATCH = 0.2;
+export const NPC_PREFERENCE_MIN_FACTOR = 0.35;
+export const NPC_PREFERENCE_MAX_FACTOR = 2.4;
+
 export interface EncounterCandidate extends PresentCharacter {
   weight: number;
   daysSinceLastEncounter: number;
@@ -42,7 +48,7 @@ export function selectEncounterCandidates(options: EncounterSelectionOptions): E
   if (guaranteed[0]) selected.push(guaranteed[0]);
 
   const remaining = candidates.filter((candidate) => !selected.some((item) => item.id === candidate.id));
-  const rng = createRng(hashSeed(options.seed ?? 0, world.clock.day, slotId, options.nodeId));
+  const rng = createRng(hashSeed(options.seed ?? 0, day, slotId, options.nodeId));
   while (selected.length < limit && remaining.length) {
     const total = remaining.reduce((sum, candidate) => sum + candidate.weight, 0);
     if (!(total > 0)) break;
@@ -67,12 +73,32 @@ function buildCandidate(world: WorldState, config: EncounterConfig, person: Pres
   const daysSinceLastEncounter = daysSinceEncounter(world.encounterLog, person.id, day);
   const guarantee = Math.max(1, config.guaranteeAfterDays);
   const absenceFactor = 1 + Math.min(daysSinceLastEncounter, guarantee) / guarantee;
+  const preferenceFactor = person.tier === 'semi' ? npcPreferenceFactor(world, person.id) : 1;
   return {
     ...person,
-    weight: Number((configuredWeight * presenceFactor * proximityFactor * absenceFactor).toFixed(6)),
+    weight: Number((configuredWeight * presenceFactor * proximityFactor * absenceFactor * preferenceFactor).toFixed(6)),
     daysSinceLastEncounter,
     homeDistance,
   };
+}
+
+function npcPreferenceFactor(world: WorldState, npcId: string): number {
+  const preferences = world.director?.preferences;
+  const npc = world.npcs[npcId];
+  if (!preferences || !npc) return 1;
+  const preferred = new Set(preferences.npcPreferenceTags.map(normalizeTag).filter(Boolean));
+  const avoided = new Set(preferences.avoidTags.map(normalizeTag).filter(Boolean));
+  if (!preferred.size && !avoided.size) return 1;
+  const tags = new Set(npc.tags.map(normalizeTag).filter(Boolean));
+  const preferredMatches = [...tags].filter((tag) => preferred.has(tag)).length;
+  const avoidedMatches = [...tags].filter((tag) => avoided.has(tag)).length;
+  const boost = 1 + Math.min(preferredMatches, NPC_PREFERENCE_MAX_MATCHES) * NPC_PREFERENCE_BOOST_PER_MATCH;
+  const penalty = Math.max(NPC_PREFERENCE_MIN_FACTOR, 1 - Math.min(avoidedMatches, NPC_PREFERENCE_MAX_MATCHES) * NPC_PREFERENCE_AVOID_PENALTY_PER_MATCH);
+  return Math.max(NPC_PREFERENCE_MIN_FACTOR, Math.min(NPC_PREFERENCE_MAX_FACTOR, boost * penalty));
+}
+
+function normalizeTag(value: string): string {
+  return value.trim().toLocaleLowerCase();
 }
 
 function daysSinceEncounter(log: EncounterLogEntry[], characterId: string, day: number): number {

@@ -49,6 +49,31 @@ describe('deterministic encounter selection', () => {
     expect(save.world).toEqual(before);
   });
 
+  it('applies bounded local director tag weights only to semi-formal NPCs', () => {
+    const save = setup();
+    const baseline = selectEncounterCandidates({ world: save.world, config, nodeId: 'docks', day: 3, slotId: 'morning', seed: 42 });
+    save.world.director.preferences.npcPreferenceTags = [' Merchant ', '商贩'];
+    const preferred = selectEncounterCandidates({ world: save.world, config, nodeId: 'docks', day: 3, slotId: 'morning', seed: 42 });
+    expect(preferred.find((candidate) => candidate.id === 'vendor-1')?.weight).toBeGreaterThan(baseline.find((candidate) => candidate.id === 'vendor-1')!.weight);
+    expect(preferred.find((candidate) => candidate.id === 'seir')?.weight).toBe(baseline.find((candidate) => candidate.id === 'seir')?.weight);
+
+    save.world.director.preferences.npcPreferenceTags = [];
+    save.world.director.preferences.avoidTags = [' MERCHANT '];
+    const avoided = selectEncounterCandidates({ world: save.world, config, nodeId: 'docks', day: 3, slotId: 'morning', seed: 42 });
+    const avoidedWeight = avoided.find((candidate) => candidate.id === 'vendor-1')!.weight;
+    expect(avoidedWeight).toBeGreaterThan(0);
+    expect(avoidedWeight).toBeLessThan(baseline.find((candidate) => candidate.id === 'vendor-1')!.weight);
+  });
+
+  it('keeps guarantee priority above director avoidance', () => {
+    const save = setup();
+    save.world.director.preferences.avoidTags = ['merchant'];
+    save.world.characters.seir.schedule!.overrides['4:night'] = { nodeId: 'docks', activity: '夜间值守' };
+    save.world.encounterLog.push({ id: 'old', day: 1, slotId: 'morning', nodeId: 'docks', characterIds: ['vendor-1'], trigger: 'enter', scope: 'formal', outcome: 'continued' });
+    const selected = selectEncounterCandidates({ world: save.world, config: { ...config, maxParticipants: 1 }, nodeId: 'docks', day: 4, slotId: 'night', seed: 1 });
+    expect(selected[0].id).toBe('seir');
+  });
+
   it('runs a reproducible long-term distribution across fixed seeds', () => {
     const save = setup();
     save.world.characters = Object.fromEntries(['a', 'b', 'c', 'd', 'e'].map((id, index) => [id, {
