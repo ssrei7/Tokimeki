@@ -890,6 +890,14 @@ v41 新增 `world.terminal.appointmentRequests`。提议保存联系人、发起
 
 创建提议时必须本地校验联系人已是好友、日期晚于当前日期、时段存在于当前日历、地点存在于当前地图。玩家发起的提议在创建时直接记为 accepted；TA 发起的提议仍保持 pending，等待玩家接受或拒绝。提议被接受仍不会修改 `world.appointments`；只有玩家显式点击“加入日历”后，才通过现有 `make_appointment` 白名单再次校验并写入确定性预约。旧存档中的 pending outgoing 提议也可直接确认，确认成功后规范为 accepted。重复确认复用稳定 appointment ID，不重复插入，也不推进关系、时间、事件或剧情。
 
+### 16.6 面对面场景会话与半正式 NPC 轻互动（无 schema 变更）
+
+面对面场景的 UI 会话只保存在 `sessionStorage`，状态为 `opening / choice / topics / manual / ended`；旧版 `topics / manual / ended` 值继续兼容。会话记录主要互动对象、锁定参与者、地点与可选相遇记录 ID，但这些字段不是世界事实，不进入 `SaveFile`。页面恢复时不会重复自动调用开场：未完成的 `opening` 与缺失缓存树的 `topics` 都回到本地选择菜单，由用户显式重试。
+
+每次相遇的开场和后续面对面消息继续写入主要互动对象稳定 ID 对应的 Content IndexedDB `ChatRecord`。正式角色的 Prompt 投影读取完整角色卡；半正式 NPC 只读取 `facts / tags / lightMemory`，不创建正式角色卡、不建立关系轴，也不修改轻记忆。NPC 轻互动即使返回 `<ops>`，也只保留可读正文并拒绝全部状态操作；编辑或删除这些聊天文字同样不会回滚或生成世界事实。未来 NPC 转正时，既有 `ChatRecord` 可作为有界口吻参考。
+
+开场专用 Prompt context 预留 `playerPresentation`，只接受未来由内核确认的玩家外观/穿搭文字；当前版本不新增衣柜字段。开场缺少 Provider 或请求失败时，客户端只根据确定性日期、时段、地点、玩家名和参与者名生成本地到场描述，不写状态。SaveFile 因此保持 v42，Content IndexedDB 保持 v12。
+
 ---
 
 ## 17. 校验

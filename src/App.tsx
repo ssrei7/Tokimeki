@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type WheelEvent, type ReactNode } from 'react';
 import { PromptAssembler } from './core/prompt/assembler';
 import type { AssembledPrompt } from './core/prompt/assembler';
-import { createDefaultPromptBlocks } from './core/prompt/default-blocks';
+import { createDefaultPromptBlocks, type EncounterPromptParticipant } from './core/prompt/default-blocks';
 import { TOPIC_TREE_PROMPT_BLOCKS } from './core/prompt/topic-tree';
 import { EventBus } from './core/events/bus';
 import { evaluateEvidenceReaction, installEventDefs, listPendingEvents, resolveEventChoice, scheduleDirectorEvent, setScheduledEventRevealed, triggerScheduledEvent } from './core/events';
@@ -95,6 +95,7 @@ import './ui/theme/app.css';
 import { applyCustomCss, applyTheme, applyThemeAppearance, applyThemeTemplate, DEFAULT_THEME_APPEARANCE, parseDesktopIconOverrides, parseDesktopTitleOverrides, parseThemeAppearance, readCustomCss, readDesktopIconOverrides, readDesktopTitleOverrides, readThemeAppearance, readThemeMode, readThemeTemplate, resolveTheme, THEME_APPEARANCE_STORAGE_KEY, THEME_STORAGE_KEY, THEME_TEMPLATE_STORAGE_KEY, themeAppearanceCssVariables, themeAppearanceForTemplate, type DesktopIconOverrides, type DesktopTitleOverrides, type ThemeAppearanceConfig, type ThemeMode, type ThemeTemplate, validateCustomCss, writeCustomCss, writeDesktopIconOverrides, writeDesktopTitleOverrides, writeThemeAppearance } from './ui/theme/preferences';
 import { DEFAULT_APP_NAME, PRODUCT_NAME, resolveAppDisplayName } from './ui/branding';
 import { workshopPackageIdFromRoute, workshopRoute } from './ui/workshop-runtime';
+import { encounterPromptParticipant, encounterPromptParticipants, isFormalEncounterParticipant, localEncounterOpening, parseEncounterChatSession, rejectNpcTargetedOps, type EncounterChatSession, type EncounterSceneMode } from './ui/encounter-chat';
 
 type Tab = 'map' | 'day' | 'chat' | 'library' | 'settings';
 export type SettingsPage = 'player' | 'provider' | 'vector-memory' | 'voice' | 'image' | 'routing' | 'migration' | 'display' | 'rules' | 'privacy' | 'debug' | 'dev-tools';
@@ -181,7 +182,6 @@ type GiftGenerationContext = { giftId: string; itemId: string; itemName: string;
 type CollectionGenerationContext = { entryId: string; itemId: string; title: string; description: string; tags: string[]; evidenceReaction?: { eventId: string; response: string } };
 type TopicRetryContext = { charId: string; nodeId: string; participantIds: string[]; entryId?: string };
 type ActiveEncounter = { entryId: string; nodeId: string; scope: 'formal' | 'peripheral'; candidates: EncounterCandidate[] };
-type EncounterChatSession = { characterId: string; participantIds: string[]; nodeId: string; mode: 'topics' | 'manual' | 'ended'; entryId?: string; lastResponseSource?: 'topic' | 'manual' };
 type PendingMemoryCandidate = MemoryConsolidationCandidate & { sourceMessageIndices: number[] };
 type TerminalCallSession = { id: string; characterId: string; direction: 'outgoing' | 'incoming'; state: 'ringing' | 'active'; startedDay: number; startedSlotId: string };
 type DevToolReport = { title: string; body: string } | null;
@@ -233,11 +233,7 @@ function writeTerminalDraft(characterId: string, draft: string): void {
 function readEncounterChatSession(): EncounterChatSession | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.sessionStorage.getItem(ENCOUNTER_CHAT_SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<EncounterChatSession>;
-    if (typeof parsed.characterId !== 'string' || !Array.isArray(parsed.participantIds) || typeof parsed.nodeId !== 'string' || !['topics', 'manual', 'ended'].includes(parsed.mode ?? '')) return null;
-    return { characterId: parsed.characterId, participantIds: parsed.participantIds.filter((id): id is string => typeof id === 'string'), nodeId: parsed.nodeId, mode: parsed.mode as EncounterChatSession['mode'], ...(typeof parsed.entryId === 'string' ? { entryId: parsed.entryId } : {}), ...(parsed.lastResponseSource === 'topic' || parsed.lastResponseSource === 'manual' ? { lastResponseSource: parsed.lastResponseSource } : {}) };
+    return parseEncounterChatSession(window.sessionStorage.getItem(ENCOUNTER_CHAT_SESSION_KEY));
   } catch { return null; }
 }
 
@@ -451,12 +447,15 @@ export function App() {
   const [mapGenerating, setMapGenerating] = useState(false);
   const [activeEncounter, setActiveEncounter] = useState<ActiveEncounter | null>(null);
   const [encounterParticipantIds, setEncounterParticipantIds] = useState<string[]>([]);
+  const [encounterPrimaryId, setEncounterPrimaryId] = useState('');
   const [chatParticipantsLocked, setChatParticipantsLocked] = useState(() => Boolean(readEncounterChatSession()));
   const [chatEncounterEntryId, setChatEncounterEntryId] = useState(() => readEncounterChatSession()?.entryId ?? '');
   const [topicTree, setTopicTree] = useState<TopicTree | null>(null);
-  const [topicMode, setTopicMode] = useState<'topics' | 'manual' | 'ended'>('manual');
+  const [topicMode, setTopicMode] = useState<EncounterSceneMode>('manual');
   const [topicLoading, setTopicLoading] = useState(false);
   const [topicRetryContext, setTopicRetryContext] = useState<TopicRetryContext | null>(null);
+  const [openingRetryAvailable, setOpeningRetryAvailable] = useState(false);
+  const openingRequestRef = useRef('');
   const [lastResponseSource, setLastResponseSource] = useState<'topic' | 'manual' | null>(() => readEncounterChatSession()?.lastResponseSource ?? null);
   const [debugTab, setDebugTab] = useState<'Prompt' | 'Raw' | 'Ops' | 'State'>('Prompt');
   const [debug, setDebug] = useState<DebugState>({ prompt: null, raw: '', ops: '尚未解析状态变化。', state: JSON.stringify(defaultSave, null, 2) });
@@ -546,10 +545,11 @@ export function App() {
           setChatParticipantIds(session.participantIds);
           setSelectedCharacterId(session.characterId);
           setLastResponseSource(session.lastResponseSource ?? null);
-          const restoredTopicTree = parsedSave.world.topicTrees[topicTreeKey(session.characterId, session.nodeId)] ?? null;
-          const restoredMode = session.mode === 'topics' && !restoredTopicTree ? 'manual' : session.mode;
+          const restoredTopicTree = isFormalEncounterParticipant(parsedSave.world, session.characterId) ? parsedSave.world.topicTrees[topicTreeKey(session.characterId, session.nodeId)] ?? null : null;
+          const restoredMode: EncounterSceneMode = session.mode === 'opening' || (session.mode === 'topics' && !restoredTopicTree) ? 'choice' : session.mode;
           setTopicMode(restoredMode);
           setTopicTree(restoredTopicTree);
+          setOpeningRetryAvailable(session.mode === 'opening');
           if (restoredMode !== session.mode) writeEncounterChatSession({ ...session, mode: restoredMode });
         } else if (session) writeEncounterChatSession(null);
       } else {
@@ -631,7 +631,7 @@ export function App() {
         setInput(restored.input);
         if (restored.status === 'interrupted' || restored.status === 'error') {
           setRequestStatus('error');
-          if (restored.raw && !restored.opsApplied) setPendingOps({ raw: restored.raw, actorId: restored.actorId, messageIndex: restored.messageIndex, streamError: restored.error, requestId: restored.requestId });
+          if (restored.raw && !restored.opsApplied && !saveRef.current.world.npcs[selectedCharacterId]) setPendingOps({ raw: restored.raw, actorId: restored.actorId, messageIndex: restored.messageIndex, streamError: restored.error, requestId: restored.requestId });
           setFeedback({ tone: 'info', text: restored.status === 'interrupted' ? '上次回复在页面进入后台时中断，正文已保留；请手动重试。' : '上次回复未完成，正文已保留；请手动重试。' });
         }
         if (normalizedMessages.length) setMessages(normalizedMessages);
@@ -664,14 +664,13 @@ export function App() {
     return () => window.clearTimeout(timeout);
   }, [loadedChatCharacterId, messages, selectedCharacterId]);
 
-  const activeCharacter = characters.find((item) => item.id === selectedCharacterId);
   const chatDeparture = useMemo<EncounterDeparture | undefined>(() => {
     if (!chatEncounterEntryId) return undefined;
     return save.world.encounterLog.find((entry) => entry.id === chatEncounterEntryId)?.departure;
   }, [chatEncounterEntryId, save.world.encounterLog]);
-  const presentChatCharacters = useMemo(() => {
-    const presentIds = new Set(whoIsHere(save.world, save.world.player.nodeId, save.world.clock.day, save.world.clock.slotId, save.config.calendar.daysPerWeek).filter((person) => person.tier === 'formal').map((person) => person.id));
-    return characters.filter((character) => presentIds.has(character.id));
+  const presentChatCharacters = useMemo<EncounterPromptParticipant[]>(() => {
+    const presentIds = whoIsHere(save.world, save.world.player.nodeId, save.world.clock.day, save.world.clock.slotId, save.config.calendar.daysPerWeek).map((person) => person.id);
+    return encounterPromptParticipants(save.world, characters, presentIds);
   }, [characters, save.world, save.config.calendar.daysPerWeek]);
   const activePersona = personas.find((persona) => persona.id === save.world.player.personaId);
   useEffect(() => {
@@ -1553,7 +1552,9 @@ export function App() {
     if (result.settledDays.length) void ensureMorningBrief(next.world.clock.day);
     if (visitEntry && visitCandidates.length) {
       setActiveEncounter({ entryId: visitEntry.id, nodeId: visitEntry.nodeId, scope: visitEntry.scope, candidates: visitCandidates });
-      setEncounterParticipantIds(visitCandidates.filter((candidate) => candidate.tier === 'formal' && characters.some((character) => character.id === candidate.id)).map((candidate) => candidate.id));
+      const participantIds = visitCandidates.map((candidate) => candidate.id);
+      setEncounterParticipantIds(participantIds);
+      setEncounterPrimaryId(participantIds.length === 1 ? participantIds[0] : '');
       setTab('map');
     }
     const visitorNames = visitCandidates.map((candidate) => candidate.name).join('、');
@@ -1669,7 +1670,9 @@ export function App() {
     const encounter = triggerEncounter(next.world, next.config.encounter, { nodeId, trigger: 'enter', daysPerWeek: next.config.calendar.daysPerWeek, events: promptEvents });
     commitSave(next);
     setActiveEncounter(encounter.triggered && encounter.entry ? { entryId: encounter.entry.id, nodeId, scope: encounter.entry.scope, candidates: encounter.candidates } : null);
-    setEncounterParticipantIds(encounter.triggered ? encounter.candidates.filter((candidate) => candidate.tier === 'formal' && characters.some((character) => character.id === candidate.id)).map((candidate) => candidate.id) : []);
+    const participantIds = encounter.triggered ? encounter.candidates.map((candidate) => candidate.id) : [];
+    setEncounterParticipantIds(participantIds);
+    setEncounterPrimaryId(participantIds.length === 1 ? participantIds[0] : '');
     const moveEnergyCost = energyKind ? energyCostForAction(saveRef.current.world, saveRef.current.config.actionCosts, energyKind) : 0;
     const arrival = result.cost > 0 ? `已抵达${destination?.name ?? nodeId}，消耗 ${result.cost} 个时段${moveEnergyCost ? `、${moveEnergyCost} 点体力` : ''}。` : `已抵达${destination?.name ?? nodeId}${moveEnergyCost ? `，消耗 ${moveEnergyCost} 点体力` : ''}。`;
     const names = encounter.candidates.map((candidate) => candidate.name).join('、');
@@ -1687,6 +1690,7 @@ export function App() {
     commitSave(next);
     setActiveEncounter(null);
     setEncounterParticipantIds([]);
+    setEncounterPrimaryId('');
     writeEncounterChatSession(null);
     setChatEncounterEntryId('');
     setFeedback({ tone: 'info', text: outcome === 'continued' ? '你决定留下继续这次相遇。' : '你选择离开了。' });
@@ -2181,32 +2185,41 @@ export function App() {
   }
 
   async function generateTopicTree(charId: string, nodeId: string, participantIds: string[], encounterEntryId = chatEncounterEntryId): Promise<void> {
+    if (!isFormalEncounterParticipant(saveRef.current.world, charId)) {
+      setTopicTree(null);
+      setTopicMode('choice');
+      setFeedback({ tone: 'info', text: '半正式 NPC 暂不开放话题树，可以选择自由聊天。' });
+      return;
+    }
     markResponseSource(null);
     const key = topicTreeKey(charId, nodeId);
     const existing = saveRef.current.world.topicTrees[key];
     if (existing && isTopicTreeFresh(existing, saveRef.current.world.clock.day)) {
       setTopicTree(existing);
       setTopicMode('topics');
+      setTopicRetryContext(null);
+      writeEncounterChatSession({ characterId: charId, participantIds, nodeId, mode: 'topics', ...(encounterEntryId ? { entryId: encounterEntryId } : {}) });
       return;
     }
     const routedProvider = mockFixtureId
       ? createMockProviderConfig(mockFixtureId)
       : resolveProviderForTask(providers, bindings, 'topic_tree', defaultProviderId);
     if (!routedProvider) {
-      setTopicTree(null); setTopicMode('manual');
-      setFeedback({ tone: 'info', text: '未配置话题树 Provider，已直接解锁手动对话。' });
+      setTopicTree(null); setTopicMode('choice'); setTopicRetryContext({ charId, nodeId, participantIds, ...(encounterEntryId ? { entryId: encounterEntryId } : {}) });
+      writeEncounterChatSession({ characterId: charId, participantIds, nodeId, mode: 'choice', ...(encounterEntryId ? { entryId: encounterEntryId } : {}) });
+      setFeedback({ tone: 'info', text: '未配置话题树 Provider。你仍可自由聊天，或配置后重试。' });
       return;
     }
     let parsed: ProviderConfig;
     try { parsed = ProviderConfigSchema.parse(routedProvider); }
-    catch (error) { setTopicTree(null); setTopicMode('manual'); setFeedback({ tone: 'error', text: errorMessage(error, '话题树 Provider 配置无效。') }); return; }
+    catch (error) { setTopicTree(null); setTopicMode('choice'); setTopicRetryContext({ charId, nodeId, participantIds, ...(encounterEntryId ? { entryId: encounterEntryId } : {}) }); setFeedback({ tone: 'error', text: errorMessage(error, '话题树 Provider 配置无效。') }); return; }
     setTopicLoading(true); setTopicMode('topics'); setTopicRetryContext(null); setFeedback({ tone: 'info', text: '正在生成本次相遇的话题树…' });
     try {
-      const mainCharacter = characters.find((item) => item.id === charId);
+      const mainCharacter = encounterPromptParticipant(saveRef.current.world, characters, charId);
       const scene = saveRef.current.world.map.nodes[nodeId];
-      const participants = participantIds.map((id) => characters.find((item) => item.id === id)).filter((item): item is CharacterCard => Boolean(item));
+      const participants = encounterPromptParticipants(saveRef.current.world, characters, participantIds);
       const activePresetBundle = presetBundles.find((item) => item.id === selectedPresetBundleId);
-      const relationshipState = mainCharacter ? deriveRelationshipPromptState(saveRef.current.world, mainCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
+      const relationshipState = mainCharacter?.tier === 'formal' ? deriveRelationshipPromptState(saveRef.current.world, mainCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
       const promptFacts = {
         input: '',
         character: mainCharacter,
@@ -2236,7 +2249,7 @@ export function App() {
       commitSave(next);
       setTopicTree(tree); setTopicMode('topics'); writeEncounterChatSession({ characterId: charId, participantIds, nodeId, mode: 'topics', ...(encounterEntryId ? { entryId: encounterEntryId } : {}) }); setFeedback({ tone: 'success', text: `已生成 ${tree.topics.length} 个话题，点击话题不会再次调用 API。` });
     } catch (error) {
-      setTopicTree(null); setTopicMode('manual'); setTopicRetryContext({ charId, nodeId, participantIds, ...(encounterEntryId ? { entryId: encounterEntryId } : {}) }); writeEncounterChatSession({ characterId: charId, participantIds, nodeId, mode: 'manual', ...(encounterEntryId ? { entryId: encounterEntryId } : {}) }); setFeedback({ tone: 'info', text: `话题树生成失败，已解锁手动对话：${errorMessage(error, '生成失败')}。你可以稍后重试。` });
+      setTopicTree(null); setTopicMode('choice'); setTopicRetryContext({ charId, nodeId, participantIds, ...(encounterEntryId ? { entryId: encounterEntryId } : {}) }); writeEncounterChatSession({ characterId: charId, participantIds, nodeId, mode: 'choice', ...(encounterEntryId ? { entryId: encounterEntryId } : {}) }); setFeedback({ tone: 'info', text: `话题树生成失败：${errorMessage(error, '生成失败')}。你可以自由聊天或稍后重试。` });
     } finally { setTopicLoading(false); }
   }
 
@@ -2273,7 +2286,97 @@ export function App() {
     if (topic.terminal) { setTopicMode('ended'); writeEncounterChatSession({ characterId: selectedCharacterId, participantIds: chatParticipantIds, nodeId: next.world.player.nodeId, mode: 'ended', entryId: chatEncounterEntryId || undefined, lastResponseSource: 'topic' }); setFeedback({ tone: 'info', text: '这次话题推进结束了场景。' }); return; }
     const refreshed = next.world.topicTrees[topicTreeKey(selectedCharacterId, next.world.player.nodeId)];
     const remaining = refreshed?.topics.some((item) => topicVisibility(item, next.world, next.config.hiddenTopicStyle) === 'available');
-    if (!remaining) { setTopicMode('manual'); writeEncounterChatSession({ characterId: selectedCharacterId, participantIds: chatParticipantIds, nodeId: next.world.player.nodeId, mode: 'manual', entryId: chatEncounterEntryId || undefined, lastResponseSource: 'topic' }); setFeedback({ tone: 'info', text: '话题树已结束，现在可以自由输入。' }); }
+    if (!remaining) { setTopicMode('choice'); writeEncounterChatSession({ characterId: selectedCharacterId, participantIds: chatParticipantIds, nodeId: next.world.player.nodeId, mode: 'choice', entryId: chatEncounterEntryId || undefined, lastResponseSource: 'topic' }); setFeedback({ tone: 'info', text: '当前话题已经聊完，可以重新选择接下来的互动。' }); }
+  }
+
+  async function generateEncounterOpening(session: EncounterChatSession, retry = false): Promise<void> {
+    const requestKey = session.entryId || `${session.nodeId}:${session.characterId}`;
+    if (openingRequestRef.current === requestKey || (!retry && readEncounterChatSession()?.mode !== 'opening')) return;
+    openingRequestRef.current = requestKey;
+    const current = saveRef.current;
+    const openingId = `encounter-opening-${requestKey}`;
+    const fallback = localEncounterOpening(current.world, session.participantIds);
+    const upsertOpening = (base: ChatMessage[], content: string): ChatMessage[] => {
+      const message: ChatMessage = { id: openingId, role: 'assistant', content, speakerId: session.characterId };
+      const index = base.findIndex((item) => item.id === openingId);
+      return index >= 0 ? base.map((item, messageIndex) => messageIndex === index ? message : item) : [...base, message];
+    };
+    const finish = async (content: string, retryAvailable: boolean): Promise<void> => {
+      const record = await loadChat(session.characterId);
+      const completed = upsertOpening(record?.messages ?? [], content);
+      await saveChat({ characterId: session.characterId, messages: completed, updatedAt: now() });
+      if (selectedCharacterIdRef.current === session.characterId) setMessages(completed);
+      setOpeningRetryAvailable(retryAvailable);
+      setTopicMode('choice');
+      writeEncounterChatSession({ ...session, mode: 'choice' });
+    };
+    const routedProvider = mockFixtureId
+      ? createMockProviderConfig(mockFixtureId)
+      : resolveProviderForCharacter(providers, bindings, characterBindings, current.meta.id, session.characterId, 'narrate_main', defaultProviderId);
+    let parsed: ProviderConfig;
+    try {
+      if (!routedProvider) throw new Error('未配置可用的叙述 Provider。');
+      parsed = ProviderConfigSchema.parse(routedProvider);
+    } catch (error) {
+      await finish(fallback, true);
+      setFeedback({ tone: 'info', text: `${errorMessage(error, 'Provider 配置不可用')} 已使用本地到场描述；可以继续互动或稍后重试开场。` });
+      openingRequestRef.current = '';
+      return;
+    }
+    setBusy(true); setReplyInProgress(true); setRequestStatus('requesting'); setOpeningRetryAvailable(false);
+    const participants = encounterPromptParticipants(current.world, characters, session.participantIds);
+    const mainCharacter = encounterPromptParticipant(current.world, characters, session.characterId);
+    const firstEncounter = current.world.encounterLog.filter((entry) => entry.characterIds.includes(session.characterId)).length <= 1;
+    const activePresetBundle = presetBundles.find((item) => item.id === selectedPresetBundleId);
+    const relationshipState = mainCharacter?.tier === 'formal' ? deriveRelationshipPromptState(current.world, mainCharacter.id, current.config.stageRules, current.config.showNumbers) : undefined;
+    const promptFacts = { input: '', character: mainCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, worldbooks, history: [], world: current.world, interactionPolicy: 'opening' as const, openingContext: { firstEncounter } };
+    promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
+    const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
+    setDebug((debugState) => ({ ...debugState, prompt: assembled }));
+    const splitter = new OpsStreamSplitter();
+    let narrative = '';
+    try {
+      await streamChat(parsed, assembled.messages, (delta) => {
+        narrative += splitter.push(delta);
+        if (selectedCharacterIdRef.current === session.characterId) setMessages((base) => upsertOpening(base, narrative));
+      }, { taskId: 'narrate_main', onStatus: (status) => setRequestStatus(status) });
+      const finished = splitter.finish();
+      narrative += finished.text;
+      if (!narrative.trim()) throw new Error('Provider 未返回可读的开场正文。');
+      await finish(narrative, false);
+      setDebug((debugState) => ({ ...debugState, raw: finished.raw, ops: JSON.stringify({ discarded: finished.foundOps, message: '开场只保留叙述文字，不解析或应用状态操作。' }, null, 2) }));
+      setFeedback({ tone: 'success', text: '开场已生成。接下来可以自由选择互动方式。' });
+      void showGenerationCompleteNotification();
+    } catch (error) {
+      splitter.finish();
+      await finish(fallback, true);
+      setRequestStatus('error');
+      setFeedback({ tone: 'info', text: `开场生成失败，已使用本地到场描述：${errorMessage(error, '请求失败')}。可以继续互动或显式重试。` });
+    } finally {
+      openingRequestRef.current = '';
+      setBusy(false); setReplyInProgress(false);
+    }
+  }
+
+  function chooseSceneMode(mode: 'choice' | 'topics' | 'manual'): void {
+    if (!selectedCharacterId || busy) return;
+    const session = readEncounterChatSession();
+    if (!session) return;
+    if (mode === 'topics') {
+      void generateTopicTree(selectedCharacterId, session.nodeId, session.participantIds, session.entryId);
+      return;
+    }
+    setTopicMode(mode);
+    writeEncounterChatSession({ ...session, mode });
+    if (mode === 'manual') setFeedback({ tone: 'info', text: '已进入自由聊天；只有在你发送消息并点击生成后才会调用 API。' });
+  }
+
+  function retryEncounterOpening(): void {
+    const session = readEncounterChatSession();
+    if (!session || busy) return;
+    setTopicMode('opening');
+    writeEncounterChatSession({ ...session, mode: 'opening' });
+    void generateEncounterOpening({ ...session, mode: 'opening' }, true);
   }
 
   function continueEncounter(): void {
@@ -2281,33 +2384,40 @@ export function App() {
     const next = structuredClone(saveRef.current);
     const result = updateEncounterOutcome(next.world, activeEncounter.entryId, 'continued');
     if (!result.ok) { setFeedback({ tone: 'error', text: result.warning ?? '无法记录相遇结果。' }); return; }
-    const availableIds = new Set(activeEncounter.candidates.filter((candidate) => candidate.tier === 'formal' && characters.some((item) => item.id === candidate.id)).map((candidate) => candidate.id));
+    const availableIds = new Set(activeEncounter.candidates.map((candidate) => candidate.id).filter((id) => Boolean(saveRef.current.world.characters[id] || saveRef.current.world.npcs[id])));
     if (!availableIds.size) {
       commitSave(next);
       setActiveEncounter(null);
       setEncounterParticipantIds([]);
+      setEncounterPrimaryId('');
       writeEncounterChatSession(null);
-      setFeedback({ tone: 'info', text: '你决定留下继续，但当前没有可用的正式角色聊天卡。' });
+      setFeedback({ tone: 'info', text: '你决定留下继续，但当前没有可互动的人物资料。' });
       return;
     }
     const participantIds = encounterParticipantIds.filter((id) => availableIds.has(id));
-    if (!participantIds.length) { setFeedback({ tone: 'error', text: '请至少选择一位正式角色进入对话。' }); return; }
-    const formal = characters.find((item) => item.id === participantIds[0]);
+    if (!participantIds.length) { setFeedback({ tone: 'error', text: '请至少选择一位人物进入场景。' }); return; }
+    if (!encounterPrimaryId || !participantIds.includes(encounterPrimaryId)) { setFeedback({ tone: 'error', text: '多人场景需要明确选择一位主要互动对象。' }); return; }
+    const primary = encounterPromptParticipant(next.world, characters, encounterPrimaryId);
     commitSave(next);
     setActiveEncounter(null);
     setEncounterParticipantIds([]);
-    if (!formal) { setFeedback({ tone: 'info', text: '你决定留下继续，但当前没有可用的正式角色聊天卡。' }); return; }
+    setEncounterPrimaryId('');
+    if (!primary) { setFeedback({ tone: 'info', text: '你决定留下继续，但主要互动对象的资料已不可用。' }); return; }
     setChatParticipantIds(participantIds);
     setChatEncounterEntryId(activeEncounter.entryId);
     setChatParticipantsLocked(true);
     markResponseSource(null);
-    setSelectedCharacterId(formal.id);
+    selectedCharacterIdRef.current = primary.id;
+    setSelectedCharacterId(primary.id);
     setTopicTree(null);
-    setTopicMode('topics');
-    writeEncounterChatSession({ characterId: formal.id, participantIds, nodeId: next.world.player.nodeId, mode: 'topics', entryId: activeEncounter.entryId });
+    setTopicRetryContext(null);
+    setTopicMode('opening');
+    setOpeningRetryAvailable(false);
+    const session: EncounterChatSession = { characterId: primary.id, participantIds, nodeId: next.world.player.nodeId, mode: 'opening', entryId: activeEncounter.entryId };
+    writeEncounterChatSession(session);
     setTab('chat');
-    void generateTopicTree(formal.id, next.world.player.nodeId, participantIds, activeEncounter.entryId);
-    setFeedback({ tone: 'info', text: `你留下来和${formal.name}继续聊聊。` });
+    void generateEncounterOpening(session);
+    setFeedback({ tone: 'info', text: `你留下来和${primary.name}继续这次相遇，正在生成开场。` });
   }
 
   function resolveChatDeparture(outcome: 'stayed' | 'left'): void {
@@ -2370,8 +2480,9 @@ export function App() {
     setTopicMode('ended');
     writeEncounterChatSession({ characterId: selectedCharacterId, participantIds: chatParticipantIds, nodeId: next.world.player.nodeId, mode: 'ended', entryId: chatEncounterEntryId });
     setBusy(true);
-    setFeedback({ tone: 'info', text: '你主动结束了这次相遇，正在整理本次对话…' });
-    try { await consolidateEncounterMemories(next, selectedCharacterId, messages); }
+    const formal = Boolean(next.world.characters[selectedCharacterId]);
+    setFeedback({ tone: 'info', text: formal ? '你主动结束了这次相遇，正在整理本次对话…' : '你主动结束了这次相遇。NPC 聊天文字已保留，但不会自动写入关系或轻记忆。' });
+    try { if (formal) await consolidateEncounterMemories(next, selectedCharacterId, messages); }
     finally { setBusy(false); }
   }
 
@@ -2655,6 +2766,7 @@ export function App() {
     const next = providedMessages ?? (text ? [...messages, { id: newChatMessageId(selectedCharacterId), role: 'user' as const, content: text, kind: 'dialogue' as const, speakerId: 'player' }] : messages);
     if (!hasQueuedUserMessage(next) && next.length === 0) { setFeedback({ tone: 'error', text: '请先发送第一条消息。' }); return; }
     const generationCharacterId = giftContext?.charId ?? selectedCharacterId;
+    const npcLight = Boolean(saveRef.current.world.npcs[generationCharacterId] && !saveRef.current.world.characters[generationCharacterId]);
     const routedProvider = mockFixtureId
       ? createMockProviderConfig(mockFixtureId)
       : resolveProviderForCharacter(providers, bindings, characterBindings, saveRef.current.meta.id, generationCharacterId, 'narrate_main', defaultProviderId);
@@ -2674,11 +2786,11 @@ export function App() {
     const latestInput = [...next].reverse().find((message) => message.role === 'user')?.content ?? '';
     const activePresetBundle = presetBundles.find((item) => item.id === selectedPresetBundleId);
     const participantIds = chatParticipantIds.length ? chatParticipantIds : [selectedCharacterId];
-    const participants = participantIds.map((id) => characters.find((item) => item.id === id)).filter((character): character is CharacterCard => Boolean(character));
-    const generationCharacter = characters.find((item) => item.id === generationCharacterId);
-    const relationshipState = generationCharacter ? deriveRelationshipPromptState(saveRef.current.world, generationCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
-    const relationshipMemories = await relationshipMemoryOverride(latestInput, generationCharacterId);
-    const promptFacts = { input: latestInput, character: generationCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, relationshipMemories, giftContext: giftContext ? { ...giftContext, description: saveRef.current.world.items[giftContext.itemId]?.description, tags: saveRef.current.world.items[giftContext.itemId]?.tags ?? [] } : undefined, collectionContext, worldbooks, history: next, world: saveRef.current.world };
+    const participants = encounterPromptParticipants(saveRef.current.world, characters, participantIds);
+    const generationCharacter = encounterPromptParticipant(saveRef.current.world, characters, generationCharacterId);
+    const relationshipState = generationCharacter?.tier === 'formal' ? deriveRelationshipPromptState(saveRef.current.world, generationCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
+    const relationshipMemories = npcLight ? undefined : await relationshipMemoryOverride(latestInput, generationCharacterId);
+    const promptFacts = { input: latestInput, character: generationCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, relationshipMemories, interactionPolicy: npcLight ? 'npc-light' as const : undefined, giftContext: giftContext ? { ...giftContext, description: saveRef.current.world.items[giftContext.itemId]?.description, tags: saveRef.current.world.items[giftContext.itemId]?.tags ?? [] } : undefined, collectionContext, worldbooks, history: next, world: saveRef.current.world };
     promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
     const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
     setDebug((current) => ({ ...current, prompt: assembled }));
@@ -2694,12 +2806,22 @@ export function App() {
       setMessages(completed);
       markResponseSource('manual');
       await saveChat({ characterId: selectedCharacterId, messages: completed, updatedAt: now() });
-      const reply = await parseReply(finished.raw, extractOps);
-      const itemGainOps = reply.ops.filter((op) => Boolean(op && typeof op === 'object' && (op as { op?: unknown }).op === 'give_item'));
-      const safeReply = suppressItemGains
-        ? { ...reply, ops: reply.ops.filter((op) => !itemGainOps.includes(op)), warnings: [...reply.warnings, ...(itemGainOps.length ? ['出示收藏的回应中检测到 give_item，已忽略以避免把出示误记为再次获得物品。'] : [])] }
-        : reply;
-      if (applyReplyOps(safeReply, generationCharacterId, giftContext?.giftId, completed.length - 1, requestId)) updateChatRecovery(null);
+      if (npcLight) {
+        const reply = await parseReply(finished.raw);
+        updateChatRecovery(null);
+        setPendingOps(null);
+        setDebug((current) => ({ ...current, raw: finished.raw, ops: JSON.stringify({ stage: reply.stage, discardedOps: reply.ops, warnings: [...reply.warnings, ...(finished.foundOps ? ['半正式 NPC 轻互动中的所有 ops 均已拒绝。'] : [])], message: 'NPC 轻互动只保存聊天文字，不写入任何世界事实。' }, null, 2) }));
+        if (finished.foundOps) setFeedback({ tone: 'info', text: 'NPC 回复已保存；附带的状态操作已全部拒绝。' });
+      } else {
+        const parsedReply = await parseReply(finished.raw, extractOps);
+        const npcBoundary = rejectNpcTargetedOps(parsedReply.ops, participantIds.filter((id) => Boolean(saveRef.current.world.npcs[id])));
+        const reply = { ...parsedReply, ops: npcBoundary.ops, warnings: [...parsedReply.warnings, ...(npcBoundary.rejected ? [`混合场景中 ${npcBoundary.rejected} 个面向半正式 NPC 的状态操作已拒绝。`] : [])] };
+        const itemGainOps = reply.ops.filter((op) => Boolean(op && typeof op === 'object' && (op as { op?: unknown }).op === 'give_item'));
+        const safeReply = suppressItemGains
+          ? { ...reply, ops: reply.ops.filter((op) => !itemGainOps.includes(op)), warnings: [...reply.warnings, ...(itemGainOps.length ? ['出示收藏的回应中检测到 give_item，已忽略以避免把出示误记为再次获得物品。'] : [])] }
+          : reply;
+        if (applyReplyOps(safeReply, generationCharacterId, giftContext?.giftId, completed.length - 1, requestId)) updateChatRecovery(null);
+      }
       void showGenerationCompleteNotification();
     } catch (error) {
       const message = errorMessage(error, '请求失败');
@@ -2714,7 +2836,7 @@ export function App() {
       }
       setRequestStatus('error'); setFeedback({ tone: 'error', text: message });
       updateChatRecovery({ characterId: selectedCharacterId, requestId, status: 'error', input: text, messages: narrative ? [...next, { id: assistantMessageId, role: 'assistant', content: narrative, kind: 'dialogue', speakerId: generationCharacterId }] : next, baseMessages: next, assistantText: narrative, raw: finished.raw, actorId: generationCharacterId, messageIndex: narrative ? next.length : undefined, opsApplied: false, error: message, updatedAt: now() });
-      if (finished.raw) setPendingOps({ raw: finished.raw, actorId: generationCharacterId, messageIndex: narrative ? next.length : undefined, streamError: message, requestId });
+      if (finished.raw && !npcLight) setPendingOps({ raw: finished.raw, actorId: generationCharacterId, messageIndex: narrative ? next.length : undefined, streamError: message, requestId });
       setDebug((current) => ({
         ...current,
         raw: finished.raw || message,
@@ -2740,11 +2862,13 @@ export function App() {
     } catch (error) { setRequestStatus('error'); setFeedback({ tone: 'error', text: errorMessage(error, 'Provider 配置无效，请在设置中检查基础 URL、模型与渠道。') }); return; }
     const activePresetBundle = presetBundles.find((item) => item.id === selectedPresetBundleId);
     const participantIds = chatParticipantIds.length ? chatParticipantIds : [selectedCharacterId];
-    const participants = participantIds.map((id) => characters.find((item) => item.id === id)).filter((character): character is CharacterCard => Boolean(character));
+    const participants = encounterPromptParticipants(saveRef.current.world, characters, participantIds);
+    const promptCharacter = encounterPromptParticipant(saveRef.current.world, characters, selectedCharacterId);
+    const npcLight = promptCharacter?.tier === 'semi';
     const latestInput = [...baseMessages].reverse().find((message) => message.role === 'user')?.content ?? '';
-    const relationshipState = activeCharacter ? deriveRelationshipPromptState(saveRef.current.world, activeCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
-    const relationshipMemories = await relationshipMemoryOverride(latestInput, selectedCharacterId);
-    const promptFacts = { input: latestInput, regenerationRequest: requirement, character: activeCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, relationshipMemories, worldbooks, history: originalMessages, world: saveRef.current.world };
+    const relationshipState = promptCharacter?.tier === 'formal' ? deriveRelationshipPromptState(saveRef.current.world, promptCharacter.id, saveRef.current.config.stageRules, saveRef.current.config.showNumbers) : undefined;
+    const relationshipMemories = npcLight ? undefined : await relationshipMemoryOverride(latestInput, selectedCharacterId);
+    const promptFacts = { input: latestInput, regenerationRequest: requirement, character: promptCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, relationshipMemories, interactionPolicy: npcLight ? 'npc-light' as const : undefined, worldbooks, history: originalMessages, world: saveRef.current.world };
     promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
     const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
     setDebug((current) => ({ ...current, prompt: assembled }));
@@ -4178,9 +4302,9 @@ export function App() {
     {tab !== 'map' && <header className={`topbar ${tab === 'chat' ? 'chat-topbar' : ''}`}><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small>{editingAppName ? <form className="app-name-editor" onSubmit={(event) => { event.preventDefault(); saveAppName(); }}><input aria-label="应用名称" value={appNameDraft} maxLength={32} autoFocus onChange={(event) => setAppNameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setAppNameDraft(appName); setEditingAppName(false); } }} /><button type="submit" className="app-name-save">保存</button><button type="button" className="app-name-cancel" onClick={() => { setAppNameDraft(appName); setEditingAppName(false); }}>取消</button></form> : <button type="button" className="app-name-trigger" aria-label="编辑应用名称" title="编辑应用名称" onClick={() => { setAppNameDraft(appName); setEditingAppName(true); }}><h1>{appName}{tab === 'chat' && <span className="topbar-context"> · 面对面</span>}</h1></button>}</div></header>}
     <main className={`screen ${desktopScreen ? 'desktop-screen-host' : ''} ${tab === 'chat' ? 'chat-screen-host' : ''} ${tab === 'map' ? 'map-screen-host' : ''} ${tab === 'library' && libraryPage === 'messages' ? 'terminal-message-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
-      {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} onEncounterParticipantIdsChange={setEncounterParticipantIds} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onSetBackgroundUrl={setMapBackgroundUrl} onImportSceneBackground={importSceneBackground} onSetSceneBackgroundUrl={setSceneBackgroundUrl} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
+      {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} encounterPrimaryId={encounterPrimaryId} onEncounterParticipantIdsChange={(ids) => { setEncounterParticipantIds(ids); if (!ids.includes(encounterPrimaryId)) setEncounterPrimaryId(ids.length === 1 ? ids[0] : ''); }} onEncounterPrimaryIdChange={setEncounterPrimaryId} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onSetBackgroundUrl={setMapBackgroundUrl} onImportSceneBackground={importSceneBackground} onSetSceneBackgroundUrl={setSceneBackgroundUrl} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} />}
       {tab === 'day' && <DayView {...dayViewProps} activePage={dayPage} onOpenPage={setDayPage} onBack={() => setDayPage(null)} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} onGenerateVoice={generateChatVoice} onDownloadVoice={(index) => downloadVoiceAsset(messages[index]?.voice?.asset, `chat-${messages[index]?.id ?? index}`)} onGenerateCg={generateChatCg} onDownloadCg={(index) => downloadImageAsset(messages[index]?.cg?.asset, `chat-cg-${messages[index]?.id ?? index}`)} onDeleteCg={deleteChatCg} imageBusy={imageBusy} imageConfigured={Boolean(imageConfig.providerId && providers.some((item) => item.id === imageConfig.providerId && item.kind === 'openai-compatible'))} voiceAvailableCharacterIds={Object.keys(save.world.characters).filter((characterId) => Boolean(resolveTtsProviderForCharacter(ttsConfigs, characterBindings, save.meta.id, characterId, defaultTtsConfigId)?.enabled))} ttsBusy={ttsBusy} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} interrupted={Boolean(chatRecovery && (chatRecovery.status === 'interrupted' || chatRecovery.status === 'error'))} onRetryInterrupted={retryInterruptedReply} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
+      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} onGenerateVoice={generateChatVoice} onDownloadVoice={(index) => downloadVoiceAsset(messages[index]?.voice?.asset, `chat-${messages[index]?.id ?? index}`)} onGenerateCg={generateChatCg} onDownloadCg={(index) => downloadImageAsset(messages[index]?.cg?.asset, `chat-cg-${messages[index]?.id ?? index}`)} onDeleteCg={deleteChatCg} imageBusy={imageBusy} imageConfigured={Boolean(imageConfig.providerId && providers.some((item) => item.id === imageConfig.providerId && item.kind === 'openai-compatible'))} voiceAvailableCharacterIds={Object.keys(save.world.characters).filter((characterId) => Boolean(resolveTtsProviderForCharacter(ttsConfigs, characterBindings, save.meta.id, characterId, defaultTtsConfigId)?.enabled))} ttsBusy={ttsBusy} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} interrupted={Boolean(chatRecovery && (chatRecovery.status === 'interrupted' || chatRecovery.status === 'error'))} onRetryInterrupted={retryInterruptedReply} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} openingRetryAvailable={openingRetryAvailable} onRetryOpening={retryEncounterOpening} onChooseSceneMode={chooseSceneMode} hasFormalPrimary={Boolean(save.world.characters[selectedCharacterId])} formalToolsAvailable={chatParticipantIds.some((id) => Boolean(save.world.characters[id]))} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
       {tab === 'library' && libraryDayPage && <DayView {...dayViewProps} activePage={libraryDayPage} onOpenPage={() => undefined} onBack={() => setLibraryPage(null)} shellEyebrow="终端" />}
       {/* @ts-expect-error legacy unused sticker callbacks remain accepted by LibraryView */}
       {tab === 'library' && !libraryDayPage && !(['story', 'memories', 'collection'] as LibraryPage[]).includes(libraryPage ?? 'messages') && <LibraryNavigationContext.Provider value={{ activePage: libraryPage, onOpenPage: setLibraryPage, onBack: () => setLibraryPage(null) }}><LibraryView appName={appName} characters={characters} worldbooks={worldbooks} providers={providers} ttsConfigs={ttsConfigs} characterBindings={characterBindings} onCharacterProviderBindingChange={updateCharacterProviderBinding} presets={presets} presetBundles={presetBundles} selectedPresetBundleId={selectedPresetBundleId} setSelectedPresetBundleId={setSelectedPresetBundleId} setPresetBundleName={setPresetBundleName} presetBundleName={presetBundleName} onCreatePresetBundle={createPresetBundle} onRenamePresetBundle={renamePresetBundle} onDeletePresetBundle={removePresetBundle} onSetPresetEntryEnabled={setPresetEntryEnabled} onMovePresetEntry={movePresetEntry} save={save} name={name} setName={setName} draftText={draftText} setDraftText={setDraftText} editing={editing} setEditing={setEditing} addContent={addContent} onDelete={onDelete} onExport={downloadJson} onImport={importContent} onImportText={importTextContent} onExportSave={downloadSave} onImportSave={loadSave} onExportPresetBundle={exportPresetBundleFile} onImportPresetBundle={importPresetBundleFile} includeChatsOnExport={includeChatsOnExport} setIncludeChatsOnExport={setIncludeChatsOnExport} onClearChats={clearAllChats} itemName={itemName} setItemName={setItemName} itemTags={itemTags} setItemTags={setItemTags} itemDescription={itemDescription} setItemDescription={setItemDescription} onAddItem={addItemDefinition} onAddCharacterToWorld={addCharacterToCurrentWorld} onExportCharacterPackage={downloadCharacterPackage} onImportCharacterPackage={loadCharacterPackage} onExportWorldPackage={downloadWorldPackage} onImportWorldPackage={loadWorldPackage} onExportEventPackage={downloadEventPackage} onImportEventPackage={loadEventPackage} visualCharacterId={visualCharacterId} setVisualCharacterId={setVisualCharacterId} onImportCharacterVisual={importCharacterVisual} onRemoveCharacterVisual={removeCharacterVisual} onUpdateCharacterAccentColor={updateCharacterAccentColor} onOpenImageSettings={() => { setTab('settings'); setSettingsPage('image'); }} onRequestFriend={requestTerminalFriend} onResolveFriend={resolveTerminalFriend} onPromoteNpc={promoteNpcFromContacts} onExpandNpcPromotionDraft={expandNpcPromotionDraft} onSendTerminalText={sendTerminalText} onSendStickerAsset={sendTerminalStickerAsset} stickers={terminalStickers} onImportStickerFile={importTerminalStickerFile} onImportStickerUrl={importTerminalStickerUrl} onDeleteSticker={removeTerminalSticker} onRejoin={requestTerminalRejoin} onEditTerminalMessage={editTerminalText} onDeleteTerminalMessage={deleteTerminalText} onGenerateTerminalReply={generateTerminalReply} onSendVoice={sendTerminalVoice} onDownloadVoice={(characterId, messageId) => { const message = listTerminalMessages(saveRef.current.world, characterId).find((item) => item.id === messageId); return downloadVoiceAsset(message?.asset, `message-${messageId}`); }} isVoiceAvailable={(characterId) => Boolean(resolveTtsProviderForCharacter(ttsConfigs, characterBindings, save.meta.id, characterId, defaultTtsConfigId)?.enabled)} ttsConfig={ttsConfig} ttsBusy={ttsBusy} onSendPlayerTransfer={sendPlayerTerminalTransfer} onResolveIncomingTransfer={resolveIncomingTransfer} onCreateTerminalAppointment={createTerminalAppointment} onSimulateIncomingAppointment={(characterId, input) => createTerminalAppointment(characterId, input, 'incoming')} onResolveTerminalAppointment={resolveTerminalAppointment} onSimulateAppointmentAcceptance={simulateTerminalAppointmentAcceptanceForUi} onConfirmTerminalAppointment={confirmTerminalAppointmentForUi} terminalCall={terminalCall} onStartCall={startTerminalCall} onSimulateIncomingCall={simulateIncomingTerminalCall} onAnswerCall={answerTerminalCall} onSimulateCallAnswer={simulateTerminalCallAnswer} onEndCall={endTerminalCall} terminalBusy={terminalBusy} musicPlayer={musicPlayer} enabledWorkshopPackages={enabledWorkshopPackages} workshopDraftProviderConfigured={workshopDraftProviderConfigured} onGenerateWorkshopDraft={generateWorkshopPackageDraft} onWorkshopAgentTurn={runWorkshopPackageAgentTurn} onRunWorkshopActivity={runWorkshopPackageActivity} onRunWorkshopProviderText={runWorkshopPackageProviderText} /></LibraryNavigationContext.Provider>}
@@ -4193,7 +4317,7 @@ export function App() {
   </div>;
 }
 
-function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, onEncounterParticipantIdsChange, onEncounterOutcome, onContinueEncounter, onMove, onImportBackground, onSetBackgroundUrl, onImportSceneBackground, onSetSceneBackgroundUrl, onRemoveSceneBackground, onToggleMode, onCreateNode, onEditNode, onDeleteNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating }: { save: SaveFile; worldbooks: WorldbookEntry[]; activeEncounter: ActiveEncounter | null; encounterParticipantIds: string[]; onEncounterParticipantIdsChange: (ids: string[]) => void; onEncounterOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinueEncounter: () => void; onMove: (nodeId: string) => void; onImportBackground: (file?: File) => Promise<void>; onSetBackgroundUrl: (url: string) => Promise<void>; onImportSceneBackground: (nodeId: string, file?: File) => Promise<void>; onSetSceneBackgroundUrl: (nodeId: string, url: string) => Promise<void>; onRemoveSceneBackground: (nodeId: string) => Promise<void>; onToggleMode: () => void; onCreateNode: (input: CreateMapNodeInput) => boolean; onEditNode: (nodeId: string, input: UpdateMapNodeInput) => boolean; onDeleteNode: (nodeId: string) => boolean; onSuggestNode: (input: { requirements: string; regionName: string; anchorName: string }) => Promise<{ name: string; description: string } | null>; onGenerateMap: (requirements?: string) => Promise<void>; onExpandMap: (anchorNodeId: string, count: number, requirements?: string) => Promise<void>; mapGenerating: boolean }) {
+function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, encounterPrimaryId, onEncounterParticipantIdsChange, onEncounterPrimaryIdChange, onEncounterOutcome, onContinueEncounter, onMove, onImportBackground, onSetBackgroundUrl, onImportSceneBackground, onSetSceneBackgroundUrl, onRemoveSceneBackground, onToggleMode, onCreateNode, onEditNode, onDeleteNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating }: { save: SaveFile; worldbooks: WorldbookEntry[]; activeEncounter: ActiveEncounter | null; encounterParticipantIds: string[]; encounterPrimaryId: string; onEncounterParticipantIdsChange: (ids: string[]) => void; onEncounterPrimaryIdChange: (id: string) => void; onEncounterOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinueEncounter: () => void; onMove: (nodeId: string) => void; onImportBackground: (file?: File) => Promise<void>; onSetBackgroundUrl: (url: string) => Promise<void>; onImportSceneBackground: (nodeId: string, file?: File) => Promise<void>; onSetSceneBackgroundUrl: (nodeId: string, url: string) => Promise<void>; onRemoveSceneBackground: (nodeId: string) => Promise<void>; onToggleMode: () => void; onCreateNode: (input: CreateMapNodeInput) => boolean; onEditNode: (nodeId: string, input: UpdateMapNodeInput) => boolean; onDeleteNode: (nodeId: string) => boolean; onSuggestNode: (input: { requirements: string; regionName: string; anchorName: string }) => Promise<{ name: string; description: string } | null>; onGenerateMap: (requirements?: string) => Promise<void>; onExpandMap: (anchorNodeId: string, count: number, requirements?: string) => Promise<void>; mapGenerating: boolean }) {
   type MapSheetState = 'collapsed' | 'half' | 'expanded';
   const map = save.world.map;
   const currentNode = map.nodes[save.world.player.nodeId];
@@ -4460,7 +4584,7 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, o
         <div className="button-row"><button onClick={saveEditorNode} disabled={!editorName.trim() || !editorRegionId || (!editorNodeId && !editorAnchorId)}>保存地点</button><button className="secondary" onClick={() => setEditorPos(null)}>重新选位置</button>{editorNodeId && <button className="danger" onClick={deleteEditorNode} disabled={editorNodeId === save.world.player.nodeId}>删除地点</button>}<button className="secondary" onClick={closeEditor}>取消</button></div>
       </div>}
     </div>
-    {activeEncounter && <EncounterDialog encounter={activeEncounter} selectedParticipantIds={encounterParticipantIds} onSelectionChange={onEncounterParticipantIdsChange} onOutcome={onEncounterOutcome} onContinue={onContinueEncounter} />}
+    {activeEncounter && <EncounterDialog encounter={activeEncounter} selectedParticipantIds={encounterParticipantIds} primaryId={encounterPrimaryId} onSelectionChange={onEncounterParticipantIdsChange} onPrimaryChange={onEncounterPrimaryIdChange} onOutcome={onEncounterOutcome} onContinue={onContinueEncounter} />}
     <details ref={toolSheetRef} open={toolSheetProgress > 0.001} data-sheet-state={toolSheetState} data-sheet-dragging={sheetDraggingKind === 'tool' ? 'true' : undefined} style={sheetStyle(toolSheetProgress)} className="map-menu map-bottom-sheet map-tool-sheet">
       <summary onPointerDown={beginSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={handleSheetClick('tool')}><span>地图工具{editorMode ? ' · 编辑中' : ''}</span><span>{toolSheetState === 'expanded' ? '向下收起' : toolSheetState === 'half' ? '半展开' : '向上展开'}</span></summary>
       <div className="map-menu-content">
@@ -4495,11 +4619,11 @@ function EncounterTraceList({ traces }: { traces: EncounterTrace[] }) {
   return <div className="encounter-trace-list" aria-label="最近相遇残影"><span className="eyebrow">相遇残影</span>{traces.map((trace) => <span className="encounter-trace" key={`${trace.day}-${trace.characterIds.join(',')}`}>{encounterTraceLabel(trace)}</span>)}</div>;
 }
 
-function EncounterDialog({ encounter, selectedParticipantIds, onSelectionChange, onOutcome, onContinue }: { encounter: ActiveEncounter; selectedParticipantIds: string[]; onSelectionChange: (ids: string[]) => void; onOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinue: () => void }) {
+function EncounterDialog({ encounter, selectedParticipantIds, primaryId, onSelectionChange, onPrimaryChange, onOutcome, onContinue }: { encounter: ActiveEncounter; selectedParticipantIds: string[]; primaryId: string; onSelectionChange: (ids: string[]) => void; onPrimaryChange: (id: string) => void; onOutcome: (outcome: 'continued' | 'urgent_leave') => void; onContinue: () => void }) {
   const names = encounter.candidates.map((candidate) => candidate.name).join('、');
-  const formalCandidates = encounter.candidates.filter((candidate) => candidate.tier === 'formal');
   const toggle = (id: string) => onSelectionChange(selectedParticipantIds.includes(id) ? selectedParticipantIds.filter((item) => item !== id) : [...selectedParticipantIds, id]);
-  return <div className="encounter-dialog" role="dialog" aria-label="相遇事件"><div className="encounter-dialog-copy"><span className="eyebrow">有人可遇</span><strong>你在这里遇见了{names}</strong><p>{encounter.scope === 'formal' ? '地点正在开放，可以正式进入范围。' : '地点尚未开放，你们只能在附近外围短暂相遇。'}</p></div>{formalCandidates.length > 0 && <div className="encounter-participant-picker"><strong>选择要正式交谈的人</strong><span className="io-scope">本次选择确认后将固定到对话结束</span><div>{formalCandidates.map((candidate) => <label key={candidate.id}><input type="checkbox" checked={selectedParticipantIds.includes(candidate.id)} onChange={() => toggle(candidate.id)} /><span>{candidate.name}</span></label>)}</div></div>}<div className="encounter-options"><button onClick={onContinue} disabled={formalCandidates.length > 0 && !selectedParticipantIds.length}>留下并对话</button><button className="secondary" onClick={() => onOutcome('urgent_leave')}>离开</button></div></div>;
+  const selected = encounter.candidates.filter((candidate) => selectedParticipantIds.includes(candidate.id));
+  return <div className="encounter-dialog" role="dialog" aria-label="相遇事件"><div className="encounter-dialog-copy"><span className="eyebrow">有人可遇</span><strong>你在这里遇见了{names}</strong><p>{encounter.scope === 'formal' ? '地点正在开放，可以正式进入范围。' : '地点尚未开放，你们只能在附近外围短暂相遇。'}</p></div><div className="encounter-participant-picker"><strong>选择在场人物</strong><span className="io-scope">正式角色与半正式 NPC 都可参与；确认后固定到场景结束</span><div>{encounter.candidates.map((candidate) => <label key={candidate.id}><input type="checkbox" checked={selectedParticipantIds.includes(candidate.id)} onChange={() => toggle(candidate.id)} /><span>{candidate.name}<small>{candidate.tier === 'formal' ? '正式角色' : '半正式 NPC'}</small></span></label>)}</div></div>{selected.length > 1 && <div className="encounter-primary-picker"><strong>主要互动对象</strong><span className="io-scope">开场和回复以此人为主</span>{selected.map((candidate) => <label key={candidate.id}><input type="radio" name="encounter-primary" checked={primaryId === candidate.id} onChange={() => onPrimaryChange(candidate.id)} />{candidate.name}</label>)}</div>}<div className="encounter-options"><button onClick={onContinue} disabled={!selected.length || !primaryId}>留下并对话</button><button className="secondary" onClick={() => onOutcome('urgent_leave')}>离开</button></div></div>;
 }
 
 function PresenceList({ people, scope }: { people: ReturnType<typeof whoIsHere>; scope: string }) {
@@ -4652,7 +4776,7 @@ function giftReactionLabel(reaction: GiftHistoryEntry['reaction']): string {
 }
 
 function ChatView(props: {
-  characters: CharacterCard[];
+  characters: EncounterPromptParticipant[];
   worldCharacters: SaveFile['world']['characters'];
   worldCharacter?: SaveFile['world']['characters'][string];
   world: SaveFile['world'];
@@ -4695,10 +4819,15 @@ function ChatView(props: {
   onRetryOps: () => Promise<void>;
   onApplyManualOps: () => Promise<void>;
   topicTree: TopicTree | null;
-  topicMode: 'topics' | 'manual' | 'ended';
+  topicMode: EncounterSceneMode;
   topicLoading: boolean;
   topicRetryAvailable: boolean;
   onRetryTopicTree: () => void;
+  openingRetryAvailable: boolean;
+  onRetryOpening: () => void;
+  onChooseSceneMode: (mode: 'choice' | 'topics' | 'manual') => void;
+  hasFormalPrimary: boolean;
+  formalToolsAvailable: boolean;
   onTopicSelect: (topic: Topic) => void;
   departure?: EncounterDeparture;
   canFarewell: boolean;
@@ -4748,8 +4877,8 @@ function ChatView(props: {
   const [portraitUrl, setPortraitUrl] = useState<string>();
   const [sceneBackgroundUrl, setSceneBackgroundUrl] = useState<string>();
   const characterName = props.characters.find((item) => item.id === props.selectedCharacterId)?.name ?? '选择角色聊天';
-  const speakerIdsByName = { [props.playerLabel]: 'player', ...Object.fromEntries(Object.values(props.worldCharacters).map((character) => [character.name, character.id])) };
-  const speakerLabelsById = { player: props.playerLabel, ...Object.fromEntries(Object.values(props.worldCharacters).map((character) => [character.id, character.name])) };
+  const speakerIdsByName = { [props.playerLabel]: 'player', ...Object.fromEntries(props.characters.map((character) => [character.name, character.id])) };
+  const speakerLabelsById = { player: props.playerLabel, ...Object.fromEntries(props.characters.map((character) => [character.id, character.name])) };
   const latestAssistantLines = latestAssistantIndex >= 0
     ? splitDialogueMessage(props.messages[latestAssistantIndex], characterName, props.playerLabel, speakerLabelsById)
     : [];
@@ -4946,22 +5075,22 @@ function ChatView(props: {
       </div>
       <div className="vn-dialogue-box" style={{ height: `${dialogueBoxHeight}px` }}>
         <div className="vn-dialogue-resize-handle" role="separator" tabIndex={0} aria-label="调整对话框高度" aria-orientation="horizontal" aria-valuemin={80} aria-valuemax={dialogueMaxHeight} aria-valuenow={dialogueBoxHeight} onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); setDialogueBoxHeight((height) => Math.min(dialogueMaxHeight, Math.max(80, height + (event.key === 'ArrowUp' ? 10 : -10)))); } }} onPointerDown={beginDialogueResize} onPointerMove={moveDialogueResize} onPointerUp={endDialogueResize} onPointerCancel={endDialogueResize} />
-        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">选择角色后输入第一句话。</p>}{visibleMessages.map((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, speakerLabelsById); const isLatestCollapsible = latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, effectiveRevealedLineCount)) : lines; const editable = isEditableChatMessage(message); const menuOpen = messageMenuIndex === messageIndex; const editing = editingMessageIndex === messageIndex; const cgEditing = cgDraftIndex === messageIndex; return <div className={`vn-message-group ${message.role}`} key={message.id ?? `${message.role}-${messageIndex}`} onPointerDown={(event) => beginMessagePress(event, messageIndex)} onPointerUp={clearMessagePress} onPointerCancel={clearMessagePress} onPointerLeave={clearMessagePress} onContextMenu={(event) => { event.preventDefault(); openMessageMenu(messageIndex); }}>{displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>)}{message.voice && <TerminalVoiceAudio asset={message.voice.asset} durationMs={message.voice.durationMs} />}{message.cg && <><ChatCgImage attachment={message.cg} /><div className="chat-cg-actions"><button type="button" className="secondary" onClick={() => void props.onDownloadCg(messageIndex)}>下载 CG</button><button type="button" className="danger" onClick={() => void props.onDeleteCg(messageIndex)}>删除 CG</button></div></>}{editable && menuOpen && !editing && !cgEditing && <div className="message-action-menu" role="menu">{message.role === 'assistant' && <button type="button" onClick={() => startCgDraft(messageIndex)} disabled={props.imageBusy || !props.imageConfigured}>{message.cg ? '重新生成 CG' : '制作 CG'}</button>}{message.role === 'assistant' && message.kind !== 'narration' && <button type="button" onClick={() => { void props.onGenerateVoice(messageIndex); cancelMessageMenu(); }} disabled={props.ttsBusy || !props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message))} title={props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message)) ? undefined : '请先设置语音 API'}>{props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message)) ? (message.voice ? '重新生成语音' : '生成语音') : '前往设置语音 API'}</button>}<button type="button" onClick={() => startMessageEdit(messageIndex)} disabled={props.ttsBusy || props.imageBusy}>编辑</button><button type="button" className="danger" disabled={props.ttsBusy || props.imageBusy} onClick={() => { if (window.confirm('删除这条台词？只会删除聊天记录，不会回滚已执行的状态变化。')) { void props.onDeleteMessage(messageIndex); cancelMessageMenu(); } }}>删除</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div>}{cgEditing && <div className="message-edit-panel cg-draft-panel"><label>画面描述<textarea aria-label="CG 画面描述" value={cgDraftText} onChange={(event) => setCgDraftText(event.target.value)} autoFocus /></label><fieldset><legend>入镜角色</legend>{Object.values(props.worldCharacters).map((character) => <label className="checkbox-line" key={character.id}><input type="checkbox" checked={cgCharacterIds.includes(character.id)} onChange={(event) => toggleCgCharacter(character.id, event.target.checked)} />{character.name}</label>)}</fieldset><label className="checkbox-line"><input type="checkbox" checked={cgIncludesPlayer} onChange={(event) => setCgIncludesPlayer(event.target.checked)} />包含用户 / 当前面具身份（需要双参考图锁脸）</label><p className="io-scope">这一步只编辑本地草稿，不调用 API。角色台词与旁白仍分开显示，最终画面描述可同时引用二者。</p><div className="button-row"><button type="button" onClick={() => { if (cgDraftIndex !== null) void props.onGenerateCg(cgDraftIndex, cgDraftText, cgCharacterIds, cgIncludesPlayer); cancelMessageMenu(); }} disabled={!cgDraftText.trim() || !cgCharacterIds.length || props.imageBusy}>{props.imageBusy ? '正在生成…' : message.cg ? '确认重新生成' : '确认生成'}</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}{editing && <div className="message-edit-panel"><textarea aria-label="编辑台词" value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} autoFocus /><div className="button-row"><button type="button" onClick={() => { void props.onEditMessage(messageIndex, editingMessageText); cancelMessageMenu(); }} disabled={!editingMessageText.trim()}>保存</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}</div>; })}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > effectiveRevealedLineCount ? <button className="vn-next-line" onClick={() => { followLatestRef.current = true; setRevealedAssistantKey(latestAssistantKey); setRevealedLineCount(Math.min(latestAssistantLines.length, effectiveRevealedLineCount + 1)); }}>下一段 · {effectiveRevealedLineCount}/{latestAssistantLines.length}</button> : replyProgress && <div className="vn-generation-progress" role="status" aria-live="polite"><span>{replyProgress === 'first-line' ? '正在生成第一段' : '后续内容生成中'}</span><span className="vn-generation-dots" aria-hidden="true"><i /><i /><i /></span></div>}</div>
+        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">进入场景后会先生成一段开场。</p>}{visibleMessages.map((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, speakerLabelsById); const isLatestCollapsible = latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, effectiveRevealedLineCount)) : lines; const editable = isEditableChatMessage(message); const menuOpen = messageMenuIndex === messageIndex; const editing = editingMessageIndex === messageIndex; const cgEditing = cgDraftIndex === messageIndex; const formalSpeaker = Boolean(props.worldCharacters[messageVoiceSpeakerId(message)]); return <div className={`vn-message-group ${message.role}`} key={message.id ?? `${message.role}-${messageIndex}`} onPointerDown={(event) => beginMessagePress(event, messageIndex)} onPointerUp={clearMessagePress} onPointerCancel={clearMessagePress} onPointerLeave={clearMessagePress} onContextMenu={(event) => { event.preventDefault(); openMessageMenu(messageIndex); }}>{displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>)}{message.voice && <TerminalVoiceAudio asset={message.voice.asset} durationMs={message.voice.durationMs} />}{message.cg && <><ChatCgImage attachment={message.cg} /><div className="chat-cg-actions"><button type="button" className="secondary" onClick={() => void props.onDownloadCg(messageIndex)}>下载 CG</button><button type="button" className="danger" onClick={() => void props.onDeleteCg(messageIndex)}>删除 CG</button></div></>}{editable && menuOpen && !editing && !cgEditing && <div className="message-action-menu" role="menu">{message.role === 'assistant' && formalSpeaker && <button type="button" onClick={() => startCgDraft(messageIndex)} disabled={props.imageBusy || !props.imageConfigured}>{message.cg ? '重新生成 CG' : '制作 CG'}</button>}{message.role === 'assistant' && message.kind !== 'narration' && formalSpeaker && <button type="button" onClick={() => { void props.onGenerateVoice(messageIndex); cancelMessageMenu(); }} disabled={props.ttsBusy || !props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message))} title={props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message)) ? undefined : '请先设置语音 API'}>{props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message)) ? (message.voice ? '重新生成语音' : '生成语音') : '前往设置语音 API'}</button>}<button type="button" onClick={() => startMessageEdit(messageIndex)} disabled={props.ttsBusy || props.imageBusy}>编辑</button><button type="button" className="danger" disabled={props.ttsBusy || props.imageBusy} onClick={() => { if (window.confirm('删除这条台词？只会删除聊天记录，不会回滚已执行的状态变化。')) { void props.onDeleteMessage(messageIndex); cancelMessageMenu(); } }}>删除</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div>}{cgEditing && <div className="message-edit-panel cg-draft-panel"><label>画面描述<textarea aria-label="CG 画面描述" value={cgDraftText} onChange={(event) => setCgDraftText(event.target.value)} autoFocus /></label><fieldset><legend>入镜角色</legend>{Object.values(props.worldCharacters).map((character) => <label className="checkbox-line" key={character.id}><input type="checkbox" checked={cgCharacterIds.includes(character.id)} onChange={(event) => toggleCgCharacter(character.id, event.target.checked)} />{character.name}</label>)}</fieldset><label className="checkbox-line"><input type="checkbox" checked={cgIncludesPlayer} onChange={(event) => setCgIncludesPlayer(event.target.checked)} />包含用户 / 当前面具身份（需要双参考图锁脸）</label><p className="io-scope">这一步只编辑本地草稿，不调用 API。角色台词与旁白仍分开显示，最终画面描述可同时引用二者。</p><div className="button-row"><button type="button" onClick={() => { if (cgDraftIndex !== null) void props.onGenerateCg(cgDraftIndex, cgDraftText, cgCharacterIds, cgIncludesPlayer); cancelMessageMenu(); }} disabled={!cgDraftText.trim() || !cgCharacterIds.length || props.imageBusy}>{props.imageBusy ? '正在生成…' : message.cg ? '确认重新生成' : '确认生成'}</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}{editing && <div className="message-edit-panel"><textarea aria-label="编辑台词" value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} autoFocus /><div className="button-row"><button type="button" onClick={() => { void props.onEditMessage(messageIndex, editingMessageText); cancelMessageMenu(); }} disabled={!editingMessageText.trim()}>保存</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}</div>; })}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > effectiveRevealedLineCount ? <button className="vn-next-line" onClick={() => { followLatestRef.current = true; setRevealedAssistantKey(latestAssistantKey); setRevealedLineCount(Math.min(latestAssistantLines.length, effectiveRevealedLineCount + 1)); }}>下一段 · {effectiveRevealedLineCount}/{latestAssistantLines.length}</button> : replyProgress && <div className="vn-generation-progress" role="status" aria-live="polite"><span>{replyProgress === 'first-line' ? '正在生成第一段' : '后续内容生成中'}</span><span className="vn-generation-dots" aria-hidden="true"><i /><i /><i /></span></div>}</div>
       </div>
     </div>
+    {props.topicMode === 'opening' && <div className="scene-choice-panel" aria-label="正在生成开场"><strong>正在生成相遇开场…</strong><span className="io-scope">每次相遇最多一次自动请求；不会应用状态操作</span></div>}
+    {props.topicMode === 'choice' && <div className="scene-choice-panel" aria-label="场景选择"><div className="list-heading"><strong>接下来做什么？</strong>{props.openingRetryAvailable && <button className="secondary" onClick={props.onRetryOpening} disabled={props.busy}>重试开场</button>}</div><div className="scene-choice-actions">{props.hasFormalPrimary && <button onClick={() => props.onChooseSceneMode('topics')} disabled={props.busy}>看看话题</button>}<button onClick={() => props.onChooseSceneMode('manual')} disabled={props.busy}>自由聊</button>{props.canFarewell && <button className="secondary" onClick={props.onPlayerFarewell} disabled={props.busy}>离开</button>}</div>{!props.hasFormalPrimary && <span className="io-scope">半正式 NPC 提供轻量自由聊天；完整关系能力需先在联系人页确认转正。</span>}{props.topicRetryAvailable && <button className="secondary" onClick={props.onRetryTopicTree} disabled={props.busy || props.topicLoading}>重试生成话题树</button>}</div>}
     {props.topicMode === 'topics' && <div className="topic-tree-panel" aria-label="话题树">
-      <div className="list-heading"><strong>可以聊聊</strong>{props.topicLoading && <span className="request-status requesting">正在生成话题树…</span>}</div>
+      <div className="list-heading"><strong>可以聊聊</strong><div className="button-row"><button className="secondary" onClick={() => props.onChooseSceneMode('choice')} disabled={props.busy}>返回选择</button><button className="secondary" onClick={() => props.onChooseSceneMode('manual')} disabled={props.busy}>自由聊天</button>{props.topicLoading && <span className="request-status requesting">正在生成话题树…</span>}</div></div>
       {!props.topicLoading && !props.topicTree && <p className="empty">话题树不可用，将在准备好后解锁手动对话。</p>}
       {!props.topicLoading && props.topicTree && <div className="topic-choice-list">{topicEntries.map(({ topic, visibility, label }) => <button key={topic.id} className="topic-choice" disabled={visibility === 'locked' || props.busy} onClick={() => props.onTopicSelect(topic)}><span>{label}</span>{visibility === 'used' && <small>再聊一次</small>}{topic.terminal && <small>推进</small>}</button>)}</div>}
     </div>}
-    {props.topicMode === 'manual' && props.topicRetryAvailable && <div className="topic-retry-panel" aria-label="重试话题树"><span>话题树生成失败，但手动对话仍可继续。</span><button className="secondary" onClick={props.onRetryTopicTree} disabled={props.busy || props.topicLoading}>重试生成话题树</button></div>}
+    {props.topicMode === 'manual' && <div className="scene-mode-bar"><button className="secondary" onClick={() => props.onChooseSceneMode('choice')} disabled={props.busy}>场景选择</button>{props.hasFormalPrimary && <button className="secondary" onClick={() => props.onChooseSceneMode('topics')} disabled={props.busy || props.topicLoading}>看看话题</button>}</div>}
     {props.topicMode === 'ended' && <div className="topic-tree-panel"><p className="empty">本次面对面场景已经结束。</p></div>}
     {props.departure?.status === 'pending' && <div className="departure-panel" role="alert"><strong>{props.departure.kind === 'character_request' ? '对方似乎准备离开了。' : '你提出了告别。'}</strong>{props.departure.reason && <p>{props.departure.reason}</p>}<div className="button-row"><button onClick={() => props.onResolveDeparture('stayed')} disabled={props.busy}>挽留，继续聊聊</button><button className="secondary" onClick={() => props.onResolveDeparture('left')} disabled={props.busy}>就到这里吧</button></div></div>}
     {props.topicMode === 'manual' && <div className="interaction-tools" aria-label="聊天操作工具">
-      {props.canFarewell && <>
-        <button type="button" className="interaction-icon chat-icon-button" aria-label="打开送礼" aria-pressed={activeChatPanel === 'gift'} title="送礼" onClick={() => toggleChatPanel('gift')}><Gift aria-hidden="true" /></button>
-        <button type="button" className="interaction-icon chat-icon-button" aria-label="打开收藏" aria-pressed={activeChatPanel === 'collection'} title="出示收藏" onClick={() => toggleChatPanel('collection')}><BookOpen aria-hidden="true" /></button>
-      </>}
+      {props.canFarewell && props.formalToolsAvailable && <button type="button" className="interaction-icon chat-icon-button" aria-label="打开送礼" aria-pressed={activeChatPanel === 'gift'} title="送礼" onClick={() => toggleChatPanel('gift')}><Gift aria-hidden="true" /></button>}
+      {props.canFarewell && props.hasFormalPrimary && <button type="button" className="interaction-icon chat-icon-button" aria-label="打开收藏" aria-pressed={activeChatPanel === 'collection'} title="出示收藏" onClick={() => toggleChatPanel('collection')}><BookOpen aria-hidden="true" /></button>}
       {props.canRegenerate && latestRole === 'assistant' && <button type="button" className="interaction-icon chat-icon-button" aria-label="打开重新生成" aria-pressed={activeChatPanel === 'regenerate'} title="重新生成" onClick={() => toggleChatPanel('regenerate')}><RefreshCw aria-hidden="true" /></button>}
       {(props.interrupted || props.pendingOps) && <button type="button" className="interaction-icon chat-icon-button" aria-label="打开恢复处理" aria-pressed={activeChatPanel === 'recovery'} title="恢复处理" onClick={() => toggleChatPanel('recovery')}><AlertTriangle aria-hidden="true" /></button>}
       {activeChatPanel === 'gift' && <div className="interaction-popover gift-panel" aria-label="送礼">

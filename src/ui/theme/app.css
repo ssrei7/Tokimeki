@@ -267,6 +267,8 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .encounter-dialog-copy { display: grid; gap: 5px; }
 .encounter-dialog-copy strong { color: var(--gray-800); font-size: 16px; }
 .encounter-dialog-copy p { color: var(--gray-500); font-size: 12px; line-height: 1.45; }
+.encounter-primary-picker { display: grid; gap: 7px; padding: 10px; border: 1px solid var(--gray-200); border-radius: 10px; background: var(--gray-0); }
+.encounter-primary-picker > label { display: flex; gap: 7px; align-items: center; font-size: 13px; }
 .encounter-options { display: flex; justify-content: center; gap: 10px; }
 .encounter-options button { min-width: 130px; }
 .provider-card, .editor-card { display: grid; gap: 10px; margin-bottom: 14px; }
@@ -560,6 +562,8 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .collection-show-panel { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--gray-100); border-radius: 8px; background: var(--gray-0); }
 .relation-change small { display: block; margin-top: -4px; color: var(--muted); font-size: 12px; }
 .interaction-tools { position: relative; display: flex; gap: 6px; align-items: center; }
+.scene-choice-panel { display: grid; gap: 10px; margin: 8px 0; padding: 12px; border: 1px solid var(--gray-200); border-radius: 12px; background: var(--gray-0); }
+.scene-choice-actions, .scene-mode-bar { display: flex; flex-wrap: wrap; gap: 8px; }
 .interaction-icon { width: 38px; min-height: 36px; padding: 0; font-size: 20px; line-height: 1; }
 .interaction-icon svg { width: 18px; height: 18px; stroke-width: 2; }
 .interaction-popover { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 12; width: min(420px, calc(100vw - 32px)); max-height: min(60vh, 420px); overflow: auto; box-shadow: 0 12px 32px rgb(23 23 23 / 0.17); }

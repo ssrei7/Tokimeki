@@ -63,10 +63,44 @@ describe('prompt assembler', () => {
     for (const block of createDefaultPromptBlocks()) assembler.register(block);
     expect(assembler.listBlocks().map((block) => block.id)).toEqual([...DEFAULT_PROMPT_BLOCK_IDS]);
     const result = assembler.assemble({ input: '', worldbooks: [], history: [], world: undefined }, { budget: 200, task: 'narrate_main' });
-    expect(result.blocks).toHaveLength(18);
+    expect(result.blocks).toHaveLength(19);
     expect(result.blocks.find((block) => block.id === 'relationship_state')?.skipped).toBe(true);
     expect(result.blocks.find((block) => block.id === 'collection_context')?.skipped).toBe(true);
     expect(result.messages.some((message) => message.content.includes('开放世界叙事游戏'))).toBe(true);
+  });
+
+  it('uses a dedicated ops-free opening context with firstMes as reference only', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks('- add_stat example')) assembler.register(block);
+    const result = assembler.assemble({
+      input: '', worldbooks: [], history: [], world: undefined,
+      character: { id: 'rin', name: '凛', tier: 'formal', description: '花店店员', personality: '爽朗', firstMes: '欢迎来到花店。' },
+      participants: [{ id: 'rin', name: '凛', tier: 'formal', description: '花店店员', personality: '爽朗' }],
+      interactionPolicy: 'opening', openingContext: { firstEncounter: true, playerPresentation: '蓝色外套' },
+    }, { budget: 4096, task: 'narrate_main' });
+    const content = result.messages.map((message) => message.content).join('\n');
+    expect(result.blocks.find((block) => block.id === 'opening_context')?.skipped).toBe(false);
+    expect(content).toContain('内核确认的玩家当前外观/穿搭：蓝色外套');
+    expect(content).toContain('仅作为口吻与主动方式参考');
+    expect(content).toContain('不得输出、提议或暗示任何 <ops>');
+    expect(content).not.toContain('add_stat example');
+  });
+
+  it('grounds NPC light chat in bounded NPC facts and forbids all state writes', () => {
+    const assembler = new PromptAssembler();
+    for (const block of createDefaultPromptBlocks('- add_stat example')) assembler.register(block);
+    const result = assembler.assemble({
+      input: '聊聊夜市', worldbooks: [], history: [], world: undefined,
+      character: { id: 'vendor', name: '摊主', tier: 'semi', facts: ['经营夜市摊位'], tags: ['商贩'], lightMemory: ['见过玩家一次'] },
+      participants: [{ id: 'vendor', name: '摊主', tier: 'semi', facts: ['经营夜市摊位'], tags: ['商贩'], lightMemory: ['见过玩家一次'] }],
+      interactionPolicy: 'npc-light',
+    }, { budget: 4096, task: 'narrate_main' });
+    const content = result.messages.map((message) => message.content).join('\n');
+    expect(content).toContain('当前主要聊天对象（半正式 NPC）：摊主');
+    expect(content).toContain('经营夜市摊位');
+    expect(content).toContain('见过玩家一次');
+    expect(content).toContain('不得建立或改变关系轴、轻记忆、时间、地点、物品或其他事实');
+    expect(content).not.toContain('add_stat example');
   });
 
   it('adds a regeneration request after the existing history only when requested', () => {

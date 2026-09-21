@@ -39,12 +39,21 @@ describe('chat actions', () => {
     expect(css).not.toMatch(/\.vn-dialogue-box\s*\{[^}]*max-height:/s);
   });
 
-  it('keeps the chat host as a single non-scrolling viewport and unlocks manual chat after a stale topic restore', () => {
+  it('keeps the chat host as a single non-scrolling viewport and restores incomplete scenes to the choice menu', () => {
     const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     const css = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
     const themeCss = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
-    expect(source).toContain("const restoredMode = session.mode === 'topics' && !restoredTopicTree ? 'manual' : session.mode;");
+    expect(source).toContain("session.mode === 'opening' || (session.mode === 'topics' && !restoredTopicTree) ? 'choice' : session.mode");
     expect(source).toContain('if (restoredMode !== session.mode) writeEncounterChatSession({ ...session, mode: restoredMode });');
+    expect(source).toContain("setTopicMode('opening');");
+    expect(source).toContain('void generateEncounterOpening(session);');
+    expect(source).not.toContain('void generateTopicTree(formal.id');
+    expect(source).toContain('半正式 NPC 轻互动中的所有 ops 均已拒绝');
+    expect(source).toContain('encounter.candidates.map((candidate) => <label');
+    expect(source).toContain('type="radio" name="encounter-primary"');
+    expect(source).toContain("props.hasFormalPrimary && <button onClick={() => props.onChooseSceneMode('topics')}");
+    expect(source).toContain("props.onChooseSceneMode('choice')");
+    expect(source).toContain('formalSpeaker && <button type="button" onClick={() => startCgDraft');
     expect(css).toContain('.screen.chat-screen-host { display: flex; flex-direction: column; overflow: hidden; padding: 4px 8px var(--chat-bottom-nav-space); }');
     expect(css).toContain('.vn-chat-screen { gap: 4px; overflow: hidden; }');
     expect(themeCss).toContain('--chat-bottom-nav-space: calc(var(--bottom-nav-height) + var(--safe-area-bottom));');

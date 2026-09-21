@@ -1,4 +1,4 @@
-import type { CharacterCard, ChatMessage, Persona, PresetBundle, WorldbookEntry } from '../../data/content';
+import type { ChatMessage, Persona, PresetBundle, WorldbookEntry } from '../../data/content';
 import type { SaveFile } from '../../data/schema/save';
 import type { MemoryEntry } from '../../data/schema/save';
 import type { PromptBlock, PromptFacts } from './assembler';
@@ -7,17 +7,35 @@ import { retrieveRelationshipMemories } from '../relationship';
 import { weatherForDay } from '../world/weather';
 
 export const DEFAULT_PROMPT_BLOCK_IDS = [
-  'preset_bundle', 'format_contract', 'encounter_participants', 'character_core', 'relationship_state', 'scene_now', 'weather', 'node_worldbook', 'node_memory',
+  'preset_bundle', 'format_contract', 'opening_context', 'encounter_participants', 'character_core', 'relationship_state', 'scene_now', 'weather', 'node_worldbook', 'node_memory',
   'char_memory', 'recent_diary', 'milestones', 'worldbook_keyword', 'chapter_summary', 'raw_history', 'regeneration_request',
   'gift_context', 'collection_context',
 ] as const;
 
+export type EncounterPromptParticipant = {
+  id: string;
+  name: string;
+  tier: 'formal' | 'semi';
+  description?: string;
+  personality?: string;
+  scenario?: string;
+  firstMes?: string;
+  facts?: string[];
+  tags?: string[];
+  lightMemory?: string[];
+};
+
 export interface DefaultPromptFacts extends PromptFacts {
   input: string;
-  character?: CharacterCard;
+  character?: EncounterPromptParticipant;
   worldbooks: WorldbookEntry[];
   history: ChatMessage[];
-  participants?: CharacterCard[];
+  participants?: EncounterPromptParticipant[];
+  interactionPolicy?: 'opening' | 'npc-light';
+  openingContext?: {
+    firstEncounter: boolean;
+    playerPresentation?: string;
+  };
   presetBundle?: PresetBundle;
   playerPersona?: Persona;
   regenerationRequest?: string;
@@ -57,19 +75,36 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
       if (!entries?.length) return null;
       return entries.map((entry, index) => `[${index === 0 ? '核心预设' : '预设'}：${entry.name}]\n${entry.systemPrompt}`).join('\n\n');
     } },
-    { id: 'format_contract', role: 'system', priority: 100, order: 1, tasks: ['narrate_main'], build: () => `你是开放世界叙事游戏中的角色。先输出自然语言正文。面对面场景中只有明确写成 [说话人:角色名] 的内容才是角色台词；环境、动作、心理或其他描写一律使用 [旁白] 内容。未标记的助手正文为兼容旧记录，界面会按旁白显示。游戏状态只由确定性内核持有，不要声称提议已经生效。${opContract}` },
+    { id: 'format_contract', role: 'system', priority: 100, order: 1, tasks: ['narrate_main'], build: (facts) => {
+      const restricted = Boolean(factsOf(facts).interactionPolicy);
+      return `你是开放世界叙事游戏中的角色。先输出自然语言正文。面对面场景中只有明确写成 [说话人:角色名] 的内容才是角色台词；环境、动作、心理或其他描写一律使用 [旁白] 内容。未标记的助手正文为兼容旧记录，界面会按旁白显示。游戏状态只由确定性内核持有，不要声称提议已经生效。${restricted ? '\n本次回应只允许叙述文字，不得输出、提议或暗示任何 <ops> 状态操作。' : opContract}`;
+    } },
+    { id: 'opening_context', role: 'system', priority: 99, order: 2, tasks: ['narrate_main'], build: (facts) => {
+      const { interactionPolicy, openingContext, character } = factsOf(facts);
+      if (interactionPolicy !== 'opening' || !openingContext) return null;
+      const presentation = openingContext.playerPresentation?.trim();
+      const firstMes = openingContext.firstEncounter && character?.tier === 'formal' && character.firstMes?.trim()
+        ? `\n这是首次相遇。可把角色卡 firstMes 仅作为口吻与主动方式参考，禁止逐字复读：${character.firstMes.trim()}`
+        : '';
+      return `[相遇开场]\n只写玩家到场后的一小段自然开场，让主要对象或其他在场人物可以主动注意到玩家，并为玩家接下来的选择留出空间。不要替玩家选择话题、自由聊天、活动或离开；不要推进时间、移动地点、创造既成世界事实或输出状态操作。${presentation ? `\n内核确认的玩家当前外观/穿搭：${presentation}` : ''}${firstMes}`;
+    } },
     { id: 'encounter_participants', role: 'system', priority: 96, order: 2, build: (facts) => {
       const { participants, character, playerPersona, world } = factsOf(facts);
       if (!participants?.length) return null;
       const playerLabel = playerPersona?.displayName ?? world?.player.name ?? '玩家';
       const playerIdentity = playerPersona?.description ? `\n玩家身份：${playerPersona.description}` : '';
-      const cast = participants.map((participant) => `${participant.name}（${participant.id === character?.id ? '主要聊天角色' : '其他在场角色'}）\n简介：${participant.description}\n性格：${participant.personality}${participant.scenario ? `\n场景：${participant.scenario}` : ''}`).join('\n\n');
+      const cast = participants.map((participant) => {
+        const role = participant.id === character?.id ? '主要聊天角色' : '其他在场角色';
+        if (participant.tier === 'semi') return `${participant.name}（半正式 NPC，${role}）\n已知事实：${participant.facts?.join('；') || '无'}\n标签：${participant.tags?.join('、') || '无'}\n轻记忆：${participant.lightMemory?.join('；') || '无'}`;
+        return `${participant.name}（${role}）\n简介：${participant.description ?? ''}\n性格：${participant.personality ?? ''}${participant.scenario ? `\n场景：${participant.scenario}` : ''}`;
+      }).join('\n\n');
       return `[面对面场景角色与指代]\n玩家（叙事主角与旁白视角主体）：${playerLabel}${playerIdentity}\n\n本次在场的非玩家角色（除玩家外，仅这些角色可以发言）：\n${cast}\n\n指代与互动规则：\n- 旁白的人称形式由启用的预设决定，但旁白的视角主体始终是玩家。第一人称旁白中的“我”、第二人称旁白中的“你”、第三人称旁白中的玩家称呼都指向玩家；第三人称代词若可能与在场角色混淆，改用玩家称呼。\n- 角色台词中的“我”只指当前 [说话人]；台词中的“你”必须有清楚的受话对象。\n- 角色向玩家提问后，不得让另一名角色无提示地当作玩家回答。另一角色可以插话、抢答或打断，但必须用 [旁白] 明确写出其动作和介入方式。\n- 非玩家角色可以互相交谈。注意力从玩家转向另一角色时，必须用姓名、视线、动作或 [旁白] 明确交代；如果他们暂时无视玩家，也要描写玩家仍在场以及这种冷落或注意力转移。\n- 不得把任何非玩家角色静默替换成叙事中的玩家。`;
     } },
     { id: 'character_core', role: 'system', priority: 95, order: 3, build: (facts) => {
       const character = factsOf(facts).character;
       if (!character) return null;
-      return [`当前主要聊天角色（非玩家）：${character.name}`, `简介：${character.description}`, `性格：${character.personality}`, character.scenario ? `场景：${character.scenario}` : ''].filter(Boolean).join('\n');
+      if (character.tier === 'semi') return [`当前主要聊天对象（半正式 NPC）：${character.name}`, `已知事实：${character.facts?.join('；') || '无'}`, `标签：${character.tags?.join('、') || '无'}`, `轻记忆：${character.lightMemory?.join('；') || '无'}`, '边界：只能进行轻量面对面交谈，不得建立或改变关系轴、轻记忆、时间、地点、物品或其他事实。'].join('\n');
+      return [`当前主要聊天角色（非玩家）：${character.name}`, `简介：${character.description ?? ''}`, `性格：${character.personality ?? ''}`, character.scenario ? `场景：${character.scenario}` : ''].filter(Boolean).join('\n');
     } },
     { id: 'relationship_state', role: 'system', priority: 90, order: 4, build: (facts) => buildRelationshipStatePrompt(factsOf(facts).relationshipState) },
     { id: 'scene_now', role: 'system', priority: 88, order: 5, build: (facts) => {
@@ -108,7 +143,7 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
     { id: 'char_memory', role: 'system', priority: 65, order: 8, build: (facts) => {
       const { world, character, participants } = factsOf(facts);
       if (!world) return null;
-      const selected = participants?.length ? participants : character ? [character] : [];
+      const selected = (participants?.length ? participants : character ? [character] : []).filter((participant) => participant.tier !== 'semi');
       const characterNames = new Map(Object.values(world.characters).map((item) => [item.id, item.name]));
       for (const participant of selected) characterNames.set(participant.id, participant.name);
       const sections = [...new Set(selected.map((item) => item.id))].flatMap((charId) => {
