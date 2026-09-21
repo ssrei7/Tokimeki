@@ -12,6 +12,7 @@ import { evaluateCondition, type ConditionScope } from '../expr';
 import { deriveNodeScope } from '../encounter/scope';
 import { resolveRelationshipStageId } from '../relationship';
 import { upsertMilestone } from '../story';
+import { DEFAULT_DIRECTOR_PREFERENCES } from '../../data/schema/save';
 
 export interface EventCoordinate {
   nodeId: string;
@@ -59,8 +60,9 @@ export interface EventEligibility {
 }
 
 export function ensureDirector(world: WorldState): DirectorState {
-  if (!world.director) world.director = { scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: world.clock.day };
+  if (!world.director) world.director = { scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: world.clock.day, preferences: structuredClone(DEFAULT_DIRECTOR_PREFERENCES) };
   else {
+    if (!world.director.preferences) world.director.preferences = structuredClone(DEFAULT_DIRECTOR_PREFERENCES);
     if (!Number.isFinite(world.director.tensionOffset)) world.director.tensionOffset = 0;
     if (!Number.isInteger(world.director.tensionUpdatedDay) || world.director.tensionUpdatedDay! < 1) world.director.tensionUpdatedDay = world.clock.day;
   }

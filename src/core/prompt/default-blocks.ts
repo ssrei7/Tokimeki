@@ -5,9 +5,10 @@ import type { PromptBlock, PromptFacts } from './assembler';
 import { buildRelationshipStatePrompt, type RelationshipPromptState } from '../relationship';
 import { retrieveRelationshipMemories } from '../relationship';
 import { weatherForDay } from '../world/weather';
+import { buildDirectorPreferencesPrompt } from './director';
 
 export const DEFAULT_PROMPT_BLOCK_IDS = [
-  'preset_bundle', 'format_contract', 'opening_context', 'encounter_participants', 'character_core', 'relationship_state', 'scene_now', 'weather', 'node_worldbook', 'node_memory',
+  'preset_bundle', 'format_contract', 'opening_context', 'encounter_participants', 'character_core', 'director_preferences', 'relationship_state', 'scene_now', 'weather', 'node_worldbook', 'node_memory',
   'char_memory', 'recent_diary', 'milestones', 'worldbook_keyword', 'chapter_summary', 'raw_history', 'regeneration_request',
   'gift_context', 'collection_context',
 ] as const;
@@ -106,7 +107,8 @@ export function createDefaultPromptBlocks(opPromptDocs = ''): PromptBlock[] {
       if (character.tier === 'semi') return [`当前主要聊天对象（半正式 NPC）：${character.name}`, `已知事实：${character.facts?.join('；') || '无'}`, `标签：${character.tags?.join('、') || '无'}`, `轻记忆：${character.lightMemory?.join('；') || '无'}`, '边界：只能进行轻量面对面交谈，不得建立或改变关系轴、轻记忆、时间、地点、物品或其他事实。'].join('\n');
       return [`当前主要聊天角色（非玩家）：${character.name}`, `简介：${character.description ?? ''}`, `性格：${character.personality ?? ''}`, character.scenario ? `场景：${character.scenario}` : ''].filter(Boolean).join('\n');
     } },
-    { id: 'relationship_state', role: 'system', priority: 90, order: 4, build: (facts) => buildRelationshipStatePrompt(factsOf(facts).relationshipState) },
+    { id: 'director_preferences', role: 'system', priority: 92, order: 4, tasks: ['narrate_main', 'topic_tree'], build: (facts) => buildDirectorPreferencesPrompt(factsOf(facts).world) },
+    { id: 'relationship_state', role: 'system', priority: 90, order: 5, build: (facts) => buildRelationshipStatePrompt(factsOf(facts).relationshipState) },
     { id: 'scene_now', role: 'system', priority: 88, order: 5, build: (facts) => {
       const world = factsOf(facts).world;
       if (!world) return null;

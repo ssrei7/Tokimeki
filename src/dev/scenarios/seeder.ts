@@ -1,6 +1,6 @@
 import { exportSaveZip } from '../../data/io/zip';
 import { migrateSave } from '../../data/migrations';
-import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_ECONOMY_STATE, DEFAULT_SLOT_DEFS, type SaveFile } from '../../data/schema/save';
+import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_DIRECTOR_STATE, DEFAULT_ECONOMY_STATE, DEFAULT_SLOT_DEFS, type SaveFile } from '../../data/schema/save';
 
 export interface ScenarioDefinition {
   id: string;
@@ -79,7 +79,7 @@ export function createCurrentSaveScenario(options: CurrentSaveScenarioOptions): 
           usedTopics: {},
           appointments: [],
           eventDefs: {},
-          director: { scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: options.day ?? 1 },
+          director: { ...structuredClone(DEFAULT_DIRECTOR_STATE), tensionUpdatedDay: options.day ?? 1 },
           eventHistory: [], chapters: [], milestones: [], storyScenes: [], economy: structuredClone(DEFAULT_ECONOMY_STATE), placeHighlights: [],
       },
     }),

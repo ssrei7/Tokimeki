@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CURRENT_SCHEMA_VERSION, SaveFileSchema } from '../src/data/schema/save';
+import { CURRENT_SCHEMA_VERSION, DEFAULT_DIRECTOR_PREFERENCES, SaveFileSchema } from '../src/data/schema/save';
 import { migrateSave } from '../src/data/migrations';
 import { UnsupportedSchemaVersionError } from '../src/data/migrations/types';
 import fixtureV1 from './fixtures/save-v1.json';
@@ -18,9 +18,25 @@ describe('save migrations', () => {
     legacy.schemaVersion = 42;
     delete (legacy.world as Record<string, unknown>).placeHighlights;
     const migrated = migrateSave(legacy);
-    expect(migrated.schemaVersion).toBe(43);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.placeHighlights).toEqual([]);
     expect(migrated.world.player.name).toBe(source.world.player.name);
+  });
+
+  it('migrates v43 saves with empty director preferences while preserving event state', () => {
+    const source = seedScenario(createCurrentSaveScenario({ id: 'v43-director', title: 'v43 director' }));
+    const legacy = structuredClone(source) as Record<string, unknown>;
+    legacy.schemaVersion = 43;
+    const world = legacy.world as Record<string, unknown>;
+    const director = world.director as Record<string, unknown>;
+    director.scheduled = [{ id: 'scheduled-1', eventId: 'event-1', day: 4, slotId: 'morning', nodeId: 'start' }];
+    director.tension = 12;
+    delete director.preferences;
+    const migrated = migrateSave(legacy);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.world.director.scheduled).toHaveLength(1);
+    expect(migrated.world.director.tension).toBe(12);
+    expect(migrated.world.director.preferences).toEqual(DEFAULT_DIRECTOR_PREFERENCES);
   });
 
   it('migrates the v0 fixture through every version to a valid current save', () => {
@@ -54,7 +70,7 @@ describe('save migrations', () => {
     expect(migrated.world.npcTemplates).toEqual({});
     expect(migrated.world.encounterLog).toEqual([]);
     expect(migrated.world.eventDefs).toEqual({});
-    expect(migrated.world.director).toEqual({ scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: 1 });
+    expect(migrated.world.director).toMatchObject({ scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: 1, preferences: DEFAULT_DIRECTOR_PREFERENCES });
     expect(migrated.world.eventHistory).toEqual([]);
   });
 
@@ -74,7 +90,7 @@ describe('save migrations', () => {
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.world.player.name).toBe(source.world.player.name);
     expect(migrated.world.eventDefs).toEqual({});
-    expect(migrated.world.director).toEqual({ scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: 1 });
+    expect(migrated.world.director).toMatchObject({ scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: 1, preferences: DEFAULT_DIRECTOR_PREFERENCES });
     expect(migrated.world.eventHistory).toEqual([]);
   });
 

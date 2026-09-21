@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CURRENT_SCHEMA_VERSION = 43;
+export const CURRENT_SCHEMA_VERSION = 44;
 
 const IdSchema = z.string().min(1);
 
@@ -335,6 +335,28 @@ export const ScheduledEventSchema = z.object({
   revealed: z.boolean().optional(),
 });
 
+export const DirectorPreferencesSchema = z.object({
+  storyDirection: z.string().max(2000).default(''),
+  toneTags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+  pace: z.enum(['slice_of_life', 'slow_burn', 'plot_forward', 'high_drama']).default('slice_of_life'),
+  playerRoleNotes: z.string().max(800).default(''),
+  npcPreferenceTags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+  avoidTags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+  shortTermGoal: z.string().max(1200).default(''),
+  focusCharacterIds: z.array(IdSchema).max(5).default([]),
+});
+
+export const DEFAULT_DIRECTOR_PREFERENCES = {
+  storyDirection: '',
+  toneTags: [],
+  pace: 'slice_of_life',
+  playerRoleNotes: '',
+  npcPreferenceTags: [],
+  avoidTags: [],
+  shortTermGoal: '',
+  focusCharacterIds: [],
+} satisfies z.input<typeof DirectorPreferencesSchema>;
+
 export const DirectorStateSchema = z.object({
   scheduled: z.array(ScheduledEventSchema).max(500),
   lastFiredDay: z.record(IdSchema, z.number().int().positive()),
@@ -342,7 +364,17 @@ export const DirectorStateSchema = z.object({
   tensionOffset: z.number().finite().default(0),
   tensionUpdatedDay: z.number().int().positive().optional(),
   globalCooldownUntilDay: z.number().int().positive().optional(),
+  preferences: DirectorPreferencesSchema.default(() => structuredClone(DEFAULT_DIRECTOR_PREFERENCES)),
 });
+
+export const DEFAULT_DIRECTOR_STATE = {
+  scheduled: [],
+  lastFiredDay: {},
+  tension: 0,
+  tensionOffset: 0,
+  tensionUpdatedDay: 1,
+  preferences: structuredClone(DEFAULT_DIRECTOR_PREFERENCES),
+} satisfies z.input<typeof DirectorStateSchema>;
 
 export const EventHistoryEntrySchema = z.object({
   id: IdSchema,
@@ -913,7 +945,7 @@ export const WorldV21Schema = WorldV20Schema;
 export const WorldV22Schema = WorldV21Schema;
 export const WorldV23Schema = WorldV22Schema.extend({
   eventDefs: z.record(IdSchema, EventDefSchema).default({}),
-  director: DirectorStateSchema.default({ scheduled: [], lastFiredDay: {}, tension: 0, tensionOffset: 0, tensionUpdatedDay: 1 }),
+  director: DirectorStateSchema.default(() => structuredClone(DEFAULT_DIRECTOR_STATE)),
   eventHistory: z.array(EventHistoryEntrySchema).max(500).default([]),
 });
 export const WorldV24Schema = WorldV23Schema;
@@ -952,6 +984,7 @@ export const WorldV39Schema = WorldV38Schema.extend({
 export const WorldV43Schema = WorldV39Schema.extend({
   placeHighlights: z.array(PlaceHighlightSchema).max(500).default([]),
 });
+export const WorldV44Schema = WorldV43Schema;
 
 export const EncounterConfigSchema = z.object({
   enabled: z.boolean(),
@@ -988,12 +1021,12 @@ export const SaveFileSchema = z.object({
     appVersion: z.string().min(1),
   }),
   config: ConfigV5Schema,
-  world: WorldV43Schema,
+  world: WorldV44Schema,
 });
 
 export type SaveFile = z.infer<typeof SaveFileSchema>;
 export type PlayerState = z.infer<typeof PlayerStateSchema>;
-export type WorldState = z.infer<typeof WorldV43Schema>;
+export type WorldState = z.infer<typeof WorldV44Schema>;
 export type PlaceHighlight = z.infer<typeof PlaceHighlightSchema>;
 export type MorningBriefEntry = z.infer<typeof MorningBriefEntrySchema>;
 export type HookPoolEntry = z.infer<typeof HookPoolEntrySchema>;
@@ -1048,6 +1081,7 @@ export type EventMilestone = z.infer<typeof EventMilestoneSchema>;
 export type EventStageRange = z.infer<typeof EventStageRangeSchema>;
 export type ScheduledEvent = z.infer<typeof ScheduledEventSchema>;
 export type DirectorState = z.infer<typeof DirectorStateSchema>;
+export type DirectorPreferences = z.infer<typeof DirectorPreferencesSchema>;
 export type EventHistoryEntry = z.infer<typeof EventHistoryEntrySchema>;
 export type ChapterSummary = z.infer<typeof ChapterSummarySchema>;
 export type Milestone = z.infer<typeof MilestoneSchema>;

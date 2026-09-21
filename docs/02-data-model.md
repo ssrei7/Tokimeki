@@ -19,7 +19,7 @@ type Condition = string;   // expr-eval 表达式,禁止 eval
 - 时间坐标统一为 `(day, slotId)`，地点坐标统一为 `nodeId`。
 - 派生值（阶段标签、可达节点、当前在场者）可缓存但必须能重算，且不作为事实来源。
 
-`CURRENT_SCHEMA_VERSION = 43`
+`CURRENT_SCHEMA_VERSION = 44`
 
 ---
 
@@ -375,6 +375,19 @@ interface EventEvidenceRule {
   ops?: unknown[];
 }
 
+interface DirectorPreferences {
+  storyDirection: string;       // 最多 2000 字符
+  toneTags: string[];           // 最多 20 个，每个最多 40 字符
+  pace: 'slice_of_life' | 'slow_burn' | 'plot_forward' | 'high_drama';
+  playerRoleNotes: string;      // 最多 800 字符
+  npcPreferenceTags: string[];  // 最多 20 个，每个最多 40 字符
+  avoidTags: string[];          // 最多 20 个，每个最多 40 字符
+  shortTermGoal: string;        // 最多 1200 字符
+  focusCharacterIds: CharId[];  // 最多 5 个正式角色
+}
+
+`DirectorPreferences` 属于当前世界存档的叙事偏好，不进入世界包。它只注入 `narrate_main` 与 `topic_tree` 等叙事任务，不直接修改关系、金钱、时间、地点、日程或已有角色资料；v43→v44 migration 会为旧存档补齐空偏好。
+
 interface ScheduledEvent {       // pending 队列 = 伏笔
   id: Id;
   eventId: Id;
@@ -389,7 +402,10 @@ interface DirectorState {
   scheduled: ScheduledEvent[];
   lastFiredDay: Record<Id, number>;
   tension: number;               // 张力曲线,连续平淡则上升
+  tensionOffset: number;
+  tensionUpdatedDay?: number;
   globalCooldownUntilDay?: number;
+  preferences: DirectorPreferences;
 }
 
 interface EventHistoryEntry {       // 事件回顾记录；字段由内核/用户确认后写入

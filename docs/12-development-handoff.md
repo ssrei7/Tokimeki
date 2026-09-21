@@ -27,7 +27,7 @@
 
 - 产品名：小小地图。
 - 阶段 10 代码侧验收已通过，记录见 `docs/03-roadmap.md` 的“阶段 10 · 有生态”。
-- 当前世界 SaveFile schema：v43。v42 将 StoryScene 地点、日期、时段改为可选历史字段；v43 新增当前存档专属的 `world.placeHighlights`，并提供 v42→v43 migration。后续升级仍必须在同一提交提供 migration 与 fixture 测试。
+- 当前世界 SaveFile schema：v44。v42 将 StoryScene 地点、日期、时段改为可选历史字段；v43 新增当前存档专属的 `world.placeHighlights`；v44 新增当前世界 `world.director.preferences`，并分别提供 v42→v43、v43→v44 migration。后续升级仍必须在同一提交提供 migration 与 fixture 测试。
 - Provider IndexedDB：v9。
 - Content IndexedDB：v12。
 - Assets IndexedDB：v3。
@@ -52,6 +52,8 @@
 - 地图锚点详情内也有“地点动态”面板：只筛选当前 `nodeId`，可单地点生成、手工新建、编辑、删除和参加活动；它与右上角管理抽屉共用同一套 v43 CRUD 和草稿确认流程。右上角抽屉仍保留全图分组、批量生成及未发现地点管理能力。
 
 ### 终端与聊天
+
+- 终端桌面新增“剧情导演”：偏好只保存当前世界，首版接入 `narrate_main` / `topic_tree`，不新增 API 调用，不改变事件循环、世界包 v1 或地点动态。
 
 - 联系人、好友申请、最近会话、引用、贴图、双向转账、重回、远程约定、通话壳、夜间来信。
 - 面对面与终端回复恢复、防重复 ops、角色级文本 Provider 绑定。
