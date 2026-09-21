@@ -900,6 +900,8 @@ v41 新增 `world.terminal.appointmentRequests`。提议保存联系人、发起
 
 ### 16.7 地点动态（v43）
 
+活动参加保持为 UI 临时流程：玩家必须在场，可独自参加或邀请当前时段确定性在场的正式角色/NPC；每次确认最多一次 narrate_main，不写完成次数、奖励、行动点或状态 ops。AI 最多提出一个仅含名称、有限 facts 与 tags 的临时新人，只有用户确认后才写入现有 world.npcs；放弃不留存档痕迹。受邀正式角色会追加活动叙事到其稳定 ChatRecord，确认保存的新人也保留该次叙事记录。
+
 `world.placeHighlights` 只保存当前世界的热点与活动，不属于地图节点本身，也不进入世界包 v1：
 
 ```ts

@@ -8,6 +8,7 @@ import { evaluateEvidenceReaction, installEventDefs, listPendingEvents, resolveE
 import { advanceStorySceneStage, confirmStoryScene, copyStoryScenePreset, createBuiltinStoryScenePresets, createStorySceneDraft, deleteStorySceneDraft, formatChatArchive, formatEventHistoryArchive, generateStorySceneDraftInput, readStorySceneStage, selectStorySceneReadingStage, updateStorySceneDraft, updateStorySceneStatus, type StorySceneDraftInput, type StoryScenePreset } from './core/story';
 import { createMapNode, deleteMapNode, movePlayer, parseGeneratedMap, parseGeneratedMapExpansion, parseGeneratedNodeSuggestion, updateMapNode, type CreateMapNodeInput, type UpdateMapNodeInput } from './core/map';
 import { PlaceHighlightDraftSchema, buildPlaceHighlightGenerationMessages, confirmGeneratedPlaceHighlights, createPlaceHighlight, deletePlaceHighlight, parseGeneratedPlaceHighlights, placeHighlightReferences, selectPlaceHighlightNodes, updatePlaceHighlight, visiblePlaceHighlights, type PlaceHighlightDraft, type PlaceHighlightInput } from './core/place-highlights';
+import { activityInviteCandidates, buildActivityNarrationMessages, createConfirmedActivityNpc, parseActivityNarration, validateActivityInvites, type ActivityInviteCandidate, type ActivityNarration, type TemporaryNpcProposal } from './core/place-activity';
 import { parseGeneratedTopicTree } from './core/topics/parser';
 import { isTopicTreeFresh, mergeDailyTopicTree, topicResponse, topicTreeKey, topicVisibility, visibleTopics } from './core/topics';
 import { addCharacterToWorld, deriveNodeScope, nodeScopeLabel, proposeDeparture, recentEncounterTraces, resolveDeparture, triggerEncounter, updateEncounterOutcome, whoIsHere, whoIsWhere, type EncounterCandidate, type EncounterTrace } from './core/encounter';
@@ -30,7 +31,7 @@ import { characterCardForPackage, remapCharacterCardAssetIds } from './data/io/c
 import { createWorldPackage, mergeWorldPackage, remapWorldPackageAssetIds, sanitizeWorldMapForPackage } from './data/io/world-package';
 import { importPlainText, readDocxPlainText, type TextImportKind } from './data/text-import';
 import { auditEventPackage } from './data/event-package-audit';
-import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_ECONOMY_STATE, DEFAULT_SLOT_DEFS, DEFAULT_TERMINAL_STATE, SaveFileSchema, type AssetRef, type CollectionEntry, type EncounterDeparture, type GiftHistoryEntry, type SaveFile, type Topic, type TopicTree } from './data/schema/save';
+import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ACTION_COSTS, DEFAULT_ECONOMY_STATE, DEFAULT_SLOT_DEFS, DEFAULT_TERMINAL_STATE, SaveFileSchema, type AssetRef, type CollectionEntry, type EncounterDeparture, type GiftHistoryEntry, type PlaceHighlight, type SaveFile, type Topic, type TopicTree } from './data/schema/save';
 import { testProviderConnection } from './providers/connection-test';
 import { providerDb } from './providers/db';
 import { listEmbeddingModels, listProviderModels } from './providers/models';
@@ -92,6 +93,7 @@ import { WorkshopManager } from './components/workshop-manager';
 import { WorkshopRuntimeView, useEnabledWorkshopPackages } from './components/workshop-runtime';
 import { PackageHelpButton } from './components/package-help-dialog';
 import { PlaceHighlightsDrawer } from './components/place-highlights-drawer';
+import { PlaceActivityDialog } from './components/place-activity-dialog';
 import { useMusicPlayer, type MusicPlayerController } from './features/music/player';
 import './ui/theme/app.css';
 import { applyCustomCss, applyTheme, applyThemeAppearance, applyThemeTemplate, DEFAULT_THEME_APPEARANCE, parseDesktopIconOverrides, parseDesktopTitleOverrides, parseThemeAppearance, readCustomCss, readDesktopIconOverrides, readDesktopTitleOverrides, readThemeAppearance, readThemeMode, readThemeTemplate, resolveTheme, THEME_APPEARANCE_STORAGE_KEY, THEME_STORAGE_KEY, THEME_TEMPLATE_STORAGE_KEY, themeAppearanceCssVariables, themeAppearanceForTemplate, type DesktopIconOverrides, type DesktopTitleOverrides, type ThemeAppearanceConfig, type ThemeMode, type ThemeTemplate, validateCustomCss, writeCustomCss, writeDesktopIconOverrides, writeDesktopTitleOverrides, writeThemeAppearance } from './ui/theme/preferences';
@@ -449,6 +451,10 @@ export function App() {
   const [summarizingDay, setSummarizingDay] = useState<number | null>(null);
   const [mapGenerating, setMapGenerating] = useState(false);
   const [placeHighlightGenerating, setPlaceHighlightGenerating] = useState(false);
+  const [activityHighlight, setActivityHighlight] = useState<PlaceHighlight | null>(null);
+  const [activityCandidates, setActivityCandidates] = useState<ActivityInviteCandidate[]>([]);
+  const [activityNarration, setActivityNarration] = useState<ActivityNarration | undefined>();
+  const [activityBusy, setActivityBusy] = useState(false);
   const [activeEncounter, setActiveEncounter] = useState<ActiveEncounter | null>(null);
   const [encounterParticipantIds, setEncounterParticipantIds] = useState<string[]>([]);
   const [encounterPrimaryId, setEncounterPrimaryId] = useState('');
@@ -2040,6 +2046,80 @@ export function App() {
       setFeedback({ tone: 'error', text: errorMessage(error, '地点动态草稿无效。') });
       return false;
     }
+  }
+
+  function openPlaceActivity(highlightId: string): void {
+    const current = saveRef.current;
+    const highlight = current.world.placeHighlights.find((item) => item.id === highlightId);
+    if (!highlight) { setFeedback({ tone: 'error', text: '找不到这条地点活动。' }); return; }
+    if (highlight.kind !== 'activity') { setFeedback({ tone: 'info', text: '热点只负责展示与导航。' }); return; }
+    const validation = validateActivityInvites(current.world, highlight, []);
+    if (!validation.ok && current.world.player.nodeId !== highlight.nodeId) {
+      setFeedback({ tone: 'info', text: `${validation.warning} 可先前往活动地点。` });
+      return;
+    }
+    setActivityHighlight(highlight);
+    setActivityCandidates(activityInviteCandidates(current.world, highlight.nodeId, current.world.clock.day, current.world.clock.slotId, current.config.calendar.daysPerWeek));
+    setActivityNarration(undefined);
+  }
+
+  async function startPlaceActivity(invitedIds: string[], requirements: string): Promise<void> {
+    const highlight = activityHighlight;
+    if (!highlight || activityBusy) return;
+    const current = saveRef.current;
+    const validation = validateActivityInvites(current.world, highlight, invitedIds, current.world.clock.day, current.world.clock.slotId, current.config.calendar.daysPerWeek);
+    if (!validation.ok) { setFeedback({ tone: 'error', text: validation.warning }); return; }
+    const participants = validation.invitedIds.map((id) => ({ id, name: current.world.characters[id]?.name ?? current.world.npcs[id]?.name ?? id, tier: current.world.characters[id] ? 'formal' as const : 'semi' as const, activity: activityCandidates.find((candidate) => candidate.id === id)?.activity }));
+    const node = current.world.map.nodes[highlight.nodeId];
+    const fallback = `${current.world.player.name}${participants.length ? `和${participants.map((participant) => participant.name).join('、')}一起` : '独自'}参加了“${highlight.title}”。${highlight.body}`;
+    const routedProvider = mockFixtureId ? createMockProviderConfig(mockFixtureId) : resolveProviderForTask(providers, bindings, 'narrate_main', defaultProviderId);
+    setActivityBusy(true);
+    let raw = '';
+    try {
+      if (!routedProvider) throw new Error('未配置叙述 Provider。');
+      const messages = buildActivityNarrationMessages({ playerName: current.world.player.name, day: current.world.clock.day, slotId: current.world.clock.slotId, nodeName: node?.name ?? highlight.nodeId, nodeDescription: node?.description, highlight, participants, requirements });
+      await streamChat(ProviderConfigSchema.parse(routedProvider), messages, (delta) => { raw += delta; }, { taskId: 'narrate_main', outputMode: 'json_object' });
+      const parsedNarration = parseActivityNarration(raw, highlight.allowsNewNpc);
+      const formalParticipant = validation.invitedIds.find((id) => Boolean(current.world.characters[id]));
+      if (formalParticipant) {
+        const existing = await loadChat(formalParticipant);
+        const activityMessages: ChatMessage[] = [
+          { id: newChatMessageId(formalParticipant), role: 'user', content: '参加地点活动：' + highlight.title, kind: 'dialogue', speakerId: 'player' },
+          { id: newChatMessageId(formalParticipant), role: 'assistant', content: parsedNarration.narrative, kind: 'narration', speakerId: formalParticipant },
+        ];
+        await saveChat({ characterId: formalParticipant, messages: [...(existing?.messages ?? []), ...activityMessages], updatedAt: now() });
+      }
+      setActivityNarration(parsedNarration);
+      setFeedback({ tone: 'success', text: '活动叙事已生成；活动本身不修改世界事实。' });
+    } catch (error) {
+      setActivityNarration({ narrative: fallback });
+      setFeedback({ tone: 'info', text: `活动叙事请求失败，已使用本地描述：${errorMessage(error, '请求失败')}。` });
+    } finally { setActivityBusy(false); }
+  }
+
+  async function confirmActivityNpc(proposal: TemporaryNpcProposal): Promise<void> {
+    if (!activityHighlight) return;
+    try {
+      const current = saveRef.current;
+      const next = structuredClone(current);
+      const npc = createConfirmedActivityNpc(proposal, next.world, () => `activity-npc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+      next.world.npcs[npc.id] = npc;
+      commitSave(next);
+      const narrative = activityNarration?.narrative;
+      if (narrative) {
+        await saveChat({
+          characterId: npc.id,
+          messages: [
+            { id: newChatMessageId(npc.id), role: 'user', content: '在“' + activityHighlight.title + '”中认识了新朋友。', kind: 'dialogue', speakerId: 'player' },
+            { id: newChatMessageId(npc.id), role: 'assistant', content: narrative, kind: 'narration', speakerId: npc.id },
+          ],
+          updatedAt: now(),
+        });
+      }
+      setActivityNarration((currentNarration) => currentNarration ? { narrative: currentNarration.narrative, newNpc: undefined } : currentNarration);
+      setActivityCandidates((items) => [...items, { id: npc.id, name: npc.name, tier: 'semi', activity: '刚刚认识' }]);
+      setFeedback({ tone: 'success', text: `${npc.name} 已保存为半正式 NPC；仍需从联系人页确认转正。` });
+    } catch (error) { setFeedback({ tone: 'error', text: errorMessage(error, '临时新人保存失败。') }); }
   }
 
   async function restoreSnapshot(id: string): Promise<void> {
@@ -4394,7 +4474,8 @@ export function App() {
     {tab !== 'map' && <header className={`topbar ${tab === 'chat' ? 'chat-topbar' : ''}`}><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small>{editingAppName ? <form className="app-name-editor" onSubmit={(event) => { event.preventDefault(); saveAppName(); }}><input aria-label="应用名称" value={appNameDraft} maxLength={32} autoFocus onChange={(event) => setAppNameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setAppNameDraft(appName); setEditingAppName(false); } }} /><button type="submit" className="app-name-save">保存</button><button type="button" className="app-name-cancel" onClick={() => { setAppNameDraft(appName); setEditingAppName(false); }}>取消</button></form> : <button type="button" className="app-name-trigger" aria-label="编辑应用名称" title="编辑应用名称" onClick={() => { setAppNameDraft(appName); setEditingAppName(true); }}><h1>{appName}{tab === 'chat' && <span className="topbar-context"> · 面对面</span>}</h1></button>}</div></header>}
     <main className={`screen ${desktopScreen ? 'desktop-screen-host' : ''} ${tab === 'chat' ? 'chat-screen-host' : ''} ${tab === 'map' ? 'map-screen-host' : ''} ${tab === 'library' && libraryPage === 'messages' ? 'terminal-message-screen-host' : ''}`}>
       {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
-      {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} encounterPrimaryId={encounterPrimaryId} onEncounterParticipantIdsChange={(ids) => { setEncounterParticipantIds(ids); if (!ids.includes(encounterPrimaryId)) setEncounterPrimaryId(ids.length === 1 ? ids[0] : ''); }} onEncounterPrimaryIdChange={setEncounterPrimaryId} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onSetBackgroundUrl={setMapBackgroundUrl} onImportSceneBackground={importSceneBackground} onSetSceneBackgroundUrl={setSceneBackgroundUrl} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} onCreatePlaceHighlight={createPlaceHighlightForWorld} onUpdatePlaceHighlight={updatePlaceHighlightForWorld} onDeletePlaceHighlight={deletePlaceHighlightForWorld} onGeneratePlaceHighlights={generatePlaceHighlightDrafts} onConfirmPlaceHighlights={confirmPlaceHighlightDrafts} placeHighlightGenerating={placeHighlightGenerating} />}
+      {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} encounterPrimaryId={encounterPrimaryId} onEncounterParticipantIdsChange={(ids) => { setEncounterParticipantIds(ids); if (!ids.includes(encounterPrimaryId)) setEncounterPrimaryId(ids.length === 1 ? ids[0] : ''); }} onEncounterPrimaryIdChange={setEncounterPrimaryId} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onSetBackgroundUrl={setMapBackgroundUrl} onImportSceneBackground={importSceneBackground} onSetSceneBackgroundUrl={setSceneBackgroundUrl} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} onCreatePlaceHighlight={createPlaceHighlightForWorld} onUpdatePlaceHighlight={updatePlaceHighlightForWorld} onDeletePlaceHighlight={deletePlaceHighlightForWorld} onGeneratePlaceHighlights={generatePlaceHighlightDrafts} onConfirmPlaceHighlights={confirmPlaceHighlightDrafts} placeHighlightGenerating={placeHighlightGenerating} onStartActivity={openPlaceActivity} />}
+      {activityHighlight && <PlaceActivityDialog highlight={activityHighlight} candidates={activityCandidates} busy={activityBusy} narration={activityNarration} onClose={() => { setActivityHighlight(null); setActivityNarration(undefined); }} onStart={startPlaceActivity} onConfirmNpc={confirmActivityNpc} onDiscardNpc={() => setActivityNarration((current) => current ? { narrative: current.narrative } : current)} />}
       {tab === 'day' && <DayView {...dayViewProps} activePage={dayPage} onOpenPage={setDayPage} onBack={() => setDayPage(null)} />}
       {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} onGenerateVoice={generateChatVoice} onDownloadVoice={(index) => downloadVoiceAsset(messages[index]?.voice?.asset, `chat-${messages[index]?.id ?? index}`)} onGenerateCg={generateChatCg} onDownloadCg={(index) => downloadImageAsset(messages[index]?.cg?.asset, `chat-cg-${messages[index]?.id ?? index}`)} onDeleteCg={deleteChatCg} imageBusy={imageBusy} imageConfigured={Boolean(imageConfig.providerId && providers.some((item) => item.id === imageConfig.providerId && item.kind === 'openai-compatible'))} voiceAvailableCharacterIds={Object.keys(save.world.characters).filter((characterId) => Boolean(resolveTtsProviderForCharacter(ttsConfigs, characterBindings, save.meta.id, characterId, defaultTtsConfigId)?.enabled))} ttsBusy={ttsBusy} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} interrupted={Boolean(chatRecovery && (chatRecovery.status === 'interrupted' || chatRecovery.status === 'error'))} onRetryInterrupted={retryInterruptedReply} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} openingRetryAvailable={openingRetryAvailable} onRetryOpening={retryEncounterOpening} onChooseSceneMode={chooseSceneMode} hasFormalPrimary={Boolean(save.world.characters[selectedCharacterId])} formalToolsAvailable={chatParticipantIds.some((id) => Boolean(save.world.characters[id]))} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
       {tab === 'library' && libraryDayPage && <DayView {...dayViewProps} activePage={libraryDayPage} onOpenPage={() => undefined} onBack={() => setLibraryPage(null)} shellEyebrow="终端" />}
@@ -4439,9 +4520,10 @@ interface MapViewProps {
   onGeneratePlaceHighlights: (input: { nodeId?: string; count: number; requirements: string }) => Promise<PlaceHighlightDraft[]>;
   onConfirmPlaceHighlights: (drafts: PlaceHighlightDraft[]) => boolean;
   placeHighlightGenerating: boolean;
+  onStartActivity: (highlightId: string) => void;
 }
 
-function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, encounterPrimaryId, onEncounterParticipantIdsChange, onEncounterPrimaryIdChange, onEncounterOutcome, onContinueEncounter, onMove, onImportBackground, onSetBackgroundUrl, onImportSceneBackground, onSetSceneBackgroundUrl, onRemoveSceneBackground, onToggleMode, onCreateNode, onEditNode, onDeleteNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating, onCreatePlaceHighlight, onUpdatePlaceHighlight, onDeletePlaceHighlight, onGeneratePlaceHighlights, onConfirmPlaceHighlights, placeHighlightGenerating }: MapViewProps) {
+function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, encounterPrimaryId, onEncounterParticipantIdsChange, onEncounterPrimaryIdChange, onEncounterOutcome, onContinueEncounter, onMove, onImportBackground, onSetBackgroundUrl, onImportSceneBackground, onSetSceneBackgroundUrl, onRemoveSceneBackground, onToggleMode, onCreateNode, onEditNode, onDeleteNode, onSuggestNode, onGenerateMap, onExpandMap, mapGenerating, onCreatePlaceHighlight, onUpdatePlaceHighlight, onDeletePlaceHighlight, onGeneratePlaceHighlights, onConfirmPlaceHighlights, placeHighlightGenerating, onStartActivity }: MapViewProps) {
   type MapSheetState = 'collapsed' | 'half' | 'expanded';
   const map = save.world.map;
   const currentNode = map.nodes[save.world.player.nodeId];
@@ -4726,7 +4808,7 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, e
       <summary onPointerDown={beginSheetDrag} onPointerMove={moveSheetDrag} onPointerUp={endSheetDrag} onPointerCancel={endSheetDrag} onClick={handleSheetClick('detail')}><span>{selectedMapNode?.name ?? '地点详情'}</span><span>{detailSheetState === 'expanded' ? '向下收起' : '继续展开'}</span></summary>
       <div className="map-menu-content"><div className="place-card"><span className="eyebrow">{selectedMapNode?.id === currentNode?.id ? '当前位置' : '地点详情'}</span><h2>{selectedMapNode?.name ?? save.world.player.nodeId}</h2><p>{selectedMapNode?.description ?? '从地图出发，去遇见今天的世界。'}</p>{selectedMapNode && <div className="place-details"><span>区域<strong>{map.regions[selectedMapNode.regionId]?.name ?? selectedMapNode.regionId}</strong></span><span>类型<strong>{selectedMapNode.kind.length ? selectedMapNode.kind.join('、') : '未分类'}</strong></span><span>开放<strong>{selectedMapNode.openSlots?.length ? selectedMapNode.openSlots.map((id) => save.config.calendar.slots.find((slot) => slot.id === id)?.name ?? id).join('、') : '始终开放'}</strong></span><span>范围<strong>{selectedScope}</strong></span></div>}<div className="button-row">{selectedMapNode && selectedMapNode.id !== currentNode?.id && <button onClick={() => onMove(selectedMapNode.id)} disabled={!selectedMoveAffordable}>前往此地{energy?.enabled && <small>{selectedMoveAffordable ? `体力 -${selectedMoveEnergyCost}` : `体力不足 · 需要 ${selectedMoveEnergyCost}`}</small>}</button>}{selectedMapNode && <span className="map-meta">访问 {selectedMapNode.visitCount} 次</span>}</div>{selectedMapNode && <PresenceList people={whoIsHere(save.world, selectedMapNode.id, save.world.clock.day, save.world.clock.slotId, save.config.calendar.daysPerWeek)} scope={selectedScope} />}<EncounterTraceList traces={selectedMapNode ? encounterTraces[selectedMapNode.id] ?? [] : []} /></div></div>
     </details>}
-    <PlaceHighlightsDrawer save={save} open={placeHighlightsOpen} busy={placeHighlightGenerating} onClose={() => setPlaceHighlightsOpen(false)} onCreate={onCreatePlaceHighlight} onUpdate={onUpdatePlaceHighlight} onDelete={onDeletePlaceHighlight} onGenerate={onGeneratePlaceHighlights} onConfirmDrafts={onConfirmPlaceHighlights} onNavigate={(nodeId) => { if (onMove(nodeId)) setPlaceHighlightsOpen(false); }} />
+    <PlaceHighlightsDrawer save={save} open={placeHighlightsOpen} busy={placeHighlightGenerating} onClose={() => setPlaceHighlightsOpen(false)} onCreate={onCreatePlaceHighlight} onUpdate={onUpdatePlaceHighlight} onDelete={onDeletePlaceHighlight} onGenerate={onGeneratePlaceHighlights} onConfirmDrafts={onConfirmPlaceHighlights} onNavigate={(nodeId) => { if (onMove(nodeId)) setPlaceHighlightsOpen(false); }} onStartActivity={onStartActivity} />
   </section>;
 }
 

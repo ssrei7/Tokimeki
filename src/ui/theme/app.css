@@ -259,6 +259,18 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .map-screen-host .place-card p { margin: 4px 0 8px; max-height: 2.8em; overflow: hidden; font-size: 12px; line-height: 1.4; }
 .map-screen-host .place-card button { min-height: 36px; }
 .place-highlights-overlay { position: fixed; z-index: 30; inset: 0; display: flex; justify-content: flex-end; background: rgb(20 20 20 / 0.38); }
+.place-activity-overlay { position: fixed; z-index: 31; inset: 0; display: grid; place-items: center; padding: 16px; background: rgb(20 20 20 / 0.38); }
+.place-activity-dialog { width: min(560px, 100%); max-height: min(90vh, 760px); display: grid; gap: 12px; overflow-y: auto; padding: 18px; border: 1px solid var(--gray-200); border-radius: 10px; background: var(--gray-0); box-shadow: 0 16px 42px rgb(20 20 20 / 0.25); }
+.place-activity-dialog > label { display: grid; gap: 6px; color: var(--gray-600); font-size: 13px; }
+.place-activity-dialog textarea { min-height: 80px; resize: vertical; }
+.place-activity-dialog fieldset { display: grid; gap: 8px; margin: 0; padding: 10px; border: 1px solid var(--gray-100); border-radius: 8px; }
+.place-activity-dialog fieldset legend { padding: 0 4px; color: var(--gray-600); font-size: 12px; }
+.activity-invite-list { display: grid; gap: 8px; max-height: 220px; overflow-y: auto; }
+.activity-invite-list label { display: flex; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--gray-100); border-radius: 8px; }
+.activity-invite-list label span { display: grid; gap: 2px; }
+.activity-narration { display: grid; gap: 12px; }
+.activity-narration > p { margin: 0; white-space: pre-wrap; }
+.activity-npc-proposal { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--gray-25); }
 .place-highlights-drawer { width: min(520px, 100%); height: 100%; display: grid; align-content: start; gap: 12px; overflow-y: auto; padding: 18px; background: var(--gray-25); box-shadow: -12px 0 36px rgb(20 20 20 / 0.22); overscroll-behavior: contain; }
 .place-highlights-header { position: sticky; z-index: 2; top: -18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: -18px -18px 0; padding: 18px; border-bottom: 1px solid var(--gray-100); background: var(--chrome-surface); }
 .place-highlights-header h2 { margin: 2px 0 0; }
