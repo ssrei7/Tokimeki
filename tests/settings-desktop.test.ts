@@ -48,6 +48,7 @@ describe('settings desktop', () => {
     const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     expect(app).toContain('className="image-settings-content"');
     expect(css).toContain(".subpage-content[data-page='image'] > .image-settings-content");
+    expect(css).toContain(".subpage-content[data-page='director'] > *");
     expect(css).toContain(".subpage-content[data-page='display'] > .settings-display-shortcut");
     expect(css).toContain(".subpage-content[data-page='display'] > details:nth-of-type(7)");
     expect(css).not.toContain(".subpage-content[data-page='display'] > :nth-child(7)");

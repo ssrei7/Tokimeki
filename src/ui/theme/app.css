@@ -91,6 +91,7 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .subpage-content[data-page='characters'] > *,
 .subpage-content[data-page='worldbook'] > *,
 .subpage-content[data-page='presets'] > *,
+.subpage-content[data-page='director'] > *,
 .subpage-content[data-page='inventory'] > *,
 .subpage-content[data-page='save'] > *,
 .subpage-content[data-page='workshop'] > *,
