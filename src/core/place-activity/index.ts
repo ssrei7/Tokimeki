@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import type { PlaceHighlight, WorldState } from '../../data/schema/save';
+import type { DirectorPreferences } from '../../data/schema/save';
+import { buildNpcGenerationPreferencePrompt } from '../prompt/director';
 
 export const TemporaryNpcProposalSchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -44,11 +46,12 @@ export function validateActivityInvites(world: WorldState, highlight: PlaceHighl
   return { ok: true, invitedIds: unique };
 }
 
-export function buildActivityNarrationMessages(input: { playerName: string; day: number; slotId: string; nodeName: string; nodeDescription?: string; highlight: Pick<PlaceHighlight, 'title' | 'body' | 'allowsNewNpc'>; participants: readonly { id: string; name: string; tier: 'formal' | 'semi'; activity?: string }[]; requirements?: string }): Array<{ role: 'system' | 'user'; content: string }> {
+export function buildActivityNarrationMessages(input: { playerName: string; day: number; slotId: string; nodeName: string; nodeDescription?: string; highlight: Pick<PlaceHighlight, 'title' | 'body' | 'allowsNewNpc'>; participants: readonly { id: string; name: string; tier: 'formal' | 'semi'; activity?: string }[]; requirements?: string; directorPreferences?: DirectorPreferences }): Array<{ role: 'system' | 'user'; content: string }> {
+  const npcPreference = buildNpcGenerationPreferencePrompt(input.directorPreferences);
   return [
     {
       role: 'system',
-      content: '你负责描写一次已经被内核确认的地点活动。只返回 JSON，不要 Markdown：{"narrative":"活动叙事文字","newNpc":{"name":"新人名字","facts":["有限事实"],"tags":["标签"]}}。narrative 必须是纯叙事，不得包含 ops、数值、坐标、时间修改、奖励或关系变化。只有活动允许新人且确实适合时才返回 newNpc；最多一个。新人只能提供 name、最多 5 条有限 facts 与最多 8 个 tags，不得提供 ID、地点、日程、关系、数值或状态。',
+      content: `你负责描写一次已经被内核确认的地点活动。只返回 JSON，不要 Markdown：{"narrative":"活动叙事文字","newNpc":{"name":"新人名字","facts":["有限事实"],"tags":["标签"]}}。narrative 必须是纯叙事，不得包含 ops、数值、坐标、时间修改、奖励或关系变化。只有活动允许新人且确实适合时才返回 newNpc；最多一个。新人只能提供 name、最多 5 条有限 facts 与最多 8 个 tags，不得提供 ID、地点、日程、关系、数值或状态。${npcPreference ? `\n${npcPreference}` : ''}`,
     },
     {
       role: 'user',

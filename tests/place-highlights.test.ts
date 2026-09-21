@@ -10,7 +10,7 @@ import {
   updatePlaceHighlight,
   visiblePlaceHighlights,
 } from '../src/core/place-highlights';
-import { createDefaultMap, PlaceHighlightSchema, type PlaceHighlight } from '../src/data/schema/save';
+import { createDefaultMap, DirectorPreferencesSchema, PlaceHighlightSchema, type PlaceHighlight } from '../src/data/schema/save';
 
 function testMap() {
   const map = createDefaultMap();
@@ -58,6 +58,16 @@ describe('place highlights', () => {
     expect(messages).toHaveLength(2);
     expect(JSON.parse(messages[1].content)).toMatchObject({ requirements: '温柔一些' });
     expect(JSON.parse(messages[1].content).allowedLocations.map((node: { id: string }) => node.id)).toEqual(nodes.map((node) => node.id));
+  });
+
+  it('adds NPC preference context to map activity generation without changing the location whitelist', () => {
+    const nodes = selectPlaceHighlightNodes(testMap(), 1, () => 0);
+    const preferences = DirectorPreferencesSchema.parse({ storyDirection: '让活动成为认识新人的机会。', npcPreferenceTags: ['神秘', '帅气'], avoidTags: ['暴力'] });
+    const messages = buildPlaceHighlightGenerationMessages(nodes, '', preferences);
+    expect(messages[0].content).toContain('让活动成为认识新人的机会');
+    expect(messages[0].content).toContain('神秘、帅气');
+    expect(messages[0].content).toContain('暴力');
+    expect(JSON.parse(messages[1].content).allowedLocations).toHaveLength(1);
   });
 
   it('rejects AI drafts with unknown, duplicate, missing, or excess locations', () => {

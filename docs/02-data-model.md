@@ -386,7 +386,7 @@ interface DirectorPreferences {
   focusCharacterIds: CharId[];  // 最多 5 个正式角色
 }
 
-`DirectorPreferences` 属于当前世界存档的叙事偏好，不进入世界包。它只注入 `narrate_main` 与 `topic_tree` 等叙事任务，不直接修改关系、金钱、时间、地点、日程或已有角色资料；v43→v44 migration 会为旧存档补齐空偏好。
+`DirectorPreferences` 属于当前世界存档的叙事偏好，不进入世界包。完整导演上下文注入 `narrate_main` 与 `topic_tree`；统一 NPC 偏好投影还可注入现有 `map_activity_gen` 和活动新人候选请求，但不进入摘要、状态抽取或晨报移动等无关结构化任务。偏好不直接修改关系、金钱、时间、地点、日程或已有角色资料；v43→v44 migration 会为旧存档补齐空偏好。
 
 interface ScheduledEvent {       // pending 队列 = 伏笔
   id: Id;

@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { PlaceHighlightSchema, type MapNode, type MapState, type PlaceHighlight } from '../../data/schema/save';
+import { PlaceHighlightSchema, type DirectorPreferences, type MapNode, type MapState, type PlaceHighlight } from '../../data/schema/save';
+import { buildNpcGenerationPreferencePrompt } from '../prompt/director';
 
 export const PLACE_HIGHLIGHT_GENERATION_MIN = 1;
 export const PLACE_HIGHLIGHT_GENERATION_MAX = 8;
@@ -92,14 +93,15 @@ export function selectPlaceHighlightNodes(
   return shuffled.slice(0, targetCount);
 }
 
-export function buildPlaceHighlightGenerationMessages(nodes: readonly MapNode[], requirements: string): Array<{ role: 'system' | 'user'; content: string }> {
+export function buildPlaceHighlightGenerationMessages(nodes: readonly MapNode[], requirements: string, directorPreferences?: DirectorPreferences): Array<{ role: 'system' | 'user'; content: string }> {
   if (!nodes.length || nodes.length > PLACE_HIGHLIGHT_GENERATION_MAX) throw new Error('允许地点数量必须为 1–8。');
   const allowedIds = new Set(nodes.map((node) => node.id));
   if (allowedIds.size !== nodes.length) throw new Error('允许地点不能重复。');
+  const npcPreference = buildNpcGenerationPreferencePrompt(directorPreferences);
   return [
     {
       role: 'system',
-      content: `为指定地点生成纯叙事的地点动态。只返回 JSON，不要 Markdown，格式为 {"highlights":[{"nodeId":"地点 ID","kind":"hotspot 或 activity","title":"1–80 字符","body":"1–1000 字符","allowsNewNpc":false}]}。必须恰好返回 ${nodes.length} 条，每个允许地点各一条；不得输出坐标、ID、时间、奖励、状态变化或 ops。hotspot 只表示可查看的热点，activity 表示到场后可选择参加的活动。`,
+      content: `为指定地点生成纯叙事的地点动态。只返回 JSON，不要 Markdown，格式为 {"highlights":[{"nodeId":"地点 ID","kind":"hotspot 或 activity","title":"1–80 字符","body":"1–1000 字符","allowsNewNpc":false}]}。必须恰好返回 ${nodes.length} 条，每个允许地点各一条；不得输出坐标、ID、时间、奖励、状态变化或 ops。hotspot 只表示可查看的热点，activity 表示到场后可选择参加的活动。${npcPreference ? `\n${npcPreference}` : ''}`,
     },
     {
       role: 'user',

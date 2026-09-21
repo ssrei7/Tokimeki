@@ -19,6 +19,22 @@ export function directorPreferencesAreEmpty(preferences?: DirectorPreferences): 
     && preferences.focusCharacterIds.length === 0;
 }
 
+export function buildNpcGenerationPreferencePrompt(preferences?: DirectorPreferences): string | null {
+  if (!preferences) return null;
+  const storyDirection = preferences.storyDirection.trim();
+  const positive = preferences.npcPreferenceTags.map((tag) => tag.trim()).filter(Boolean);
+  const avoid = preferences.avoidTags.map((tag) => tag.trim()).filter(Boolean);
+  if (!storyDirection && positive.length === 0 && avoid.length === 0) return null;
+  const lines = [
+    '[当前世界 NPC / 新人生成偏好]',
+    '以下只是当前世界对 NPC 出现和描写的软性倾向。请优先参考，但不要保证每次都命中，不要改写已有 NPC 资料，也不要把偏好写成已经成立的关系或世界事实。输出仍必须遵守当前任务的 JSON/字段白名单与事实安全边界。',
+    storyDirection ? `相关剧情方向：${storyDirection}` : '',
+    positive.length ? `优先考虑的 NPC 倾向：${positive.join('、')}` : '',
+    avoid.length ? `尽量减少的 NPC/元素倾向：${avoid.join('、')}（不是绝对禁止）` : '',
+  ];
+  return lines.filter(Boolean).join('\n');
+}
+
 export function buildDirectorPreferencesPrompt(world?: WorldState): string | null {
   if (!world) return null;
   const preferences = world.director?.preferences;

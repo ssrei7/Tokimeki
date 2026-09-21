@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { activityInviteCandidates, buildActivityNarrationMessages, createConfirmedActivityNpc, parseActivityNarration, TemporaryNpcProposalSchema, validateActivityInvites } from '../src/core/place-activity';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
-import { PlaceHighlightSchema } from '../src/data/schema/save';
+import { DirectorPreferencesSchema, PlaceHighlightSchema } from '../src/data/schema/save';
 
 function activitySave() {
   const save = seedScenario(createCurrentSaveScenario({ id: 'place-activity', title: '活动测试', day: 3, slotId: 'evening' }));
@@ -36,6 +36,15 @@ describe('place activity', () => {
     expect(messages).toHaveLength(2);
     expect(messages[0].content).toContain('不得包含 ops');
     expect(JSON.parse(messages[1].content).activity.title).toBe('港口灯会');
+  });
+
+  it('projects current-world NPC preferences into activity newcomer generation', () => {
+    const preferences = DirectorPreferencesSchema.parse({ storyDirection: '让新人物自然加入日常。', npcPreferenceTags: ['帅气', '男 NPC'], avoidTags: ['恶意欺骗'] });
+    const messages = buildActivityNarrationMessages({ playerName: '旅人', day: 3, slotId: 'evening', nodeName: '港口', highlight: highlight(), participants: [], directorPreferences: preferences });
+    expect(messages[0].content).toContain('让新人物自然加入日常');
+    expect(messages[0].content).toContain('帅气、男 NPC');
+    expect(messages[0].content).toContain('恶意欺骗');
+    expect(buildActivityNarrationMessages({ playerName: '旅人', day: 3, slotId: 'evening', nodeName: '港口', highlight: highlight(), participants: [] })[0].content).not.toContain('当前世界 NPC / 新人生成偏好');
   });
 
   it('parses narrative-only fallback and gates temporary NPCs by the activity flag', () => {

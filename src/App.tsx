@@ -2033,7 +2033,7 @@ export function App() {
     try {
       const current = saveRef.current;
       const nodes = selectPlaceHighlightNodes(current.world.map, input.nodeId ? 1 : input.count, Math.random, input.nodeId);
-      const messages = buildPlaceHighlightGenerationMessages(nodes, input.requirements);
+      const messages = buildPlaceHighlightGenerationMessages(nodes, input.requirements, current.world.director.preferences);
       await streamChat(ProviderConfigSchema.parse(routedProvider), messages, (delta) => { generated += delta; }, { taskId: 'map_activity_gen', outputMode: 'json_object' });
       const drafts = parseGeneratedPlaceHighlights(generated, nodes.map((node) => node.id));
       setFeedback({ tone: 'success', text: `已生成 ${drafts.length} 条可编辑草稿；确认前不会写入存档。` });
@@ -2091,7 +2091,7 @@ export function App() {
     let raw = '';
     try {
       if (!routedProvider) throw new Error('未配置叙述 Provider。');
-      const messages = buildActivityNarrationMessages({ playerName: current.world.player.name, day: current.world.clock.day, slotId: current.world.clock.slotId, nodeName: node?.name ?? highlight.nodeId, nodeDescription: node?.description, highlight, participants, requirements });
+      const messages = buildActivityNarrationMessages({ playerName: current.world.player.name, day: current.world.clock.day, slotId: current.world.clock.slotId, nodeName: node?.name ?? highlight.nodeId, nodeDescription: node?.description, highlight, participants, requirements, directorPreferences: current.world.director.preferences });
       await streamChat(ProviderConfigSchema.parse(routedProvider), messages, (delta) => { raw += delta; }, { taskId: 'narrate_main', outputMode: 'json_object' });
       const parsedNarration = parseActivityNarration(raw, highlight.allowsNewNpc);
       const formalParticipant = validation.invitedIds.find((id) => Boolean(current.world.characters[id]));
