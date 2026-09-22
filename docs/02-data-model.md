@@ -908,7 +908,7 @@ v41 新增 `world.terminal.appointmentRequests`。提议保存联系人、发起
 
 ### 16.6 面对面场景会话与半正式 NPC 轻互动（无 schema 变更）
 
-面对面场景的 UI 会话只保存在 `sessionStorage`，状态为 `opening / choice / topics / manual / ended`；旧版 `topics / manual / ended` 值继续兼容。会话记录主要互动对象、锁定参与者、地点与可选相遇记录 ID，但这些字段不是世界事实，不进入 `SaveFile`。页面恢复时不会重复自动调用开场：未完成的 `opening` 与缺失缓存树的 `topics` 都回到本地选择菜单，由用户显式重试。
+面对面场景的 UI 会话保存在浏览器 `localStorage`，状态为 `opening / choice / topics / manual / ended`；旧版 `topics / manual / ended` 值继续兼容。会话记录主要互动对象、锁定参与者、地点与可选相遇记录 ID，但这些字段不是世界事实，不进入 `SaveFile`。页面恢复时不会重复自动调用开场：未完成的 `opening` 与缺失缓存树的 `topics` 都回到本地选择菜单，由用户显式重试。旧版本仍写入当前标签页的 `sessionStorage` 时，会在首次读取时迁移到 `localStorage`。
 
 每次相遇的开场和后续面对面消息继续写入主要互动对象稳定 ID 对应的 Content IndexedDB `ChatRecord`。正式角色的 Prompt 投影读取完整角色卡；半正式 NPC 只读取 `facts / tags / lightMemory`，不创建正式角色卡、不建立关系轴，也不修改轻记忆。NPC 轻互动即使返回 `<ops>`，也只保留可读正文并拒绝全部状态操作；编辑或删除这些聊天文字同样不会回滚或生成世界事实。未来 NPC 转正时，既有 `ChatRecord` 可作为有界口吻参考。
 

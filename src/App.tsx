@@ -242,15 +242,23 @@ function writeTerminalDraft(characterId: string, draft: string): void {
 function readEncounterChatSession(): EncounterChatSession | null {
   if (typeof window === 'undefined') return null;
   try {
-    return parseEncounterChatSession(window.sessionStorage.getItem(ENCOUNTER_CHAT_SESSION_KEY));
+    const persisted = parseEncounterChatSession(window.localStorage.getItem(ENCOUNTER_CHAT_SESSION_KEY));
+    if (persisted) return persisted;
+    const legacy = parseEncounterChatSession(window.sessionStorage.getItem(ENCOUNTER_CHAT_SESSION_KEY));
+    if (legacy) {
+      window.localStorage.setItem(ENCOUNTER_CHAT_SESSION_KEY, JSON.stringify(legacy));
+      window.sessionStorage.removeItem(ENCOUNTER_CHAT_SESSION_KEY);
+    }
+    return legacy;
   } catch { return null; }
 }
 
 function writeEncounterChatSession(session: EncounterChatSession | null): void {
   if (typeof window === 'undefined') return;
   try {
-    if (session) window.sessionStorage.setItem(ENCOUNTER_CHAT_SESSION_KEY, JSON.stringify(session));
-    else window.sessionStorage.removeItem(ENCOUNTER_CHAT_SESSION_KEY);
+    if (session) window.localStorage.setItem(ENCOUNTER_CHAT_SESSION_KEY, JSON.stringify(session));
+    else window.localStorage.removeItem(ENCOUNTER_CHAT_SESSION_KEY);
+    window.sessionStorage.removeItem(ENCOUNTER_CHAT_SESSION_KEY);
   } catch { /* Session storage may be unavailable in privacy-restricted browsers. */ }
 }
 
