@@ -49,6 +49,7 @@ describe('chat actions', () => {
     expect(css).toContain('-webkit-overflow-scrolling: touch;');
     expect(source).toContain('className="vn-next-line"');
     expect(source).toContain('canRevealNextLine');
+    expect(source).toContain('const nextLineAction = canRevealNextLine');
     expect(css).toContain('.vn-next-line { min-height: 40px;');
     expect(css).not.toMatch(/\.vn-dialogue-box\s*\{[^}]*max-height:/s);
   });
