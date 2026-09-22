@@ -59,7 +59,10 @@ describe('chat actions', () => {
     const css = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
     const themeCss = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
     expect(source).toContain("session.mode === 'opening' || (session.mode === 'topics' && !restoredTopicTree) ? 'choice' : session.mode");
-    expect(source).toContain('if (restoredMode !== session.mode) writeEncounterChatSession({ ...session, mode: restoredMode });');
+    expect(source).toContain('if (restoredMode !== session.mode) writeEncounterChatSession({ ...restoredSession, mode: restoredMode });');
+    expect(source).toContain('if (chatParticipantsLocked) return;');
+    expect(source).toContain('const restoredEntry = session.entryId');
+    expect(source).toContain('const chatCharacters = useMemo');
     expect(source).toContain("setTopicMode('opening');");
     expect(source).toContain('void generateEncounterOpening(session);');
     expect(source).not.toContain('void generateTopicTree(formal.id');

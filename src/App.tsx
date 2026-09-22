@@ -566,17 +566,32 @@ export function App() {
         setDebug((current) => ({ ...current, state: JSON.stringify(parsedSave, null, 2) }));
         const session = readEncounterChatSession();
         if (session && session.nodeId === parsedSave.world.player.nodeId && session.participantIds.length) {
-          setChatParticipantsLocked(true);
-          setChatEncounterEntryId(session.entryId ?? '');
-          setChatParticipantIds(session.participantIds);
-          setSelectedCharacterId(session.characterId);
-          setLastResponseSource(session.lastResponseSource ?? null);
-          const restoredTopicTree = isFormalEncounterParticipant(parsedSave.world, session.characterId) ? parsedSave.world.topicTrees[topicTreeKey(session.characterId, session.nodeId)] ?? null : null;
-          const restoredMode: EncounterSceneMode = session.mode === 'opening' || (session.mode === 'topics' && !restoredTopicTree) ? 'choice' : session.mode;
-          setTopicMode(restoredMode);
-          setTopicTree(restoredTopicTree);
-          setOpeningRetryAvailable(session.mode === 'opening');
-          if (restoredMode !== session.mode) writeEncounterChatSession({ ...session, mode: restoredMode });
+          const validParticipantIds = session.participantIds.filter((id) => Boolean(parsedSave.world.characters[id] || parsedSave.world.npcs[id]));
+          if (!validParticipantIds.includes(session.characterId)) {
+            writeEncounterChatSession(null);
+            setChatParticipantsLocked(false);
+            setChatEncounterEntryId('');
+            setChatParticipantIds([]);
+            setSelectedCharacterId('');
+          } else {
+            const restoredEntry = session.entryId
+              ? parsedSave.world.encounterLog.find((entry) => entry.id === session.entryId)
+              : [...parsedSave.world.encounterLog].reverse().find((entry) => entry.nodeId === session.nodeId && entry.characterIds.includes(session.characterId) && (entry.outcome === 'continued' || entry.outcome === undefined));
+            const restoredEntryId = restoredEntry?.id ?? session.entryId;
+            const restoredSession = restoredEntryId && restoredEntryId !== session.entryId ? { ...session, entryId: restoredEntryId } : session;
+            setChatParticipantsLocked(true);
+            setChatEncounterEntryId(restoredEntryId ?? '');
+            setChatParticipantIds(validParticipantIds);
+            setSelectedCharacterId(session.characterId);
+            setLastResponseSource(session.lastResponseSource ?? null);
+            const restoredTopicTree = isFormalEncounterParticipant(parsedSave.world, session.characterId) ? parsedSave.world.topicTrees[topicTreeKey(session.characterId, session.nodeId)] ?? null : null;
+            const restoredMode: EncounterSceneMode = session.mode === 'opening' || (session.mode === 'topics' && !restoredTopicTree) ? 'choice' : session.mode;
+            setTopicMode(restoredMode);
+            setTopicTree(restoredTopicTree);
+            setOpeningRetryAvailable(session.mode === 'opening');
+            if (restoredMode !== session.mode) writeEncounterChatSession({ ...restoredSession, mode: restoredMode });
+            else if (restoredSession !== session) writeEncounterChatSession(restoredSession);
+          }
         } else if (session) writeEncounterChatSession(null);
       } else {
         void saveCurrentSave(defaultSave);
@@ -700,8 +715,14 @@ export function App() {
   }, [characters, save.world, save.config.calendar.daysPerWeek]);
   const activePersona = personas.find((persona) => persona.id === save.world.player.personaId);
   useEffect(() => {
+    if (chatParticipantsLocked) return;
     if (selectedCharacterId && !presentChatCharacters.some((character) => character.id === selectedCharacterId)) setSelectedCharacterId(presentChatCharacters[0]?.id ?? '');
-  }, [presentChatCharacters, selectedCharacterId]);
+  }, [chatParticipantsLocked, presentChatCharacters, selectedCharacterId]);
+  const chatCharacters = useMemo<EncounterPromptParticipant[]>(() => {
+    if (!chatParticipantsLocked) return presentChatCharacters;
+    const locked = encounterPromptParticipants(save.world, characters, chatParticipantIds);
+    return [...presentChatCharacters, ...locked.filter((character) => !presentChatCharacters.some((present) => present.id === character.id))];
+  }, [characters, chatParticipantIds, chatParticipantsLocked, presentChatCharacters, save.world]);
   const promptEvents = useMemo(() => new EventBus(), []);
   const opRegistry = useMemo(() => createDefaultOpRegistry(), []);
   const terminalOpRegistry = useMemo(() => createTerminalOpRegistry(), []);
@@ -4522,7 +4543,7 @@ export function App() {
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} encounterPrimaryId={encounterPrimaryId} onEncounterParticipantIdsChange={(ids) => { setEncounterParticipantIds(ids); if (!ids.includes(encounterPrimaryId)) setEncounterPrimaryId(ids.length === 1 ? ids[0] : ''); }} onEncounterPrimaryIdChange={setEncounterPrimaryId} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onSetBackgroundUrl={setMapBackgroundUrl} onImportSceneBackground={importSceneBackground} onSetSceneBackgroundUrl={setSceneBackgroundUrl} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} onCreatePlaceHighlight={createPlaceHighlightForWorld} onUpdatePlaceHighlight={updatePlaceHighlightForWorld} onDeletePlaceHighlight={deletePlaceHighlightForWorld} onGeneratePlaceHighlights={generatePlaceHighlightDrafts} onConfirmPlaceHighlights={confirmPlaceHighlightDrafts} placeHighlightGenerating={placeHighlightGenerating} onStartActivity={openPlaceActivity} />}
       {activityHighlight && <PlaceActivityDialog highlight={activityHighlight} candidates={activityCandidates} busy={activityBusy} narration={activityNarration} onClose={() => { setActivityHighlight(null); setActivityNarration(undefined); }} onStart={startPlaceActivity} onConfirmNpc={confirmActivityNpc} onDiscardNpc={() => setActivityNarration((current) => current ? { narrative: current.narrative } : current)} />}
       {tab === 'day' && <DayView {...dayViewProps} activePage={dayPage} onOpenPage={setDayPage} onBack={() => setDayPage(null)} />}
-      {tab === 'chat' && <ChatView characters={presentChatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} onGenerateVoice={generateChatVoice} onDownloadVoice={(index) => downloadVoiceAsset(messages[index]?.voice?.asset, `chat-${messages[index]?.id ?? index}`)} onGenerateCg={generateChatCg} onDownloadCg={(index) => downloadImageAsset(messages[index]?.cg?.asset, `chat-cg-${messages[index]?.id ?? index}`)} onDeleteCg={deleteChatCg} imageBusy={imageBusy} imageConfigured={Boolean(imageConfig.providerId && providers.some((item) => item.id === imageConfig.providerId && item.kind === 'openai-compatible'))} voiceAvailableCharacterIds={Object.keys(save.world.characters).filter((characterId) => Boolean(resolveTtsProviderForCharacter(ttsConfigs, characterBindings, save.meta.id, characterId, defaultTtsConfigId)?.enabled))} ttsBusy={ttsBusy} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} interrupted={Boolean(chatRecovery && (chatRecovery.status === 'interrupted' || chatRecovery.status === 'error'))} onRetryInterrupted={retryInterruptedReply} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} openingRetryAvailable={openingRetryAvailable} onRetryOpening={retryEncounterOpening} onChooseSceneMode={chooseSceneMode} hasFormalPrimary={Boolean(save.world.characters[selectedCharacterId])} formalToolsAvailable={chatParticipantIds.some((id) => Boolean(save.world.characters[id]))} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
+      {tab === 'chat' && <ChatView characters={chatCharacters} worldCharacters={save.world.characters} worldCharacter={selectedCharacterId ? save.world.characters[selectedCharacterId] : undefined} world={save.world} hiddenTopicStyle={save.config.hiddenTopicStyle} participantIds={chatParticipantIds} participantsLocked={chatParticipantsLocked} onParticipantIdsChange={updateChatParticipants} sceneBackground={save.world.map.nodes[save.world.player.nodeId]?.sceneBackground} playerLabel={activePersona?.displayName ?? save.world.player.name} selectedCharacterId={selectedCharacterId} setSelectedCharacterId={setSelectedCharacterId} messages={messages} input={input} setInput={setInput} onAppend={appendMessage} onGenerate={generateReply} onEditMessage={editChatHistoryMessage} onDeleteMessage={deleteChatHistoryMessage} onGenerateVoice={generateChatVoice} onDownloadVoice={(index) => downloadVoiceAsset(messages[index]?.voice?.asset, `chat-${messages[index]?.id ?? index}`)} onGenerateCg={generateChatCg} onDownloadCg={(index) => downloadImageAsset(messages[index]?.cg?.asset, `chat-cg-${messages[index]?.id ?? index}`)} onDeleteCg={deleteChatCg} imageBusy={imageBusy} imageConfigured={Boolean(imageConfig.providerId && providers.some((item) => item.id === imageConfig.providerId && item.kind === 'openai-compatible'))} voiceAvailableCharacterIds={Object.keys(save.world.characters).filter((characterId) => Boolean(resolveTtsProviderForCharacter(ttsConfigs, characterBindings, save.meta.id, characterId, defaultTtsConfigId)?.enabled))} ttsBusy={ttsBusy} regenerateInput={regenerateInput} setRegenerateInput={setRegenerateInput} onRegenerate={regenerateReply} canRegenerate={topicMode === 'manual' && lastResponseSource === 'manual'} requestStatus={requestStatus} busy={busy} replyInProgress={replyInProgress} pendingOps={pendingOps} manualOps={manualOps} setManualOps={setManualOps} onRetryOps={retryOpsExtraction} onApplyManualOps={applyManualOps} interrupted={Boolean(chatRecovery && (chatRecovery.status === 'interrupted' || chatRecovery.status === 'error'))} onRetryInterrupted={retryInterruptedReply} topicTree={topicTree} topicMode={topicMode} topicLoading={topicLoading} topicRetryAvailable={Boolean(topicRetryContext)} onRetryTopicTree={retryTopicTree} openingRetryAvailable={openingRetryAvailable} onRetryOpening={retryEncounterOpening} onChooseSceneMode={chooseSceneMode} hasFormalPrimary={Boolean(save.world.characters[selectedCharacterId])} formalToolsAvailable={chatParticipantIds.some((id) => Boolean(save.world.characters[id]))} onTopicSelect={selectTopic} departure={chatDeparture} canFarewell={Boolean(chatEncounterEntryId)} onPlayerFarewell={sayGoodbye} onResolveDeparture={resolveChatDeparture} giftItems={Object.values(save.world.items).filter((item) => item.giftable !== false && save.world.player.inventory.some((entry) => entry.itemId === item.id && entry.count > 0))} giftTargets={chatParticipantIds.map((id) => save.world.characters[id]).filter(Boolean)} giftHistory={save.world.giftHistory.filter((entry) => chatParticipantIds.includes(entry.charId)).slice(-5)} onOfferGift={offerGiftToCurrent} onRetryGift={retryPendingGift} collectionEntries={save.world.collection} onShowCollection={showCollectionToCurrent} />}
       {tab === 'library' && libraryDayPage && <DayView {...dayViewProps} activePage={libraryDayPage} onOpenPage={() => undefined} onBack={() => setLibraryPage(null)} shellEyebrow="终端" />}
       {tab === 'library' && libraryPage === 'director' && <SubpageShell eyebrow="终端" title="剧情导演" pageId="director" onBack={() => setLibraryPage(null)}><DirectorPreferencesView preferences={save.world.director.preferences} characters={Object.values(save.world.characters)} onSave={saveDirectorPreferences} /></SubpageShell>}
       {/* @ts-expect-error legacy unused sticker callbacks remain accepted by LibraryView */}
