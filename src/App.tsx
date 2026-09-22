@@ -64,6 +64,7 @@ import { deleteRelationshipMemory, deriveRelationshipPromptState, removeRelation
 import { buildMemoryConsolidationPrompt, parseMemoryConsolidationResponse, shouldConsolidateMemories, type MemoryConsolidationCandidate } from './core/relationship/consolidation';
 import { markAppointmentOnEnter, markAppointmentOnTimeAdvance, settleAppointments } from './core/appointments';
 import { mapPresenceVisual, type MapPresenceVisual } from './ui/map-presence';
+import { DEFAULT_MAP_SHEET_PREFERENCES, mapSheetStorageKey, readMapSheetPreferences, writeMapSheetPreferences, type MapSheetPreferences } from './ui/map-sheet-preferences';
 import { readCallHistoryCollapsed, readContactGroupCollapsed, readContactGroupPreferences, writeCallHistoryCollapsed, writeContactGroupCollapsed, writeContactGroupPreferences, type ContactCustomGroup } from './ui/contact-groups';
 import { readPlayerAvatar, readPlayerAvatarOverrides, resolvePlayerIdentityAppearance, writePlayerAvatar } from './ui/player-avatar-preferences';
 import { buildNpcExpansionPrompt, buildPromoteNpcOp, characterCardFromPromotedCharacter, createNpcPromotionConversationContext, createNpcPromotionDraft, parseNpcExpansionResponse, summarizeNpcSchedule, type NpcPromotionDraft } from './ui/npc-promotion';
@@ -4546,6 +4547,7 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, e
   const currentNode = map.nodes[save.world.player.nodeId];
   const nodes = Object.values(map.nodes);
   const viewportStorageKey = `tokimeki.map-viewport.${save.meta.id}.${map.view.mode}`;
+  const sheetStorageKey = mapSheetStorageKey(save.meta.id, map.view.mode);
   const readViewport = () => {
     const fallback = { zoom: map.view.mode === 'graph' ? 1.5 : 1, offset: { x: 0, y: 0 } };
     if (typeof window === 'undefined') return fallback;
@@ -4565,6 +4567,11 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, e
   const [zoom, setZoom] = useState(initialViewport.zoom);
   const [offset, setOffset] = useState(initialViewport.offset);
   const [viewportHydratedKey, setViewportHydratedKey] = useState(viewportStorageKey);
+  const [sheetPreferences, setSheetPreferences] = useState<MapSheetPreferences>(() => {
+    if (typeof window === 'undefined') return DEFAULT_MAP_SHEET_PREFERENCES;
+    return readMapSheetPreferences(window.localStorage, sheetStorageKey);
+  });
+  const [sheetPreferencesHydratedKey, setSheetPreferencesHydratedKey] = useState(sheetStorageKey);
   const [selectedMapNodeId, setSelectedMapNodeId] = useState<string | null>(null);
   const [placeHighlightsOpen, setPlaceHighlightsOpen] = useState(false);
   const [toolSheetState, setToolSheetState] = useState<MapSheetState>('collapsed');
@@ -4603,6 +4610,16 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, e
     }, 100);
     return () => window.clearTimeout(timer);
   }, [offset, viewportHydratedKey, viewportStorageKey, zoom]);
+  useEffect(() => {
+    const next = readMapSheetPreferences(window.localStorage, sheetStorageKey);
+    setSheetPreferences(next);
+    setSheetPreferencesHydratedKey(sheetStorageKey);
+  }, [sheetStorageKey]);
+  useEffect(() => {
+    if (sheetPreferencesHydratedKey !== sheetStorageKey) return;
+    const timer = window.setTimeout(() => writeMapSheetPreferences(window.localStorage, sheetStorageKey, sheetPreferences), 100);
+    return () => window.clearTimeout(timer);
+  }, [sheetPreferences, sheetPreferencesHydratedKey, sheetStorageKey]);
   const mapPresence = useMemo(() => {
     const byNode: Record<string, ReturnType<typeof whoIsWhere>> = {};
     const visuals: Record<string, MapPresenceVisual> = {};
@@ -4735,6 +4752,10 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, e
     if (kind === 'tool') { setToolSheetProgress(next); setToolSheetState(stateForProgress(next)); }
     else { setDetailSheetProgress(next); setDetailSheetState(stateForProgress(next)); }
   };
+  const rememberSheetProgress = (kind: 'tool' | 'detail', progress: number) => {
+    if (progress <= 0.04) return;
+    setSheetPreferences((current) => kind === 'tool' ? { ...current, toolProgress: progress } : { ...current, detailProgress: progress });
+  };
   const selectMapNode = (nodeId: string) => { if (!map.nodes[nodeId]?.discovered) return; setSelectedMapNodeId(nodeId); setToolSheetProgress(0); setToolSheetState('collapsed'); setDetailSheetProgress(1); setDetailSheetState('expanded'); };
   const beginSheetDrag = (event: PointerEvent<HTMLElement>) => {
     const kind = event.currentTarget.closest('.map-detail-sheet') ? 'detail' : 'tool';
@@ -4778,13 +4799,15 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, e
     event.preventDefault();
     const target = Math.abs(velocity) > 0.28 ? (velocity < 0 ? 1 : 0) : currentProgress;
     setSheetProgress(kind, target);
+    rememberSheetProgress(kind, target);
     if (kind === 'detail' && target <= 0.04) setSelectedMapNodeId(null);
   };
   const handleSheetClick = (kind: 'tool' | 'detail') => (event: MouseEvent<HTMLElement>) => {
     if (sheetDragRef.current.moved) { event.preventDefault(); event.stopPropagation(); sheetDragRef.current.moved = false; return; }
     event.preventDefault();
     const progress = kind === 'detail' ? detailSheetProgress : toolSheetProgress;
-    updateSheetState(kind, progress > 0.04 ? 'collapsed' : kind === 'tool' ? 'expanded' : 'half');
+    if (progress > 0.04) updateSheetState(kind, 'collapsed');
+    else setSheetProgress(kind, kind === 'tool' ? sheetPreferences.toolProgress : sheetPreferences.detailProgress);
   };
   const sheetStyle = (progress: number) => ({ '--sheet-progress': progress } as CSSProperties);
   return <section className="map-screen">
