@@ -5,7 +5,7 @@ export type MapSheetPreferences = {
 
 export const DEFAULT_MAP_SHEET_PREFERENCES: MapSheetPreferences = {
   toolProgress: 1,
-  detailProgress: 0.5,
+  detailProgress: 0.42,
 };
 
 export const mapSheetStorageKey = (saveId: string, mode: string): string => `tokimeki.map-sheets.${saveId}.${mode}`;

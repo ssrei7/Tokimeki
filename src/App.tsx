@@ -4756,7 +4756,7 @@ function MapView({ save, worldbooks, activeEncounter, encounterParticipantIds, e
     if (progress <= 0.04) return;
     setSheetPreferences((current) => kind === 'tool' ? { ...current, toolProgress: progress } : { ...current, detailProgress: progress });
   };
-  const selectMapNode = (nodeId: string) => { if (!map.nodes[nodeId]?.discovered) return; setSelectedMapNodeId(nodeId); setToolSheetProgress(0); setToolSheetState('collapsed'); setDetailSheetProgress(1); setDetailSheetState('expanded'); };
+  const selectMapNode = (nodeId: string) => { if (!map.nodes[nodeId]?.discovered) return; const detailProgress = sheetPreferences.detailProgress > 0.04 ? sheetPreferences.detailProgress : DEFAULT_MAP_SHEET_PREFERENCES.detailProgress; setSelectedMapNodeId(nodeId); setToolSheetProgress(0); setToolSheetState('collapsed'); setDetailSheetProgress(detailProgress); setDetailSheetState(stateForProgress(detailProgress)); };
   const beginSheetDrag = (event: PointerEvent<HTMLElement>) => {
     const kind = event.currentTarget.closest('.map-detail-sheet') ? 'detail' : 'tool';
     const progress = kind === 'detail' ? detailSheetProgress : toolSheetProgress;
