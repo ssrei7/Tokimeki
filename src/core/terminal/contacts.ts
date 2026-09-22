@@ -15,7 +15,7 @@ export interface ContactCandidate {
     nodeId: string;
     nodeName: string;
     activity: string;
-    source: 'schedule' | 'home';
+    source: 'schedule' | 'home' | 'roaming';
   };
   request?: TerminalFriendRequest;
 }

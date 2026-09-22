@@ -1,4 +1,4 @@
-export { weekdayIndex, resolveScheduledCell, whoIsHere, whoIsWhere } from './schedule';
+export { weekdayIndex, resolveRoamingCell, resolveScheduledCell, whoIsHere, whoIsWhere } from './schedule';
 export type { PresentCharacter } from './schedule';
 export { deriveNodeScope, nodeScopeLabel } from './scope';
 export type { NodeScope } from './scope';

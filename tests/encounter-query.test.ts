@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveNodeScope, recentEncounterTraces, resolveScheduledCell, whoIsHere, whoIsWhere } from '../src/core/encounter';
+import { deriveNodeScope, recentEncounterTraces, resolveRoamingCell, resolveScheduledCell, whoIsHere, whoIsWhere } from '../src/core/encounter';
 import { createCurrentSaveScenario, seedScenario } from '../src/dev/scenarios/seeder';
 import type { FormalCharacter, WorldState } from '../src/data/schema/save';
 
@@ -90,5 +90,20 @@ describe('deterministic schedule presence query', () => {
     const before = structuredClone(world);
     whoIsHere(world, 'start', 1, 'morning', 7);
     expect(world).toEqual(before);
+  });
+
+  it('derives stable temporary roaming only after a time slot has been consumed', () => {
+    const world = setup();
+    world.map.nodes.start.discovered = true;
+    world.map.nodes.docks = { id: 'docks', name: '码头', regionId: 'start-region', kind: ['outdoor'], worldbookIds: [], discovered: true, visitCount: 0, memories: [], pos: { x: 700, y: 300 } };
+    world.slotsUsedToday = 1;
+    const personId = Array.from({ length: 100 }, (_, index) => `roamer-${index}`).find((id) => resolveRoamingCell(world, id)?.nodeId);
+    expect(personId).toBeDefined();
+    const first = resolveRoamingCell(world, personId!);
+    expect(first).toBeDefined();
+    expect(first?.nodeId === 'start' || first?.nodeId === 'docks').toBe(true);
+    expect(resolveRoamingCell(world, personId!)).toEqual(first);
+    world.slotsUsedToday = 0;
+    expect(resolveRoamingCell(world, personId!)).toBeUndefined();
   });
 });
