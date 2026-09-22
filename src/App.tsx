@@ -5241,9 +5241,8 @@ function ChatView(props: {
     const stage = stageRef.current;
     if (!stage) return;
     const updateStageHeight = () => {
-      const maxHeight = Math.max(80, Math.round(stage.clientHeight - 158));
+      const maxHeight = Math.max(80, Math.round(stage.clientHeight));
       setDialogueMaxHeight(maxHeight);
-      setDialogueBoxHeight((height) => Math.min(maxHeight, Math.max(80, height)));
     };
     updateStageHeight();
     if (typeof ResizeObserver === 'undefined') {

@@ -25,7 +25,7 @@ describe('chat actions', () => {
     expect(replyProgressIndicator(true, 'error', true)).toBeNull();
   });
 
-  it('uses icon actions with mutually exclusive panels and a stage-sized dialogue limit', () => {
+  it('uses icon actions with mutually exclusive panels and preserves dialogue height during stage resizing', () => {
     const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     const css = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
     expect(source).toContain("type ActiveChatPanel = 'gift' | 'collection' | 'regenerate' | 'recovery' | null;");
@@ -35,7 +35,11 @@ describe('chat actions', () => {
     expect(source).not.toContain('🎁');
     expect(source).not.toContain('🗂️');
     expect(source).toContain('aria-valuemax={dialogueMaxHeight}');
+    expect(source).toContain('const maxHeight = Math.max(80, Math.round(stage.clientHeight));');
+    expect(source).not.toContain('setDialogueBoxHeight((height) => Math.min(maxHeight, Math.max(80, height)))');
     expect(css).toContain('.vn-dialogue-box { display: flex; flex: 0 0 auto; min-height: 80px;');
+    expect(css).toContain('.vn-portrait-area { min-height: 0;');
+    expect(css).toContain('.vn-portrait-empty { width: min(100%, 360px); height: 100%; min-height: 0; }');
     expect(css).toContain('overflow-anchor: none;');
     expect(css).toContain('-webkit-overflow-scrolling: touch;');
     expect(css).not.toMatch(/\.vn-dialogue-box\s*\{[^}]*max-height:/s);
