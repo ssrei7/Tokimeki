@@ -65,7 +65,10 @@ export async function loadMemoryVectors(saveId: string, characterId: string): Pr
 export async function clearMemoryVectors(saveId: string): Promise<void> { await contentDb.memoryVectors.where('saveId').equals(saveId).delete(); }
 export async function saveMusicState(state: MusicState): Promise<MusicState> { const parsed = MusicStateSchema.parse(state); await contentDb.musicStates.put(parsed); return parsed; }
 export async function loadMusicState(): Promise<MusicState | undefined> { const stored = await contentDb.musicStates.get('default'); if (!stored) return undefined; return MusicStateSchema.parse(stored); }
-export async function listTerminalStickers(): Promise<TerminalStickerRecord[]> { return contentDb.terminalStickers.orderBy('createdAt').toArray(); }
+export async function listTerminalStickers(): Promise<TerminalStickerRecord[]> {
+  const records = await contentDb.terminalStickers.toArray();
+  return records.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+}
 export async function saveTerminalSticker(record: TerminalStickerRecord): Promise<TerminalStickerRecord> { const parsed = TerminalStickerRecordSchema.parse(record); await contentDb.terminalStickers.put(parsed); return parsed; }
 export async function deleteTerminalSticker(id: string): Promise<void> { await contentDb.terminalStickers.delete(id); }
 export async function listWorkshopPackages(): Promise<WorkshopPackageRecord[]> { return (await contentDb.workshopPackages.toArray()).map((record) => WorkshopPackageRecordSchema.parse(record)); }

@@ -3956,30 +3956,37 @@ export function App() {
   }
 
   async function downloadSave() {
-    if (selectedCharacterId) await saveChat({ characterId: selectedCharacterId, messages, updatedAt: now() });
-    const extras: Record<string, unknown> = { characters, worldbooks, presets, presetBundles };
-    const assetMeta: Record<string, { mimeType: string; width?: number; height?: number; category?: 'voice' | 'image' | 'music'; cacheFingerprint?: string; audioFormat?: string; durationMs?: number; voiceRequestId?: string }> = {};
-    const exportedChats = includeChatsOnExport ? await contentDb.chats.toArray() : [];
-    if (includeChatsOnExport) extras.chats = exportedChats;
-    const assets: Record<string, Uint8Array> = {};
-    const assetRefs: AssetRef[] = [
-      saveRef.current.world.map.view.background,
-      ...Object.values(saveRef.current.world.map.nodes).map((node) => node.sceneBackground),
-      ...Object.values(saveRef.current.world.characters).flatMap((character) => [character.visuals.avatar, ...character.visuals.portraits.map((portrait) => portrait.image)]),
-      ...Object.values(saveRef.current.world.npcs).flatMap((npc) => [npc.visuals?.avatar]),
-      ...Object.values(saveRef.current.world.terminal.messageThreads).flatMap((thread) => thread.map((message) => message.asset)),
-      ...exportedChats.flatMap((record) => record.messages.flatMap((message) => [message.voice?.asset, message.cg?.asset])),
-      ...(await listTerminalStickers()).map((sticker) => sticker.asset),
-    ].filter((ref): ref is AssetRef => Boolean(ref));
-    for (const ref of assetRefs) if (ref.kind === 'stored' && !assets[ref.assetId]) {
-      const asset = await loadAsset(ref.assetId);
-      if (asset) { assets[asset.id] = new Uint8Array(await asset.blob.arrayBuffer()); assetMeta[asset.id] = { mimeType: asset.mimeType, width: asset.width, height: asset.height, category: asset.category, cacheFingerprint: asset.cacheFingerprint, audioFormat: asset.audioFormat, durationMs: asset.durationMs, voiceRequestId: asset.voiceRequestId }; }
-    }
-    if (Object.keys(assetMeta).length) extras.assetMeta = assetMeta;
-    const blob = await exportSaveZip(saveRef.current, assets, extras);
-    const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
-    anchor.href = url; anchor.download = 'tokimeki-save.zip'; anchor.click(); URL.revokeObjectURL(url);
-    setFeedback({ tone: 'success', text: `存档已导出${includeChatsOnExport ? '，包含聊天记录' : '，未包含聊天记录'}；Provider 配置与 API key 未包含在内。` });
+    try {
+      const extras: Record<string, unknown> = { characters, worldbooks, presets, presetBundles };
+      const assetMeta: Record<string, { mimeType: string; width?: number; height?: number; category?: 'voice' | 'image' | 'music'; cacheFingerprint?: string; audioFormat?: string; durationMs?: number; voiceRequestId?: string }> = {};
+      let exportedChats: ChatRecord[] = [];
+      let chatExportSkipped = false;
+      if (includeChatsOnExport) {
+        try { exportedChats = await contentDb.chats.toArray(); }
+        catch { chatExportSkipped = true; }
+        if (!chatExportSkipped) extras.chats = exportedChats;
+      }
+      const stickers = await listTerminalStickers().catch(() => []);
+      const assets: Record<string, Uint8Array> = {};
+      const assetRefs: AssetRef[] = [
+        saveRef.current.world.map.view.background,
+        ...Object.values(saveRef.current.world.map.nodes).map((node) => node.sceneBackground),
+        ...Object.values(saveRef.current.world.characters).flatMap((character) => [character.visuals.avatar, ...character.visuals.portraits.map((portrait) => portrait.image)]),
+        ...Object.values(saveRef.current.world.npcs).flatMap((npc) => [npc.visuals?.avatar]),
+        ...Object.values(saveRef.current.world.terminal.messageThreads).flatMap((thread) => thread.map((message) => message.asset)),
+        ...exportedChats.flatMap((record) => record.messages.flatMap((message) => [message.voice?.asset, message.cg?.asset])),
+        ...stickers.map((sticker) => sticker.asset),
+      ].filter((ref): ref is AssetRef => Boolean(ref));
+      for (const ref of assetRefs) if (ref.kind === 'stored' && !assets[ref.assetId]) {
+        const asset = await loadAsset(ref.assetId);
+        if (asset) { assets[asset.id] = new Uint8Array(await asset.blob.arrayBuffer()); assetMeta[asset.id] = { mimeType: asset.mimeType, width: asset.width, height: asset.height, category: asset.category, cacheFingerprint: asset.cacheFingerprint, audioFormat: asset.audioFormat, durationMs: asset.durationMs, voiceRequestId: asset.voiceRequestId }; }
+      }
+      if (Object.keys(assetMeta).length) extras.assetMeta = assetMeta;
+      const blob = await exportSaveZip(saveRef.current, assets, extras);
+      const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
+      anchor.href = url; anchor.download = 'tokimeki-save.zip'; anchor.click(); URL.revokeObjectURL(url);
+      setFeedback({ tone: chatExportSkipped ? 'info' : 'success', text: chatExportSkipped ? '世界存档已导出，但聊天数据库暂时不可用，未包含聊天记录；Provider 配置与 API key 未包含在内。' : `存档已导出${includeChatsOnExport ? '，包含聊天记录' : '，未包含聊天记录'}；Provider 配置与 API key 未包含在内。` });
+    } catch (error) { setFeedback({ tone: 'error', text: `世界存档导出失败：${errorMessage(error, '未知错误')}` }); }
   }
 
   async function clearAllChats(): Promise<void> {

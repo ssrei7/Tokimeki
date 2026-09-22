@@ -223,6 +223,14 @@ describe('library desktop', () => {
     expect(musicSource).toContain('const [playlistOpen, setPlaylistOpen] = useState(false);');
   });
 
+  it('keeps world save export independent from optional chat persistence', () => {
+    const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('async function downloadSave()');
+    expect(source).toContain('let chatExportSkipped = false;');
+    expect(source).toContain('世界存档导出失败：');
+    expect(source).not.toMatch(/async function downloadSave\(\)\s*\{\s*if \(selectedCharacterId\) await saveChat/s);
+  });
+
   it('exposes collapsible contact groups and compact profile rows', () => {
     const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
     const groupSource = readFileSync(new URL('../src/ui/contact-groups.ts', import.meta.url), 'utf8');
@@ -268,6 +276,8 @@ describe('library desktop', () => {
     const contentDbSource = readFileSync(new URL('../src/data/db/content.ts', import.meta.url), 'utf8');
     expect(contentDbSource).toContain('this.version(12)');
     expect(contentDbSource).toContain('terminalStickers');
+    expect(contentDbSource).toContain('const records = await contentDb.terminalStickers.toArray();');
+    expect(contentDbSource).toContain('left.createdAt.localeCompare(right.createdAt)');
     expect(source).toContain('aria-label="打开更多功能"');
     expect(source).toContain('aria-label="转账"');
     expect(source).toContain('aria-label="远程约定"');
