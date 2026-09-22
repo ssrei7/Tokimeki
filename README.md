@@ -86,6 +86,7 @@ GitHub Pages 可以发布本项目的静态构建产物，但仓库项目站点�
 
 ## 项目文档
 
+- [源码二改与贡献指南](CONTRIBUTING.md)
 - [项目愿景](docs/00-vision.md)
 - [架构说明](docs/01-architecture.md)
 - [游玩教程](docs/14-user-guide.md)
