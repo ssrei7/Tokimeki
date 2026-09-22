@@ -63,8 +63,21 @@ describe('chat actions', () => {
     expect(source).toContain('const assistantChatMessage =');
     expect(source).not.toContain("content: narrative, kind: 'dialogue'");
     expect(css).toContain('.screen.chat-screen-host { display: flex; flex-direction: column; overflow: hidden; padding: 4px 8px var(--chat-bottom-nav-space); }');
-    expect(css).toContain('.vn-chat-screen { gap: 4px; overflow: hidden; }');
+    expect(css).toContain('.vn-chat-screen { gap: 4px; min-height: 0; overflow: hidden; }');
     expect(themeCss).toContain('--chat-bottom-nav-space: calc(var(--bottom-nav-height) + var(--safe-area-bottom));');
+  });
+
+  it('keeps notices out of chat layout and respects manual message scrolling', () => {
+    const source = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    const css = readFileSync(new URL('../src/ui/theme/app.css', import.meta.url), 'utf8');
+    expect(source).not.toContain('已进入自由聊天；只有在你发送消息并点击生成后才会调用 API。');
+    expect(source).toContain("if (!feedback || feedback.tone === 'error') return;");
+    expect(source).toContain("document.addEventListener('pointerdown', closeOnOutsidePointer, true);");
+    expect(source).toContain('const [followLatest, setFollowLatest] = useState(true);');
+    expect(source).toContain('followLatestRef.current = next;');
+    expect(source).toContain('回到最新消息');
+    expect(css).toMatch(/\.feedback\s*\{[^}]*position:\s*absolute;/s);
+    expect(css).toContain('.vn-jump-latest { position: sticky;');
   });
 });
 

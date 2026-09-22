@@ -435,6 +435,7 @@ export function App() {
   const [terminalCall, setTerminalCall] = useState<TerminalCallSession | null>(null);
   const [replyInProgress, setReplyInProgress] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const feedbackRef = useRef<HTMLDivElement>(null);
   const [globalBackupPreview, setGlobalBackupPreview] = useState<ImportedGlobalBackup | null>(null);
   const [themePackagePreview, setThemePackagePreview] = useState<ImportedThemePackage | null>(null);
   const [save, setSave] = useState<SaveFile>(defaultSave);
@@ -2557,7 +2558,6 @@ export function App() {
     }
     setTopicMode(mode);
     writeEncounterChatSession({ ...session, mode });
-    if (mode === 'manual') setFeedback({ tone: 'info', text: '已进入自由聊天；只有在你发送消息并点击生成后才会调用 API。' });
   }
 
   function retryEncounterOpening(): void {
@@ -4486,11 +4486,25 @@ export function App() {
   const desktopScreen = (tab === 'library' && !libraryPage) || (tab === 'settings' && !settingsPage);
   const workshopDraftProviderConfigured = Boolean(mockFixtureId || resolveProviderForTask(providers, bindings, 'workshop_draft', defaultProviderId));
 
+  useEffect(() => {
+    if (!feedback || feedback.tone === 'error') return;
+    const timeout = window.setTimeout(() => setFeedback((current) => current === feedback ? null : current), 4200);
+    const closeOnOutsidePointer = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node && !feedbackRef.current?.contains(target)) setFeedback((current) => current === feedback ? null : current);
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer, true);
+    return () => {
+      window.clearTimeout(timeout);
+      document.removeEventListener('pointerdown', closeOnOutsidePointer, true);
+    };
+  }, [feedback]);
+
   return <div className="app-shell">
     <audio ref={musicPlayer.audioRef} preload="metadata" aria-hidden="true" />
     {tab !== 'map' && <header className={`topbar ${tab === 'chat' ? 'chat-topbar' : ''}`}><div><small>第 {save.world.clock.day} 天 · {save.world.clock.slotId}</small>{editingAppName ? <form className="app-name-editor" onSubmit={(event) => { event.preventDefault(); saveAppName(); }}><input aria-label="应用名称" value={appNameDraft} maxLength={32} autoFocus onChange={(event) => setAppNameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setAppNameDraft(appName); setEditingAppName(false); } }} /><button type="submit" className="app-name-save">保存</button><button type="button" className="app-name-cancel" onClick={() => { setAppNameDraft(appName); setEditingAppName(false); }}>取消</button></form> : <button type="button" className="app-name-trigger" aria-label="编辑应用名称" title="编辑应用名称" onClick={() => { setAppNameDraft(appName); setEditingAppName(true); }}><h1>{appName}{tab === 'chat' && <span className="topbar-context"> · 面对面</span>}</h1></button>}</div></header>}
     <main className={`screen ${desktopScreen ? 'desktop-screen-host' : ''} ${tab === 'chat' ? 'chat-screen-host' : ''} ${tab === 'map' ? 'map-screen-host' : ''} ${tab === 'library' && libraryPage === 'messages' ? 'terminal-message-screen-host' : ''}`}>
-      {feedback && <div className={`feedback ${feedback.tone}`} role="status">{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
+      {feedback && <div ref={feedbackRef} className={`feedback ${feedback.tone}`} role={feedback.tone === 'error' ? 'alert' : 'status'}>{feedback.text}<button aria-label="关闭提示" onClick={() => setFeedback(null)}>×</button></div>}
       {tab === 'map' && <MapView save={save} worldbooks={worldbooks} activeEncounter={activeEncounter} encounterParticipantIds={encounterParticipantIds} encounterPrimaryId={encounterPrimaryId} onEncounterParticipantIdsChange={(ids) => { setEncounterParticipantIds(ids); if (!ids.includes(encounterPrimaryId)) setEncounterPrimaryId(ids.length === 1 ? ids[0] : ''); }} onEncounterPrimaryIdChange={setEncounterPrimaryId} onEncounterOutcome={chooseEncounterOutcome} onContinueEncounter={continueEncounter} onMove={moveToNode} onImportBackground={importMapBackground} onSetBackgroundUrl={setMapBackgroundUrl} onImportSceneBackground={importSceneBackground} onSetSceneBackgroundUrl={setSceneBackgroundUrl} onRemoveSceneBackground={removeSceneBackground} onToggleMode={toggleMapMode} onCreateNode={addMapNode} onEditNode={editMapNode} onDeleteNode={removeMapNode} onSuggestNode={suggestMapNode} onGenerateMap={generateMap} onExpandMap={expandMap} mapGenerating={mapGenerating} onCreatePlaceHighlight={createPlaceHighlightForWorld} onUpdatePlaceHighlight={updatePlaceHighlightForWorld} onDeletePlaceHighlight={deletePlaceHighlightForWorld} onGeneratePlaceHighlights={generatePlaceHighlightDrafts} onConfirmPlaceHighlights={confirmPlaceHighlightDrafts} placeHighlightGenerating={placeHighlightGenerating} onStartActivity={openPlaceActivity} />}
       {activityHighlight && <PlaceActivityDialog highlight={activityHighlight} candidates={activityCandidates} busy={activityBusy} narration={activityNarration} onClose={() => { setActivityHighlight(null); setActivityNarration(undefined); }} onStart={startPlaceActivity} onConfirmNpc={confirmActivityNpc} onDiscardNpc={() => setActivityNarration((current) => current ? { narrative: current.narrative } : current)} />}
       {tab === 'day' && <DayView {...dayViewProps} activePage={dayPage} onOpenPage={setDayPage} onBack={() => setDayPage(null)} />}
@@ -5096,6 +5110,7 @@ function ChatView(props: {
 }) {
   const messagesRef = useRef<HTMLDivElement>(null);
   const followLatestRef = useRef(true);
+  const [followLatest, setFollowLatest] = useState(true);
   const previousCharacterIdRef = useRef(props.selectedCharacterId);
   const [showOlderMessages, setShowOlderMessages] = useState(false);
   const [activeChatPanel, setActiveChatPanel] = useState<ActiveChatPanel>(null);
@@ -5120,7 +5135,7 @@ function ChatView(props: {
   const stageRef = useRef<HTMLDivElement>(null);
   const [dialogueMaxHeight, setDialogueMaxHeight] = useState(360);
   const recoveryVisibleRef = useRef(false);
-  const resizeStartRef = useRef<{ y: number; height: number } | null>(null);
+  const resizeStartRef = useRef<{ y: number; height: number; followLatest: boolean } | null>(null);
   const canGenerate = canGenerateReply(props.messages, props.input);
   const latestMessage = props.messages.at(-1)?.content;
   const latestRole = props.messages.at(-1)?.role;
@@ -5138,6 +5153,14 @@ function ChatView(props: {
   const latestAssistantKey = latestAssistantIndex >= 0 ? `${latestAssistantIndex}:${props.messages[latestAssistantIndex].content}` : '';
   const effectiveRevealedLineCount = latestRole === 'assistant' && revealedAssistantKey !== latestAssistantKey ? 1 : revealedLineCount;
   const replyProgress = replyProgressIndicator(props.replyInProgress, props.requestStatus, latestRole === 'assistant' && latestAssistantLines.length > 0);
+  const scrollToLatest = () => {
+    const scroller = messagesRef.current;
+    if (!scroller) return;
+    followLatestRef.current = true;
+    setFollowLatest(true);
+    scroller.scrollTop = scroller.scrollHeight;
+    requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; });
+  };
   const activeSpeakerId = (() => {
     if (latestRole !== 'assistant' || latestAssistantIndex < 0 || latestAssistantLines.length <= effectiveRevealedLineCount) return latestDialogueSpeakerId(props.messages, props.selectedCharacterId, speakerIdsByName);
     const displayed = latestAssistantLines.slice(0, Math.max(1, effectiveRevealedLineCount));
@@ -5207,7 +5230,9 @@ function ChatView(props: {
     const scroller = messagesRef.current;
     if (!(scroller instanceof HTMLElement)) return;
     const updateFollowState = () => {
-      followLatestRef.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 48;
+      const next = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 48;
+      followLatestRef.current = next;
+      setFollowLatest((current) => current === next ? current : next);
     };
     scroller.addEventListener('scroll', updateFollowState, { passive: true });
     return () => scroller.removeEventListener('scroll', updateFollowState);
@@ -5217,13 +5242,13 @@ function ChatView(props: {
     if (previousCharacterIdRef.current !== props.selectedCharacterId) {
       previousCharacterIdRef.current = props.selectedCharacterId;
       followLatestRef.current = true;
+      setFollowLatest(true);
       setShowOlderMessages(false);
     }
     if (followLatestRef.current) {
       const scroller = messagesRef.current;
       if (scroller) {
-        scroller.scrollTop = scroller.scrollHeight;
-        requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; });
+        scrollToLatest();
       }
     }
   }, [effectiveRevealedLineCount, latestMessage, props.messages.length, props.selectedCharacterId]);
@@ -5268,12 +5293,13 @@ function ChatView(props: {
   const beginDialogueResize = (event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    resizeStartRef.current = { y: event.clientY, height: dialogueBoxHeight };
+    resizeStartRef.current = { y: event.clientY, height: dialogueBoxHeight, followLatest: followLatestRef.current };
   };
   const moveDialogueResize = (event: PointerEvent<HTMLDivElement>) => {
     const start = resizeStartRef.current;
     if (!start) return;
     setDialogueBoxHeight(Math.min(dialogueMaxHeight, Math.max(80, start.height + start.y - event.clientY)));
+    if (start.followLatest) requestAnimationFrame(scrollToLatest);
   };
   const endDialogueResize = () => { resizeStartRef.current = null; };
   const toggleChatPanel = (panel: Exclude<ActiveChatPanel, null>) => {
@@ -5327,7 +5353,7 @@ function ChatView(props: {
       </div>
       <div className="vn-dialogue-box" style={{ height: `${dialogueBoxHeight}px` }}>
         <div className="vn-dialogue-resize-handle" role="separator" tabIndex={0} aria-label="调整对话框高度" aria-orientation="horizontal" aria-valuemin={80} aria-valuemax={dialogueMaxHeight} aria-valuenow={dialogueBoxHeight} onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); setDialogueBoxHeight((height) => Math.min(dialogueMaxHeight, Math.max(80, height + (event.key === 'ArrowUp' ? 10 : -10)))); } }} onPointerDown={beginDialogueResize} onPointerMove={moveDialogueResize} onPointerUp={endDialogueResize} onPointerCancel={endDialogueResize} />
-        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">进入场景后会先生成一段开场。</p>}{visibleMessages.map((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, speakerLabelsById); const isLatestCollapsible = latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, effectiveRevealedLineCount)) : lines; const editable = isEditableChatMessage(message); const menuOpen = messageMenuIndex === messageIndex; const editing = editingMessageIndex === messageIndex; const cgEditing = cgDraftIndex === messageIndex; const formalSpeaker = Boolean(props.worldCharacters[messageVoiceSpeakerId(message)]); return <div className={`vn-message-group ${message.role}`} key={message.id ?? `${message.role}-${messageIndex}`} onPointerDown={(event) => beginMessagePress(event, messageIndex)} onPointerUp={clearMessagePress} onPointerCancel={clearMessagePress} onPointerLeave={clearMessagePress} onContextMenu={(event) => { event.preventDefault(); openMessageMenu(messageIndex); }}>{displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>)}{message.voice && <TerminalVoiceAudio asset={message.voice.asset} durationMs={message.voice.durationMs} />}{message.cg && <><ChatCgImage attachment={message.cg} /><div className="chat-cg-actions"><button type="button" className="secondary" onClick={() => void props.onDownloadCg(messageIndex)}>下载 CG</button><button type="button" className="danger" onClick={() => void props.onDeleteCg(messageIndex)}>删除 CG</button></div></>}{editable && menuOpen && !editing && !cgEditing && <div className="message-action-menu" role="menu">{message.role === 'assistant' && formalSpeaker && <button type="button" onClick={() => startCgDraft(messageIndex)} disabled={props.imageBusy || !props.imageConfigured}>{message.cg ? '重新生成 CG' : '制作 CG'}</button>}{message.role === 'assistant' && message.kind !== 'narration' && formalSpeaker && <button type="button" onClick={() => { void props.onGenerateVoice(messageIndex); cancelMessageMenu(); }} disabled={props.ttsBusy || !props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message))} title={props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message)) ? undefined : '请先设置语音 API'}>{props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message)) ? (message.voice ? '重新生成语音' : '生成语音') : '前往设置语音 API'}</button>}<button type="button" onClick={() => startMessageEdit(messageIndex)} disabled={props.ttsBusy || props.imageBusy}>编辑</button><button type="button" className="danger" disabled={props.ttsBusy || props.imageBusy} onClick={() => { if (window.confirm('删除这条台词？只会删除聊天记录，不会回滚已执行的状态变化。')) { void props.onDeleteMessage(messageIndex); cancelMessageMenu(); } }}>删除</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div>}{cgEditing && <div className="message-edit-panel cg-draft-panel"><label>画面描述<textarea aria-label="CG 画面描述" value={cgDraftText} onChange={(event) => setCgDraftText(event.target.value)} autoFocus /></label><fieldset><legend>入镜角色</legend>{Object.values(props.worldCharacters).map((character) => <label className="checkbox-line" key={character.id}><input type="checkbox" checked={cgCharacterIds.includes(character.id)} onChange={(event) => toggleCgCharacter(character.id, event.target.checked)} />{character.name}</label>)}</fieldset><label className="checkbox-line"><input type="checkbox" checked={cgIncludesPlayer} onChange={(event) => setCgIncludesPlayer(event.target.checked)} />包含用户 / 当前面具身份（需要双参考图锁脸）</label><p className="io-scope">这一步只编辑本地草稿，不调用 API。角色台词与旁白仍分开显示，最终画面描述可同时引用二者。</p><div className="button-row"><button type="button" onClick={() => { if (cgDraftIndex !== null) void props.onGenerateCg(cgDraftIndex, cgDraftText, cgCharacterIds, cgIncludesPlayer); cancelMessageMenu(); }} disabled={!cgDraftText.trim() || !cgCharacterIds.length || props.imageBusy}>{props.imageBusy ? '正在生成…' : message.cg ? '确认重新生成' : '确认生成'}</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}{editing && <div className="message-edit-panel"><textarea aria-label="编辑台词" value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} autoFocus /><div className="button-row"><button type="button" onClick={() => { void props.onEditMessage(messageIndex, editingMessageText); cancelMessageMenu(); }} disabled={!editingMessageText.trim()}>保存</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}</div>; })}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > effectiveRevealedLineCount ? <button className="vn-next-line" onClick={() => { followLatestRef.current = true; setRevealedAssistantKey(latestAssistantKey); setRevealedLineCount(Math.min(latestAssistantLines.length, effectiveRevealedLineCount + 1)); }}>下一段 · {effectiveRevealedLineCount}/{latestAssistantLines.length}</button> : replyProgress && <div className="vn-generation-progress" role="status" aria-live="polite"><span>{replyProgress === 'first-line' ? '正在生成第一段' : '后续内容生成中'}</span><span className="vn-generation-dots" aria-hidden="true"><i /><i /><i /></span></div>}</div>
+        <div className="vn-dialogue-log messages" ref={messagesRef}>{olderMessageCount > 0 && <button className="history-toggle" onClick={() => setShowOlderMessages((value) => !value)}>{showOlderMessages ? '只看最近消息' : `查看更早的 ${olderMessageCount} 条消息`}</button>}{props.messages.length === 0 && !props.busy && <p className="empty">进入场景后会先生成一段开场。</p>}{visibleMessages.map((message, index) => { const messageIndex = olderMessageCount + index; const lines = splitDialogueMessage(message, characterName, props.playerLabel, speakerLabelsById); const isLatestCollapsible = latestRole === 'assistant' && messageIndex === latestAssistantIndex && lines.length > 1; const displayedLines = isLatestCollapsible ? lines.slice(0, Math.max(1, effectiveRevealedLineCount)) : lines; const editable = isEditableChatMessage(message); const menuOpen = messageMenuIndex === messageIndex; const editing = editingMessageIndex === messageIndex; const cgEditing = cgDraftIndex === messageIndex; const formalSpeaker = Boolean(props.worldCharacters[messageVoiceSpeakerId(message)]); return <div className={`vn-message-group ${message.role}`} key={message.id ?? `${message.role}-${messageIndex}`} onPointerDown={(event) => beginMessagePress(event, messageIndex)} onPointerUp={clearMessagePress} onPointerCancel={clearMessagePress} onPointerLeave={clearMessagePress} onContextMenu={(event) => { event.preventDefault(); openMessageMenu(messageIndex); }}>{displayedLines.map((line, lineIndex) => <div className={`vn-line ${line.kind} ${message.role}`} key={`${message.role}-${messageIndex}-${lineIndex}`}><span className="vn-speaker">{line.kind === 'dialogue' ? line.speaker : ''}</span><span className="vn-line-text">{line.text}</span></div>)}{message.voice && <TerminalVoiceAudio asset={message.voice.asset} durationMs={message.voice.durationMs} />}{message.cg && <><ChatCgImage attachment={message.cg} /><div className="chat-cg-actions"><button type="button" className="secondary" onClick={() => void props.onDownloadCg(messageIndex)}>下载 CG</button><button type="button" className="danger" onClick={() => void props.onDeleteCg(messageIndex)}>删除 CG</button></div></>}{editable && menuOpen && !editing && !cgEditing && <div className="message-action-menu" role="menu">{message.role === 'assistant' && formalSpeaker && <button type="button" onClick={() => startCgDraft(messageIndex)} disabled={props.imageBusy || !props.imageConfigured}>{message.cg ? '重新生成 CG' : '制作 CG'}</button>}{message.role === 'assistant' && message.kind !== 'narration' && formalSpeaker && <button type="button" onClick={() => { void props.onGenerateVoice(messageIndex); cancelMessageMenu(); }} disabled={props.ttsBusy || !props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message))} title={props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message)) ? undefined : '请先设置语音 API'}>{props.voiceAvailableCharacterIds.includes(messageVoiceSpeakerId(message)) ? (message.voice ? '重新生成语音' : '生成语音') : '前往设置语音 API'}</button>}<button type="button" onClick={() => startMessageEdit(messageIndex)} disabled={props.ttsBusy || props.imageBusy}>编辑</button><button type="button" className="danger" disabled={props.ttsBusy || props.imageBusy} onClick={() => { if (window.confirm('删除这条台词？只会删除聊天记录，不会回滚已执行的状态变化。')) { void props.onDeleteMessage(messageIndex); cancelMessageMenu(); } }}>删除</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div>}{cgEditing && <div className="message-edit-panel cg-draft-panel"><label>画面描述<textarea aria-label="CG 画面描述" value={cgDraftText} onChange={(event) => setCgDraftText(event.target.value)} autoFocus /></label><fieldset><legend>入镜角色</legend>{Object.values(props.worldCharacters).map((character) => <label className="checkbox-line" key={character.id}><input type="checkbox" checked={cgCharacterIds.includes(character.id)} onChange={(event) => toggleCgCharacter(character.id, event.target.checked)} />{character.name}</label>)}</fieldset><label className="checkbox-line"><input type="checkbox" checked={cgIncludesPlayer} onChange={(event) => setCgIncludesPlayer(event.target.checked)} />包含用户 / 当前面具身份（需要双参考图锁脸）</label><p className="io-scope">这一步只编辑本地草稿，不调用 API。角色台词与旁白仍分开显示，最终画面描述可同时引用二者。</p><div className="button-row"><button type="button" onClick={() => { if (cgDraftIndex !== null) void props.onGenerateCg(cgDraftIndex, cgDraftText, cgCharacterIds, cgIncludesPlayer); cancelMessageMenu(); }} disabled={!cgDraftText.trim() || !cgCharacterIds.length || props.imageBusy}>{props.imageBusy ? '正在生成…' : message.cg ? '确认重新生成' : '确认生成'}</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}{editing && <div className="message-edit-panel"><textarea aria-label="编辑台词" value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} autoFocus /><div className="button-row"><button type="button" onClick={() => { void props.onEditMessage(messageIndex, editingMessageText); cancelMessageMenu(); }} disabled={!editingMessageText.trim()}>保存</button><button type="button" className="secondary" onClick={cancelMessageMenu}>取消</button></div></div>}</div>; })}{!followLatest && <button type="button" className="vn-jump-latest" onClick={scrollToLatest}>回到最新消息</button>}{!props.busy && latestRole === 'assistant' && latestAssistantLines.length > effectiveRevealedLineCount ? <button className="vn-next-line" onClick={() => { followLatestRef.current = true; setFollowLatest(true); setRevealedAssistantKey(latestAssistantKey); setRevealedLineCount(Math.min(latestAssistantLines.length, effectiveRevealedLineCount + 1)); }}>下一段 · {effectiveRevealedLineCount}/{latestAssistantLines.length}</button> : replyProgress && <div className="vn-generation-progress" role="status" aria-live="polite"><span>{replyProgress === 'first-line' ? '正在生成第一段' : '后续内容生成中'}</span><span className="vn-generation-dots" aria-hidden="true"><i /><i /><i /></span></div>}</div>
       </div>
     </div>
     {props.topicMode === 'opening' && <div className="scene-choice-panel" aria-label="正在生成开场"><strong>正在生成相遇开场…</strong><span className="io-scope">每次相遇最多一次自动请求；不会应用状态操作</span></div>}
