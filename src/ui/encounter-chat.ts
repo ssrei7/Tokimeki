@@ -2,6 +2,12 @@ import type { CharacterCard } from '../data/content';
 import type { SaveFile } from '../data/schema/save';
 import type { EncounterPromptParticipant } from '../core/prompt/default-blocks';
 
+export const OPENING_USER_PROMPT = '请根据以上规则生成这次相遇的开场叙述。';
+
+export function appendOpeningUserPrompt(messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
+  return [...messages, { role: 'user', content: OPENING_USER_PROMPT }];
+}
+
 export type EncounterSceneMode = 'opening' | 'choice' | 'topics' | 'manual' | 'ended';
 
 export type EncounterChatSession = {

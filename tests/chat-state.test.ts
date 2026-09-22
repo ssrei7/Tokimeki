@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { canGenerateReply, hasQueuedUserMessage, replyProgressIndicator } from '../src/ui/chat-state';
 import { latestDialogueSpeakerId, splitDialogueMessage } from '../src/ui/dialogue';
+import { appendOpeningUserPrompt, OPENING_USER_PROMPT } from '../src/ui/encounter-chat';
 
 describe('chat actions', () => {
+  it('adds a user turn to opening prompts for providers that reject system-only requests', () => {
+    expect(appendOpeningUserPrompt([{ role: 'system', content: '开场规则' }]).at(-1)).toEqual({ role: 'user', content: OPENING_USER_PROMPT });
+  });
+
   it('detects user messages waiting for a reply', () => {
     expect(hasQueuedUserMessage([{ role: 'user', content: 'one' }, { role: 'user', content: 'two' }])).toBe(true);
     expect(hasQueuedUserMessage([{ role: 'user', content: 'one' }, { role: 'assistant', content: 'reply' }])).toBe(false);

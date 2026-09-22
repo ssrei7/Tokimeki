@@ -102,7 +102,7 @@ import './ui/theme/app.css';
 import { applyCustomCss, applyTheme, applyThemeAppearance, applyThemeTemplate, DEFAULT_THEME_APPEARANCE, parseDesktopIconOverrides, parseDesktopTitleOverrides, parseThemeAppearance, readCustomCss, readDesktopIconOverrides, readDesktopTitleOverrides, readThemeAppearance, readThemeMode, readThemeTemplate, resolveTheme, THEME_APPEARANCE_STORAGE_KEY, THEME_STORAGE_KEY, THEME_TEMPLATE_STORAGE_KEY, themeAppearanceCssVariables, themeAppearanceForTemplate, type DesktopIconOverrides, type DesktopTitleOverrides, type ThemeAppearanceConfig, type ThemeMode, type ThemeTemplate, validateCustomCss, writeCustomCss, writeDesktopIconOverrides, writeDesktopTitleOverrides, writeThemeAppearance } from './ui/theme/preferences';
 import { DEFAULT_APP_NAME, PRODUCT_NAME, resolveAppDisplayName } from './ui/branding';
 import { workshopPackageIdFromRoute, workshopRoute } from './ui/workshop-runtime';
-import { encounterPromptParticipant, encounterPromptParticipants, isFormalEncounterParticipant, localEncounterOpening, parseEncounterChatSession, rejectNpcTargetedOps, type EncounterChatSession, type EncounterSceneMode } from './ui/encounter-chat';
+import { appendOpeningUserPrompt, encounterPromptParticipant, encounterPromptParticipants, isFormalEncounterParticipant, localEncounterOpening, parseEncounterChatSession, rejectNpcTargetedOps, type EncounterChatSession, type EncounterSceneMode } from './ui/encounter-chat';
 
 type Tab = 'map' | 'day' | 'chat' | 'library' | 'settings';
 export type SettingsPage = 'player' | 'provider' | 'vector-memory' | 'voice' | 'image' | 'routing' | 'migration' | 'display' | 'rules' | 'privacy' | 'debug' | 'dev-tools';
@@ -2526,11 +2526,12 @@ export function App() {
     const promptFacts = { input: '', character: mainCharacter, participants, presetBundle: activePresetBundle, playerPersona: activePersona, relationshipState, worldbooks, history: [], world: current.world, interactionPolicy: 'opening' as const, openingContext: { firstEncounter } };
     promptEvents.emit('beforePromptAssemble', { facts: promptFacts, task: 'narrate_main' });
     const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'narrate_main' });
-    setDebug((debugState) => ({ ...debugState, prompt: assembled }));
+    const openingPrompt = { ...assembled, messages: appendOpeningUserPrompt(assembled.messages) };
+    setDebug((debugState) => ({ ...debugState, prompt: openingPrompt }));
     const splitter = new OpsStreamSplitter();
     let narrative = '';
     try {
-      await streamChat(parsed, assembled.messages, (delta) => {
+      await streamChat(parsed, openingPrompt.messages, (delta) => {
         narrative += splitter.push(delta);
         if (selectedCharacterIdRef.current === session.characterId) setMessages((base) => upsertOpening(base, narrative));
       }, { taskId: 'narrate_main', onStatus: (status) => setRequestStatus(status) });

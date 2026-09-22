@@ -22,7 +22,11 @@ export async function streamChat(config: ProviderConfig, messages: ChatMessage[]
     }
     const prepared = adapter.prepare(config, request);
     const response = await fetchImpl(prepared.url, { ...prepared.init, signal: options.signal });
-    if (!response.ok) throw new StreamRequestError(`Provider returned HTTP ${response.status}`, response.status);
+    if (!response.ok) {
+      let detail = '';
+      try { detail = (await response.text()).trim().slice(0, 400); } catch { /* The response body may be unavailable. */ }
+      throw new StreamRequestError(`Provider returned HTTP ${response.status}${detail ? `: ${detail}` : ''}`, response.status);
+    }
     if (!response.body) { const payload = await response.json(); const text = adapter.extractText(config, payload); if (!text) throw new StreamRequestError('Provider response format is invalid'); emit(text); options.onStatus?.('success'); return text; }
     const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ''; let full = ''; let raw = '';
     while (true) {
