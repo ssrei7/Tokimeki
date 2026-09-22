@@ -108,6 +108,7 @@ button.danger { background: var(--gray-100); color: var(--gray-700); }
 .library-subpage-content[data-page='worldbook'] .library-legacy-content > :nth-child(2),
 .library-subpage-content[data-page='worldbook'] .library-legacy-content > :nth-child(8),
 .library-subpage-content[data-page='presets'] .library-legacy-content > :nth-child(1),
+.library-subpage-content[data-page='presets'] .library-legacy-content > :nth-child(2),
 .library-subpage-content[data-page='presets'] .library-legacy-content > :nth-child(9),
 .library-subpage-content[data-page='inventory'] .library-legacy-content > :nth-child(1),
 .library-subpage-content[data-page='inventory'] .library-legacy-content > :nth-child(10),

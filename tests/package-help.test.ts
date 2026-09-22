@@ -26,6 +26,11 @@ describe('built-in package authoring help', () => {
     expect(appCssSource).toContain(".library-subpage-content[data-page='save'] .library-legacy-content > :nth-child(5)");
   });
 
+  it('keeps the shared editor visible on the preset page for entry editing', () => {
+    expect(appCssSource).toContain(".library-subpage-content[data-page='presets'] .library-legacy-content > :nth-child(2)");
+    expect(appSource).toContain("props.setEditing({ kind: 'preset', id: entry.id });");
+  });
+
   it('documents package boundaries, event difficulty and recovery steps', () => {
     expect(helpSource).toContain('世界包与世界存档有什么区别');
     expect(helpSource).toContain('不会带走玩家时间、当前位置、关系进度');
