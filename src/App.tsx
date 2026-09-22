@@ -259,6 +259,7 @@ const newEmbeddingConfig = (): EmbeddingConfig => ({ id: 'embedding', enabled: f
 const newTtsConfig = (): TtsConfig => ({ id: `tts-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: '新语音配置', enabled: false, endpoint: '', model: '', voice: 'alloy', format: 'mp3', requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
 const newImageConfig = (): ImageConfig => ({ id: 'image', size: '1024x1024', stylePrompt: '', responseFormat: 'b64_json', referenceMode: 'none', multiReferenceEnabled: false, requestCount: 0, failureCount: 0, lastStatus: 'idle', updatedAt: now() });
 const newChatMessageId = (characterId: string) => `${characterId}-chat-${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`;
+const assistantChatMessage = (characterId: string, content: string, id = newChatMessageId(characterId)): ChatMessage => ({ id, role: 'assistant', content, speakerId: characterId });
 const newPlaceHighlightId = () => `place-highlight-${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`;
 const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 function imageBase64ToBlob(base64: string, mimeType = 'image/png'): Blob {
@@ -2465,7 +2466,7 @@ export function App() {
     const nextMessages = [
       ...messages,
       { id: newChatMessageId(selectedCharacterId), role: 'user' as const, content: topic.label, kind: 'dialogue' as const, speakerId: 'player' },
-      { id: newChatMessageId(selectedCharacterId), role: 'assistant' as const, content: response, kind: 'dialogue' as const, speakerId: selectedCharacterId },
+      assistantChatMessage(selectedCharacterId, response),
     ];
     setMessages(nextMessages);
     markResponseSource('topic');
@@ -2484,7 +2485,7 @@ export function App() {
     const openingId = `encounter-opening-${requestKey}`;
     const fallback = localEncounterOpening(current.world, session.participantIds);
     const upsertOpening = (base: ChatMessage[], content: string): ChatMessage[] => {
-      const message: ChatMessage = { id: openingId, role: 'assistant', content, speakerId: session.characterId };
+      const message = assistantChatMessage(session.characterId, content, openingId);
       const index = base.findIndex((item) => item.id === openingId);
       return index >= 0 ? base.map((item, messageIndex) => messageIndex === index ? message : item) : [...base, message];
     };
@@ -2984,12 +2985,12 @@ export function App() {
     try {
       await streamChat(parsed, assembled.messages, (delta) => {
         narrative += splitter.push(delta);
-        setMessages([...next, { id: assistantMessageId, role: 'assistant', content: narrative, kind: 'dialogue', speakerId: generationCharacterId }]);
-        updateChatRecovery({ characterId: selectedCharacterId, requestId, status: 'generating', input: text, messages: [...next, { id: assistantMessageId, role: 'assistant', content: narrative, kind: 'dialogue', speakerId: generationCharacterId }], baseMessages: next, assistantText: narrative, raw: '', actorId: generationCharacterId, messageIndex: next.length, opsApplied: false, updatedAt: now() });
+        setMessages([...next, assistantChatMessage(generationCharacterId, narrative, assistantMessageId)]);
+        updateChatRecovery({ characterId: selectedCharacterId, requestId, status: 'generating', input: text, messages: [...next, assistantChatMessage(generationCharacterId, narrative, assistantMessageId)], baseMessages: next, assistantText: narrative, raw: '', actorId: generationCharacterId, messageIndex: next.length, opsApplied: false, updatedAt: now() });
       }, { taskId: 'narrate_main', onStatus: (status) => setRequestStatus(status) });
       const finished = splitter.finish();
       narrative += finished.text;
-      const completed = [...next, { id: assistantMessageId, role: 'assistant' as const, content: narrative, kind: 'dialogue' as const, speakerId: generationCharacterId }];
+      const completed = [...next, assistantChatMessage(generationCharacterId, narrative, assistantMessageId)];
       setMessages(completed);
       markResponseSource('manual');
       await saveChat({ characterId: selectedCharacterId, messages: completed, updatedAt: now() });
@@ -3015,14 +3016,14 @@ export function App() {
       const finished = splitter.finish();
       narrative += finished.text;
       if (narrative) {
-        const completed = [...next, { id: assistantMessageId, role: 'assistant' as const, content: narrative, kind: 'dialogue' as const, speakerId: generationCharacterId }];
+        const completed = [...next, assistantChatMessage(generationCharacterId, narrative, assistantMessageId)];
         setMessages(completed);
         await saveChat({ characterId: selectedCharacterId, messages: completed, updatedAt: now() });
       } else {
         setMessages(next);
       }
       setRequestStatus('error'); setFeedback({ tone: 'error', text: message });
-      updateChatRecovery({ characterId: selectedCharacterId, requestId, status: 'error', input: text, messages: narrative ? [...next, { id: assistantMessageId, role: 'assistant', content: narrative, kind: 'dialogue', speakerId: generationCharacterId }] : next, baseMessages: next, assistantText: narrative, raw: finished.raw, actorId: generationCharacterId, messageIndex: narrative ? next.length : undefined, opsApplied: false, error: message, updatedAt: now() });
+      updateChatRecovery({ characterId: selectedCharacterId, requestId, status: 'error', input: text, messages: narrative ? [...next, assistantChatMessage(generationCharacterId, narrative, assistantMessageId)] : next, baseMessages: next, assistantText: narrative, raw: finished.raw, actorId: generationCharacterId, messageIndex: narrative ? next.length : undefined, opsApplied: false, error: message, updatedAt: now() });
       if (finished.raw && !npcLight) setPendingOps({ raw: finished.raw, actorId: generationCharacterId, messageIndex: narrative ? next.length : undefined, streamError: message, requestId });
       setDebug((current) => ({
         ...current,
@@ -3066,12 +3067,12 @@ export function App() {
     try {
       await streamChat(parsed, assembled.messages, (delta) => {
         narrative += splitter.push(delta);
-        setMessages(narrative ? [...baseMessages, { id: assistantMessageId, role: 'assistant', content: narrative, kind: 'dialogue', speakerId: selectedCharacterId }] : baseMessages);
+        setMessages(narrative ? [...baseMessages, assistantChatMessage(selectedCharacterId, narrative, assistantMessageId)] : baseMessages);
       }, { taskId: 'narrate_main', onStatus: (status) => setRequestStatus(status) });
       const finished = splitter.finish();
       narrative += finished.text;
       if (!narrative.trim()) throw new Error('Provider 未返回可读正文。');
-      const completed = [...baseMessages, { id: assistantMessageId, role: 'assistant' as const, content: narrative, kind: 'dialogue' as const, speakerId: selectedCharacterId }];
+      const completed = [...baseMessages, assistantChatMessage(selectedCharacterId, narrative, assistantMessageId)];
       setMessages(completed);
       const nextSave = structuredClone(saveRef.current);
       const removedMemories = removeRelationshipMemoriesFromMessage(nextSave.world, selectedCharacterId, latestAssistantIndex);
@@ -5202,7 +5203,7 @@ function ChatView(props: {
         requestAnimationFrame(() => { scroller.scrollTop = scroller.scrollHeight; });
       }
     }
-  }, [effectiveRevealedLineCount, latestMessage, props.busy, props.messages.length, props.requestStatus, props.selectedCharacterId]);
+  }, [effectiveRevealedLineCount, latestMessage, props.messages.length, props.selectedCharacterId]);
 
   useEffect(() => {
     if (!props.busy && latestRole === 'assistant') {
@@ -5217,7 +5218,7 @@ function ChatView(props: {
     const stage = stageRef.current;
     if (!stage) return;
     const updateStageHeight = () => {
-      const maxHeight = Math.max(80, Math.round(stage.clientHeight));
+      const maxHeight = Math.max(80, Math.round(stage.clientHeight - 158));
       setDialogueMaxHeight(maxHeight);
       setDialogueBoxHeight((height) => Math.min(maxHeight, Math.max(80, height)));
     };

@@ -26,11 +26,13 @@ export function latestDialogueSpeakerId(messages: ChatMessage[], fallbackSpeaker
 export function splitDialogueMessage(message: ChatMessage, fallbackSpeaker: string, userSpeaker = '你', speakerLabels: Record<string, string> = {}): DialogueLine[] {
   const lines = message.content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (message.role === 'system') return lines.map<DialogueLine>((text) => ({ kind: 'narration', text }));
-  if (message.kind) {
+  const hasExplicitMarkers = message.role === 'assistant' && lines.some((line) => /^\[(?:旁白|narration)\]/i.test(line) || /^\[(?:说话人|speaker)[:：]/i.test(line));
+  if (message.kind === 'narration') return lines.map<DialogueLine>((text) => ({ kind: 'narration', text }));
+  if (message.kind === 'dialogue' && !hasExplicitMarkers) {
     const speaker = message.speakerId
       ? speakerLabels[message.speakerId] ?? (message.speakerId === 'player' ? userSpeaker : fallbackSpeaker)
       : (message.role === 'user' ? userSpeaker : fallbackSpeaker);
-    return lines.map((text) => message.kind === 'dialogue' ? { kind: 'dialogue', speaker, text } : { kind: 'narration', text });
+    return lines.map((text) => ({ kind: 'dialogue', speaker, text }));
   }
   return lines.map<DialogueLine>((line) => {
     const narration = line.match(/^\[(?:旁白|narration)\]\s*(.*)$/i);

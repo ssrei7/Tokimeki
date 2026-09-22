@@ -36,6 +36,8 @@ describe('chat actions', () => {
     expect(source).not.toContain('🗂️');
     expect(source).toContain('aria-valuemax={dialogueMaxHeight}');
     expect(css).toContain('.vn-dialogue-box { display: flex; flex: 0 0 auto; min-height: 80px;');
+    expect(css).toContain('overflow-anchor: none;');
+    expect(css).toContain('-webkit-overflow-scrolling: touch;');
     expect(css).not.toMatch(/\.vn-dialogue-box\s*\{[^}]*max-height:/s);
   });
 
@@ -54,6 +56,8 @@ describe('chat actions', () => {
     expect(source).toContain("props.hasFormalPrimary && <button onClick={() => props.onChooseSceneMode('topics')}");
     expect(source).toContain("props.onChooseSceneMode('choice')");
     expect(source).toContain('formalSpeaker && <button type="button" onClick={() => startCgDraft');
+    expect(source).toContain('const assistantChatMessage =');
+    expect(source).not.toContain("content: narrative, kind: 'dialogue'");
     expect(css).toContain('.screen.chat-screen-host { display: flex; flex-direction: column; overflow: hidden; padding: 4px 8px var(--chat-bottom-nav-space); }');
     expect(css).toContain('.vn-chat-screen { gap: 4px; overflow: hidden; }');
     expect(themeCss).toContain('--chat-bottom-nav-space: calc(var(--bottom-nav-height) + var(--safe-area-bottom));');
@@ -74,6 +78,13 @@ describe('dialogue line markers', () => {
     expect(splitDialogueMessage({ role: 'assistant', content: '欢迎回来。', kind: 'dialogue', speakerId: 'char-rin' }, '塞伊尔', '旅人', { 'char-rin': '凛' })).toEqual([{ kind: 'dialogue', speaker: '凛', text: '欢迎回来。' }]);
     expect(splitDialogueMessage({ role: 'user', content: '我留下。', kind: 'dialogue', speakerId: 'player' }, '塞伊尔', '旅人', { player: '旅人' })).toEqual([{ kind: 'dialogue', speaker: '旅人', text: '我留下。' }]);
     expect(splitDialogueMessage({ role: 'assistant', content: '灯光在雨里晕开。', kind: 'narration', speakerId: 'char-rin' }, '塞伊尔', '旅人', { 'char-rin': '凛' })).toEqual([{ kind: 'narration', text: '灯光在雨里晕开。' }]);
+  });
+
+  it('does not let an explicit narration line inherit a dialogue speaker', () => {
+    expect(splitDialogueMessage({ role: 'assistant', content: '[说话人:塞伊尔] 等候很久了吗？\n[旁白] 他的指尖轻轻动了一下。', kind: 'dialogue', speakerId: 'char-seir' }, '塞伊尔', '旅人', { 'char-seir': '塞伊尔' })).toEqual([
+      { kind: 'dialogue', speaker: '塞伊尔', text: '等候很久了吗？' },
+      { kind: 'narration', text: '他的指尖轻轻动了一下。' },
+    ]);
   });
 
   it('tracks the latest explicit speaker for the active portrait', () => {
