@@ -31,6 +31,10 @@ export const WorldbookEntrySchema = z.object({
 });
 export type WorldbookEntry = z.infer<typeof WorldbookEntrySchema>;
 
+export function parseWorldbookKeys(input: string): string[] {
+  return [...new Set(input.split(/[,，]/).map((key) => key.trim()).filter(Boolean))];
+}
+
 export const PresetSchema = z.object({
   id: Id, name: z.string().min(1), systemPrompt: z.string().default(''), temperature: z.number().min(0).max(2).default(0.7), maxOutputTokens: z.number().int().positive().default(1024),
   enabled: z.boolean().default(true),
