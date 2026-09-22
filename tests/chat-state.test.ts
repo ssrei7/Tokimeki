@@ -47,6 +47,8 @@ describe('chat actions', () => {
     expect(css).toContain('.vn-portrait-empty { width: min(100%, 360px); height: 100%; min-height: 0; }');
     expect(css).toContain('overflow-anchor: none;');
     expect(css).toContain('-webkit-overflow-scrolling: touch;');
+    expect(css).toContain('.vn-next-line { position: sticky;');
+    expect(css).toContain('scroll-padding-bottom: 48px;');
     expect(css).not.toMatch(/\.vn-dialogue-box\s*\{[^}]*max-height:/s);
   });
 
