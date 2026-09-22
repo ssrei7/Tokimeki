@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EventBus } from '../src/core/events/bus';
-import { createMapNode, deleteMapNode, movePlayer, revealNode, updateMapNode } from '../src/core/map';
+import { createMapNode, deleteMapNode, movePlayer, revealAdjacentNode, revealNode, updateMapNode } from '../src/core/map';
 import { createDefaultMap, CURRENT_SCHEMA_VERSION, DEFAULT_ECONOMY_STATE, SaveFileSchema, type WorldState } from '../src/data/schema/save';
 
 function worldWithMap(): WorldState {
@@ -46,6 +46,28 @@ describe('deterministic map movement', () => {
   it('reveals a node without consuming time', () => {
     const world = worldWithMap(); const result = revealNode(world, 'docks');
     expect(result.ok).toBe(true); expect(world.map.nodes.docks.discovered).toBe(true); expect(world.slotsUsedToday).toBe(0);
+  });
+
+  it('reveals one undiscovered adjacent node in stable id order', () => {
+    const world = worldWithMap();
+    world.map.nodes.cafe = { id: 'cafe', name: '咖啡馆', regionId: 'start-region', kind: ['indoor'], worldbookIds: [], discovered: false, visitCount: 0, memories: [], pos: { x: 300, y: 200 } };
+    world.map.edges.push({ from: 'start', to: 'cafe', travelSlots: 0 });
+    const result = revealAdjacentNode(world);
+    expect(result.ok).toBe(true);
+    expect(result.toNodeId).toBe('cafe');
+    expect(world.map.nodes.cafe.discovered).toBe(true);
+    expect(world.map.nodes.docks.discovered).toBe(false);
+    expect(world.slotsUsedToday).toBe(0);
+  });
+
+  it('does not reveal a non-adjacent node or spend a cost when no hidden neighbor exists', () => {
+    const world = worldWithMap();
+    world.map.nodes.market.discovered = true;
+    const result = revealAdjacentNode(world);
+    expect(result.ok).toBe(true);
+    expect(result.toNodeId).toBeUndefined();
+    expect(result.warning).toContain('No undiscovered adjacent node');
+    expect(world.map.nodes.docks.discovered).toBe(false);
   });
 
   it('creates a validated map node and connecting edge with a unique id', () => {

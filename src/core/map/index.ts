@@ -157,6 +157,22 @@ export function revealNode(world: WorldState, nodeId: string): MapOperationResul
   };
 }
 
+/** Reveal the first undiscovered node directly adjacent to the player's location. */
+export function revealAdjacentNode(world: WorldState): MapOperationResult {
+  const currentNodeId = world.player.nodeId;
+  const currentNode = world.map.nodes[currentNodeId];
+  if (!currentNode) return rejected(`Current node does not exist: ${currentNodeId}.`);
+
+  const candidates = new Set<string>();
+  for (const edge of world.map.edges) {
+    const nextNodeId = edge.from === currentNodeId ? edge.to : edge.to === currentNodeId ? edge.from : undefined;
+    if (nextNodeId && world.map.nodes[nextNodeId] && !world.map.nodes[nextNodeId].discovered) candidates.add(nextNodeId);
+  }
+  const targetNodeId = [...candidates].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))[0];
+  if (!targetNodeId) return { ok: true, changes: [], cost: 0, warning: 'No undiscovered adjacent node.' };
+  return revealNode(world, targetNodeId);
+}
+
 function findShortestRoute(map: MapState, fromNodeId: string, toNodeId: string): { cost: number } | undefined {
   const distances = new Map<string, number>(Object.keys(map.nodes).map((id) => [id, id === fromNodeId ? 0 : Number.POSITIVE_INFINITY]));
   const pending = new Set(distances.keys());
