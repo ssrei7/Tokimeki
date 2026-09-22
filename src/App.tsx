@@ -37,6 +37,7 @@ import { providerDb } from './providers/db';
 import { listEmbeddingModels, listProviderModels } from './providers/models';
 import { resolveProviderForCharacter, resolveProviderForTask, resolveProviderForTaskGroup, resolveTtsProviderForCharacter } from './providers/router';
 import { streamChat, type StreamStatus } from './providers/stream';
+import { topicTreeOutputMode } from './providers/topic-output';
 import { generateImage } from './providers/image';
 import { buildCharacterImagePrompt, buildChatCgPrompt } from './providers/image-prompt';
 import { currentImageIdentity, faceReferenceAssetIdForGeneration, imageCharacterConfigId, imageReferenceAssetIds, imageUserConfigId } from './providers/image-identity';
@@ -2436,7 +2437,7 @@ export function App() {
       const assembled = assembler.assemble(promptFacts, { budget: Math.max(1, parsed.contextWindow - parsed.maxOutputTokens), task: 'topic_tree' });
       setDebug((current) => ({ ...current, prompt: assembled }));
       let generated = '';
-      await streamChat(parsed, assembled.messages, (delta) => { generated += delta; }, { taskId: 'topic_tree', outputMode: parsed.outputMode, onStatus: (status) => setRequestStatus(status) });
+      await streamChat(parsed, assembled.messages, (delta) => { generated += delta; }, { taskId: 'topic_tree', outputMode: topicTreeOutputMode(parsed), onStatus: (status) => setRequestStatus(status) });
       const tree = mergeDailyTopicTree(existing, parseGeneratedTopicTree(generated, charId, nodeId, saveRef.current.world.clock.day));
       const next = structuredClone(saveRef.current);
       next.world.topicTrees[key] = tree;

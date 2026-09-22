@@ -8,6 +8,7 @@ import { listEmbeddingModels, listProviderModels } from '../src/providers/models
 import { resolveProviderForCharacter, resolveProviderForTask, resolveProviderForTaskGroup, resolveTtsProviderForCharacter } from '../src/providers/router';
 import { streamChat } from '../src/providers/stream';
 import { CharacterProviderBindingSchema } from '../src/providers/types';
+import { topicTreeOutputMode } from '../src/providers/topic-output';
 import type { ProviderConfig, TtsConfig } from '../src/providers/types';
 
 const base: ProviderConfig = { id: 'default', name: 'Default', kind: 'openai-compatible', endpoint: 'https://example.test/v1/chat/completions', model: 'demo', contextWindow: 4096, maxOutputTokens: 100, temperature: 0.2 };
@@ -26,6 +27,11 @@ describe('provider adapters and routing', () => {
     expect(workshop.response_format).toEqual({ type: 'json_object' });
     const narrative = JSON.parse(String(adapter.prepare({ ...base, outputMode: 'auto' }, { taskId: 'narrate_main', outputMode: 'auto', messages: [{ role: 'user', content: 'hi' }] }).init.body));
     expect(narrative.response_format).toBeUndefined();
+  });
+  it('uses portable JSON object mode for OpenAI-compatible topic tree providers', () => {
+    expect(topicTreeOutputMode({ kind: 'openai-compatible', outputMode: 'auto' })).toBe('json_object');
+    expect(topicTreeOutputMode({ kind: 'openai-compatible', outputMode: 'off' })).toBe('off');
+    expect(topicTreeOutputMode({ kind: 'anthropic', outputMode: 'auto' })).toBe('auto');
   });
   it('adds Anthropic browser header and extracts Gemini text', () => { const request = getAdapter('anthropic').prepare({ ...base, kind: 'anthropic', endpoint: 'https://example.test/messages' }, { messages: [{ role: 'user', content: 'hi' }] }); expect((request.init.headers as Record<string, string>)['anthropic-dangerous-direct-browser-access']).toBe('true'); const gemini = getAdapter('gemini'); expect(gemini.extractText({ ...base, kind: 'gemini' }, { candidates: [{ content: { parts: [{ text: 'hello' }] } }] })).toBe('hello'); expect(gemini.extractStreamText({ ...base, kind: 'gemini' }, 'data: {"candidates":[{"content":{"parts":[{"text":"stream"}]}}]}')).toBe('stream'); });
   it('routes tasks with default fallback and cleans removed bindings', () => { const manager = new ProviderManager(); manager.upsertProvider(base); manager.upsertProvider({ ...base, id: 'cheap', name: 'Cheap' }); manager.bindTask({ taskId: 'narrate_main', providerId: 'cheap' }); expect(manager.resolve('narrate_main')?.id).toBe('cheap'); expect(manager.resolve('summarize_day')?.id).toBe('default'); manager.removeProvider('cheap'); expect(manager.resolve('narrate_main')?.id).toBe('default'); });
